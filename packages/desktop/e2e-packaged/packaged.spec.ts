@@ -73,13 +73,12 @@ test('the packaged app opens its database and keeps text across a relaunch', asy
   }
 })
 
-test('without SLATE_UPDATE_URL at build time there is no update config and no update menu item', async () => {
-  expect(existsSync(join(built!.resources, 'update.json'))).toBe(false)
+test('the packaged app has a visible Check for Updates menu item', async () => {
   const app = await launch(mkdtempSync(join(tmpdir(), 'slate-packaged-')))
   try {
     await app.firstWindow()
     const visible = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('check-updates')!.visible)
-    expect(visible).toBe(false)
+    expect(visible).toBe(true)
   } finally {
     await app.close().catch(() => undefined)
   }
