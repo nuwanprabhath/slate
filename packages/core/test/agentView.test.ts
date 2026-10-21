@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { LoroList, LoroMap, LoroText } from 'loro-crdt'
-import { agentBoxes, agentPageMarkdown, PRIVATE_PLACEHOLDER } from '../src/agentView'
+import { agentBoxes, agentPageMarkdown, placeBelow, PRIVATE_PLACEHOLDER } from '../src/agentView'
 import { contentToJSON, writeContent } from '../src/content'
 import { PageDoc } from '../src/page'
 
@@ -49,6 +49,21 @@ describe('agent view', () => {
     const page = new PageDoc()
     const id = page.addBox({ x: 0, y: 0, width: 100 })
     expect(contentToJSON(page.contentMap(id)!)).toBeNull()
+  })
+})
+
+describe('placeBelow', () => {
+  it('puts the first box near the top left of an empty page', () => {
+    expect(placeBelow(new PageDoc())).toEqual({ x: 40, y: 40 })
+  })
+
+  it('puts a new box below the lowest box, estimating its height from its lines', () => {
+    const page = pageWith([
+      { y: 100, text: 'one' },
+      { y: 400, text: 'last' },
+    ])
+    const { y } = placeBelow(page)
+    expect(y).toBeGreaterThan(400 + 24)
   })
 })
 

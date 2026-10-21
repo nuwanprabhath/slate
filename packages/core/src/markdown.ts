@@ -70,3 +70,44 @@ export function toMarkdown(nodes: PMJSON[]): string {
   const blocks = nodes.flatMap((n) => (n.type === 'doc' ? n.content ?? [] : [n]))
   return blocks.map((b) => blockLines(b, '').join('\n')).filter((b) => b !== '').join('\n\n')
 }
+
+const text = (s: string): PMJSON[] => (s === '' ? [] : [{ type: 'text', text: s }])
+const item = (s: string): PMJSON => ({ type: 'listItem', content: [{ type: 'paragraph', content: text(s) }] })
+
+/** Markdown from an agent into blocks (no inline marks: agents' text is stored as typed). */
+export function markdownToBlocks(md: string): PMJSON[] {
+  const lines = md.replace(/\r\n?/g, '\n').split('\n')
+  const blocks: PMJSON[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const fence = /^```(\S*)\s*$/.exec(line)
+    if (fence) {
+      const code: string[] = []
+      for (i++; i < lines.length && !/^```\s*$/.test(lines[i]); i++) code.push(lines[i])
+      blocks.push({ type: 'codeBlock', attrs: { language: fence[1] || 'plaintext' }, content: text(code.join('\n')) })
+      continue
+    }
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line)
+    if (heading) {
+      blocks.push({ type: 'heading', attrs: { level: heading[1].length }, content: text(heading[2]) })
+      continue
+    }
+    if (/^[-*]\s+/.test(line)) {
+      const items: PMJSON[] = []
+      for (; i < lines.length && /^[-*]\s+/.test(lines[i]); i++) items.push(item(lines[i].replace(/^[-*]\s+/, '')))
+      i--
+      blocks.push({ type: 'bulletList', content: items })
+      continue
+    }
+    const numbered = /^(\d+)\.\s+/.exec(line)
+    if (numbered) {
+      const items: PMJSON[] = []
+      for (; i < lines.length && /^\d+\.\s+/.test(lines[i]); i++) items.push(item(lines[i].replace(/^\d+\.\s+/, '')))
+      i--
+      blocks.push({ type: 'orderedList', attrs: { start: Number(numbered[1]) }, content: items })
+      continue
+    }
+    if (line.trim() !== '') blocks.push({ type: 'paragraph', content: text(line) })
+  }
+  return blocks
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toMarkdown } from '../src/markdown'
+import { markdownToBlocks, toMarkdown } from '../src/markdown'
 import type { PMJSON } from '../src/plaintext'
 
 const t = (text: string, marks?: PMJSON['marks']): PMJSON => ({ type: 'text', text, ...(marks ? { marks } : {}) })
@@ -33,5 +33,23 @@ describe('toMarkdown', () => {
 
   it('renders images and rules', () => {
     expect(toMarkdown([{ type: 'image', attrs: { src: 'slate-blob://blob/x.png' } }, { type: 'horizontalRule' }])).toBe('![](slate-blob://blob/x.png)\n\n---')
+  })
+})
+
+describe('markdownToBlocks', () => {
+  it('parses headings, paragraphs, lists and fenced code', () => {
+    const md = '# Title\n\nfirst line\nsecond line\n\n- a\n- b\n\n2. x\n3. y\n\n```sh\nls -la\n  echo hi\n```'
+    expect(markdownToBlocks(md)).toEqual([
+      { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Title' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'first line' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'second line' }] },
+      { type: 'bulletList', content: ['a', 'b'].map((s) => ({ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] })) },
+      { type: 'orderedList', attrs: { start: 2 }, content: ['x', 'y'].map((s) => ({ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] })) },
+      { type: 'codeBlock', attrs: { language: 'sh' }, content: [{ type: 'text', text: 'ls -la\n  echo hi' }] },
+    ])
+  })
+
+  it('returns an empty paragraph list for blank input', () => {
+    expect(markdownToBlocks('  \n\n')).toEqual([])
   })
 })
