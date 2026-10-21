@@ -37,7 +37,22 @@ async function configureGit(page: Page) {
   await expect(page.getByTestId('sync-settings')).toHaveCount(0)
 }
 
-const status = (page: Page) => page.getByTestId('sync-status')
+/**
+ * Resolves once the status button's tooltip says it synced to git. Syncs run back to back at the
+ * test interval, so "synced" is brief; an observer sees it where polling can miss it.
+ */
+const syncedToGit = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<string>((resolve, reject) => {
+        const button = document.querySelector('[data-testid="sync-status"]')!
+        const done = () => /Synced to your git repository/.test(button.getAttribute('title') ?? '') && resolve(button.getAttribute('title')!)
+        if (done()) return
+        const observer = new MutationObserver(() => done() && observer.disconnect())
+        observer.observe(button, { attributes: true, attributeFilter: ['title'] })
+        setTimeout(() => reject(new Error(`never synced: ${button.getAttribute('title')}`)), 20_000)
+      }),
+  )
 
 test.describe.serial('git sync between two devices', () => {
   test.beforeAll(async () => {
@@ -64,7 +79,7 @@ test.describe.serial('git sync between two devices', () => {
     await expect(other).toHaveCount(1, { timeout: 15_000 })
     await other.click()
     await expect(b.getByTestId('canvas')).toContainText('hello over git', { timeout: 15_000 })
-    await expect(status(a)).toHaveAttribute('title', /Synced to your git repository/, { timeout: 10_000 })
+    expect(await syncedToGit(a)).toContain('Last synced just now')
   })
 
   test('settings saved in the overlay survive a relaunch', async () => {
@@ -77,7 +92,7 @@ test.describe.serial('git sync between two devices', () => {
     await expect(a.getByTestId('git-auth-system')).toBeChecked()
     await a.keyboard.press('Escape')
     await expect(a.getByTestId('sync-settings')).toHaveCount(0)
-    await expect(status(a)).toHaveAttribute('data-state', 'idle-synced', { timeout: 10_000 })
+    await syncedToGit(a)
   })
 
   test('the repository has commits from both devices and no credentials anywhere', async () => {
