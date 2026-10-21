@@ -4,7 +4,7 @@ import { CH } from '../../shared/ipc'
 import type { DocStore } from '../store'
 import { detectInstallKind } from './capability'
 import { electronBackend } from './electronBackend'
-import { fakeBackend, fakeInstallKind } from './fakeBackend'
+import { FAKE_CURRENT_VERSION, fakeBackend, fakeInstallKind } from './fakeBackend'
 import { registerUpdateIpc, updatePrefsIn } from './ipc'
 import { UpdateService } from './updateService'
 
@@ -20,7 +20,7 @@ export function createUpdates(store: DocStore, isE2E: boolean): UpdateService {
       : electronBackend({ downloadsDir: app.getPath('downloads'), log }),
     kind: fake ? fakeInstallKind(fake) : detectInstallKind({ platform: process.platform, isPackaged: live, env: process.env, execPath: process.execPath }),
     arch: process.arch,
-    currentVersion: app.getVersion(),
+    currentVersion: fake ? FAKE_CURRENT_VERSION : app.getVersion(),
     loadPrefs: prefs.load,
     savePrefs: prefs.save,
     log,
