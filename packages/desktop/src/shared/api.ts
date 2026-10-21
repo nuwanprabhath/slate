@@ -5,11 +5,20 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = { markdownShortcuts: false }
 
+export interface AuditEntryRow {
+  id: number
+  ts: number
+  tool: string
+  target: string
+  outcome: string
+}
+
 export type MenuCommand =
   | { cmd: 'undo' }
   | { cmd: 'redo' }
   | { cmd: 'paste-plain' }
   | { cmd: 'settings-changed'; settings: Settings }
+  | { cmd: 'show-ai-activity' }
 
 export interface SlateApi {
   isE2E: boolean
@@ -27,6 +36,7 @@ export interface SlateApi {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
   }
+  audit: { list(limit?: number): Promise<AuditEntryRow[]> }
   clipboardText(): Promise<string>
   onMenu(handler: (command: MenuCommand) => void): () => void
 }

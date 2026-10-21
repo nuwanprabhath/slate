@@ -18,6 +18,7 @@ const api: SlateApi = {
     get: () => ipcRenderer.invoke(CH.settingsGet),
     set: (patch) => ipcRenderer.invoke(CH.settingsSet, patch),
   },
+  audit: { list: (limit) => ipcRenderer.invoke(CH.auditList, limit) },
   clipboardText: () => ipcRenderer.invoke(CH.clipboardText),
   onMenu(handler) {
     const listener = (_e: IpcRendererEvent, command: MenuCommand) => handler(command)

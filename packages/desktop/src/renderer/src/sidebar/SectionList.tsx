@@ -3,6 +3,7 @@ import { SECTION_COLORS, type NotebookDoc, type TreeItem } from '@slate/core'
 import { cls } from '../treeUtils'
 import { ContextMenu, type MenuItem, type MenuState } from './ContextMenu'
 import { applyDrop, DRAG_MIME, dropZone, type DropZone, type NodeId } from './dnd'
+import { accessItems, accessTitle } from './accessMenu'
 import { InlineRename } from './InlineRename'
 
 interface Props {
@@ -38,6 +39,7 @@ export function SectionList({ nb, items, selectedSectionId, onSelect, onDeleted 
     const entries: MenuItem[] = [{ label: 'Rename', onSelect: () => setRenaming(item.id) }]
     if (item.kind === 'section') entries.push({ swatches: SECTION_COLORS, onPick: (c) => nb.setColor(item.id, c) })
     if (item.kind === 'sectionGroup') entries.push({ label: 'New section in group', onSelect: () => addSection(item.id) })
+    entries.push(...accessItems(nb, item.id))
     entries.push({ label: 'Delete', confirm: true, onSelect: () => onDeleted(nb.delete(item.id)) })
     setMenu({ x: e.clientX, y: e.clientY, items: entries })
   }
@@ -85,6 +87,11 @@ export function SectionList({ nb, items, selectedSectionId, onSelect, onDeleted 
             />
           ) : (
             <span className="label">{item.title}</span>
+          )}
+          {item.access && (
+            <span className="ai-badge" data-testid="ai-badge" title={accessTitle(item.access)}>
+              AI
+            </span>
           )}
         </div>
         {isGroup && open && <ul>{item.children.map((c) => renderItem(c, depth + 1))}</ul>}

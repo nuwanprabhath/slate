@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { NOTEBOOK_SCOPE } from '@slate/core'
 import type { Library, NotebookEntry } from '../library'
 import { cls } from '../treeUtils'
+import { accessItems, accessTitle } from './accessMenu'
 import { InlineRename } from './InlineRename'
 
 interface Props {
@@ -17,6 +19,7 @@ export function NotebookPicker({ library, current, onSelect }: Props) {
     setOpen(false)
     setArmedDelete(false)
   }
+  const notebookAccess = current.doc.accessOf(NOTEBOOK_SCOPE)
   return (
     <div className="notebook-picker">
       {renaming ? (
@@ -31,6 +34,11 @@ export function NotebookPicker({ library, current, onSelect }: Props) {
       ) : (
         <button type="button" className="notebook-current" data-testid="notebook-picker" onClick={() => setOpen((o) => !o)}>
           <span className="label">{current.doc.name}</span>
+          {notebookAccess && (
+            <span className="ai-badge" data-testid="ai-badge" title={accessTitle(notebookAccess)}>
+              AI
+            </span>
+          )}
           <span className="chevron">▾</span>
         </button>
       )}
@@ -73,6 +81,21 @@ export function NotebookPicker({ library, current, onSelect }: Props) {
           >
             Rename notebook
           </button>
+          {accessItems(current.doc, NOTEBOOK_SCOPE).map((item) =>
+            'onSelect' in item ? (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  item.onSelect()
+                  close()
+                }}
+              >
+                {item.label}
+              </button>
+            ) : null,
+          )}
           <button
             type="button"
             role="menuitem"

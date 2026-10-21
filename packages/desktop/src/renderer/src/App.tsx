@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { activeEditor, EditorServicesContext, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
+import { AiActivity } from './AiActivity'
 import { currentSession } from './currentSession'
 import { Library } from './library'
 import { PageView } from './PageView'
@@ -11,7 +12,7 @@ import { SectionList } from './sidebar/SectionList'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
-export function useMenuCommands(setSettings: (s: Settings) => void): void {
+export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void): void {
   useEffect(
     () =>
       window.slate.onMenu((command) => {
@@ -36,9 +37,12 @@ export function useMenuCommands(setSettings: (s: Settings) => void): void {
           case 'settings-changed':
             setSettings(command.settings)
             break
+          case 'show-ai-activity':
+            onShowAiActivity()
+            break
         }
       }),
-    [setSettings],
+    [setSettings, onShowAiActivity],
   )
 }
 
@@ -61,12 +65,15 @@ export function App() {
     void Library.load(window.slate).then(setLibrary)
     void window.slate.settings.get().then(setSettings)
   }, [])
-  useMenuCommands(setSettings)
+  const [aiActivity, setAiActivity] = useState(false)
+  const showAiActivity = useCallback(() => setAiActivity(true), [])
+  useMenuCommands(setSettings, showAiActivity)
   const services = useServices(settings)
   if (!library) return <div className="app-loading">Loading…</div>
   return (
     <EditorServicesContext.Provider value={services}>
       <Workspace library={library} />
+      {aiActivity && <AiActivity onClose={() => setAiActivity(false)} />}
     </EditorServicesContext.Provider>
   )
 }

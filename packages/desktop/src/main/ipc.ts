@@ -21,5 +21,6 @@ export function registerIpc(store: DocStore, blobs: BlobStore): void {
   })
   ipcMain.handle(CH.settingsGet, () => readSettings(store))
   ipcMain.handle(CH.settingsSet, (_e, patch: Partial<Settings>) => writeSettings(store, patch))
+  ipcMain.handle(CH.auditList, (_e, limit?: number) => store.listAudit(limit ?? 200))
   ipcMain.handle(CH.clipboardText, () => clipboard.readText())
 }
