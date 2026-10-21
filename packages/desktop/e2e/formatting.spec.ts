@@ -3,17 +3,15 @@ import { expect, MOD, test } from './fixtures'
 
 const focusedEditor = (page: Page) => page.locator('[data-testid="box-editor"]:focus')
 
-// A toolbar control hands focus back to the editor asynchronously, and ProseMirror learns of a
-// moved selection a tick after the key. Until both have happened End/Enter is a no-op (the
-// selection is still "all"), so repeat the pair until a paragraph follows the heading.
-const newLineAfterHeading = (page: Page) =>
-  expect
-    .poll(async () => {
-      await page.keyboard.press('End')
-      await page.keyboard.press('Enter')
-      return page.locator('[data-testid="box-editor"] h1 + p').count()
-    })
-    .toBe(1)
+async function newLineAfterHeading(page: Page) {
+  await expect(page.locator('[data-testid="box-editor"]:focus')).toHaveCount(1)
+  await page.keyboard.press('End')
+  // The native End key changes only the DOM selection; ProseMirror adopts it on the next
+  // selectionchange event. Synthetic keys arrive faster than a person types, so let a frame pass.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))))
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-testid="box-editor"] h1 + p')).toHaveCount(1)
+}
 
 async function typeInNewBox(page: Page, text: string, x = 120, y = 120) {
   await page.getByTestId('canvas').click({ position: { x, y } })

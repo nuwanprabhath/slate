@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { writeContent } from '../src/content'
 import { PageSession, pageDocId, type DocPersistence } from '../src/PageSession'
 
 function memoryPersistence(): DocPersistence & { data: Map<string, Uint8Array[]> } {
@@ -84,6 +85,25 @@ describe('PageSession', () => {
     session.reportHeight(a, 180)
     await tick()
     expect(session.getBoxes().find((x) => x.id === b)!.y).toBe(200)
+    session.close()
+  })
+
+  it('keeps the same box snapshot when only box content changes (typing must not rebuild 200 boxes)', async () => {
+    const session = await PageSession.open('p8', memoryPersistence())
+    const id = session.createBox(0, 0)
+    await tick()
+    const before = session.getBoxes()
+    let calls = 0
+    session.subscribe(() => calls++)
+    writeContent(session.page.contentMap(id)!, [{ type: 'paragraph', content: [{ type: 'text', text: 'typed' }] }])
+    session.doc.commit()
+    await tick()
+    expect(session.getBoxes()).toBe(before)
+    expect(calls).toBe(0)
+    session.page.updateBox(id, { x: 40 })
+    await tick()
+    expect(session.getBoxes()).not.toBe(before)
+    expect(calls).toBe(1)
     session.close()
   })
 

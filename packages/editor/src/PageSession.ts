@@ -30,7 +30,10 @@ export class PageSession {
     this.snapshot = page.listBoxes()
     this.cleanup.push(page.doc.subscribeLocalUpdates((update) => void persistence.append(pageDocId(pageId), update)))
     this.cleanup.push(
-      page.doc.subscribe(() => {
+      page.doc.subscribe((batch) => {
+        // Event paths are absolute: ['boxes'] or ['boxes', id] is a box added, removed, moved or
+        // flagged; anything deeper is text inside a box, which the box editors render themselves.
+        if (!batch.events.some((e) => e.path.length <= 2)) return
         this.snapshot = page.listBoxes()
         this.listeners.forEach((l) => l())
       }),
