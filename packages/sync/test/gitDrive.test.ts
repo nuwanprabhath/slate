@@ -69,6 +69,19 @@ describe('GitDrive', { timeout: 30_000 }, () => {
     expect(log(url)).toMatch(/slate: B \(\d+ files\)/)
   })
 
+  it('makes no commit for an idle sync that only refreshes the device record', async () => {
+    const url = bareRepo()
+    const a = device(url, 'A')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'x'))
+    await a.engine.syncOnce()
+    const commits = log(url).trim().split('\n').length
+    for (let i = 0; i < 2; i++) expect((await a.engine.syncOnce()).status).toBe('idle-synced')
+    expect(log(url).trim().split('\n').length).toBe(commits)
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'y'))
+    await a.engine.syncOnce()
+    expect(log(url).trim().split('\n').length).toBe(commits + 1)
+  })
+
   it('rebases concurrent pushes so both land', async () => {
     const url = bareRepo()
     const a = drive(url, 'A')

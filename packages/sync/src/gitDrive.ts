@@ -119,29 +119,54 @@ export class GitDrive implements RemoteDrive {
     await this.must(['-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-q', '-m', message])
   }
 
-  /** Stages the work tree and commits it; returns false when there was nothing to commit. */
+  /**
+   * Commits the work tree; returns false when there was nothing to commit. Each git process costs
+   * tens of milliseconds (more under Electron), so an idle sync is kept to a few.
+   */
   private async commitAll(): Promise<boolean> {
+    const changes = fields((await this.must(['status', '--porcelain', '-z', '--untracked-files=all'])).stdout)
+    if (changes.length === 0) return false
+    // Every sync rewrites this device's record with a new lastSeen. Alone, that would be a commit
+    // per device per sync interval forever, so it only rides along with real changes.
+    if (changes.every((c) => c.startsWith(' M devices/'))) {
+      await this.must(['checkout', '-q', '--', ...changes.map((c) => c.slice(3))])
+      return false
+    }
     await this.must(['add', '-A'])
-    const staged = fields((await this.must(['diff', '--cached', '--name-only', '-z'])).stdout)
-    if (staged.length === 0) return false
-    const n = staged.length
+    const n = changes.length
     await this.commit(`slate: ${this.opts.deviceName ?? this.opts.author.name} (${n} ${n === 1 ? 'file' : 'files'})`)
+    this.ahead = true
     return true
   }
 
-  private async rebase(): Promise<void> {
-    if (!(await this.hasRemoteBranch())) return
+  /** The local branch's and origin's commits, in one process. */
+  private async refs(): Promise<{ head: string; remote: string | undefined }> {
+    const { branch } = this.opts
+    const out = text((await this.must(['for-each-ref', '--format=%(refname) %(objectname)', `refs/heads/${branch}`, `refs/remotes/origin/${branch}`])).stdout)
+    const sha = (ref: string) => out.split('\n').find((l) => l.startsWith(`${ref} `))?.split(' ')[1]
+    return { head: sha(`refs/heads/${branch}`) ?? '', remote: sha(`refs/remotes/origin/${branch}`) }
+  }
+
+  /** Puts local commits on top of origin's; returns the new HEAD. */
+  private async rebase(): Promise<string> {
+    const { head, remote } = await this.refs()
+    if (!remote || remote === head) return head
     const r = await this.git(['rebase', '-q', `origin/${this.opts.branch}`])
-    if (r.code === 0) return
-    await this.git(['rebase', '--abort'])
-    throw gitError(['rebase'], r)
+    if (r.code !== 0) {
+      await this.git(['rebase', '--abort'])
+      throw gitError(['rebase'], r)
+    }
+    return text((await this.must(['rev-parse', 'HEAD'])).stdout).trim()
   }
 
   private async push(): Promise<void> {
     const args = ['push', '-q', 'origin', `HEAD:refs/heads/${this.opts.branch}`]
     for (let attempt = 1; attempt <= MAX_PUSH_ATTEMPTS; attempt++) {
       const r = await this.git(args, true)
-      if (r.code === 0) return
+      if (r.code === 0) {
+        this.ahead = false
+        return
+      }
       if (!REJECTED.test(r.stderr) || OFFLINE.test(r.stderr) || SIGNED_OUT.test(r.stderr)) throw gitError(args, r)
       await this.must(['fetch', 'origin'], true)
       await this.rebase()
@@ -149,10 +174,14 @@ export class GitDrive implements RemoteDrive {
     throw new Error(`git push was rejected ${MAX_PUSH_ATTEMPTS} times; another device keeps pushing`)
   }
 
+  /** Known after this process's first commit or push; asked of git once otherwise. */
+  private ahead: boolean | undefined
+
   private async unpushed(): Promise<boolean> {
-    if (!(await this.hasRemoteBranch())) return true
-    const r = await this.must(['rev-list', '--count', `origin/${this.opts.branch}..HEAD`])
-    return Number(text(r.stdout).trim()) > 0
+    if (this.ahead !== undefined) return this.ahead
+    const r = await this.git(['rev-list', '--count', `origin/${this.opts.branch}..HEAD`])
+    this.ahead = r.code !== 0 || Number(text(r.stdout).trim()) > 0
+    return this.ahead
   }
 
   async upload(path: string, bytes: Uint8Array): Promise<void> {
@@ -189,20 +218,20 @@ export class GitDrive implements RemoteDrive {
     // A clean tree to rebase; the commit goes out with the next flush.
     await this.commitAll()
     await this.must(['fetch', 'origin'], true)
-    await this.rebase()
-    const head = text((await this.must(['rev-parse', 'HEAD'])).stdout).trim()
-    const blobs = await this.tree()
-    const known = cursor !== null && (await this.git(['cat-file', '-e', `${cursor}^{commit}`])).code === 0
-    if (!known) {
-      const items = [...blobs].map(([path, sha]): RemoteItem => ({ id: path, path, eTag: sha, deleted: false, isFile: true }))
+    const head = await this.rebase()
+    if (cursor === head) return { items: [], cursor: head }
+    // A cursor this clone does not have (another remote's, or a re-clone) lists everything.
+    const diff = cursor === null ? undefined : await this.git(['diff', '--name-status', '--no-renames', '-z', cursor, head])
+    if (!diff || diff.code !== 0) {
+      const items = [...(await this.tree())].map(([path, sha]): RemoteItem => ({ id: path, path, eTag: sha, deleted: false, isFile: true }))
       return { items, cursor: head }
     }
-    const diff = fields((await this.must(['diff', '--name-status', '--no-renames', '-z', cursor, head])).stdout)
+    const changed = fields(diff.stdout)
+    const blobs = changed.some((s, i) => i % 2 === 0 && s !== 'D') ? await this.tree() : new Map<string, string>()
     const items: RemoteItem[] = []
-    for (let i = 0; i + 1 < diff.length; i += 2) {
-      const status = diff[i]!
-      const path = diff[i + 1]!
-      const deleted = status === 'D'
+    for (let i = 0; i + 1 < changed.length; i += 2) {
+      const path = changed[i + 1]!
+      const deleted = changed[i] === 'D'
       items.push({ id: path, path, eTag: deleted ? '' : (blobs.get(path) ?? ''), deleted, isFile: true })
     }
     return { items, cursor: head }
