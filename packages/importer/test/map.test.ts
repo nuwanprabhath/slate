@@ -83,7 +83,7 @@ describe('mapOneNotePage', () => {
               { type: 'tableRow', content: [{ type: 'tableCell', content: [para(text('Ann'))] }, { type: 'tableCell', content: [para(text('Dev'))] }] },
             ],
           },
-          { type: 'image', attrs: { src, alt: 'diagram' } },
+          { type: 'image', attrs: { src, alt: 'diagram', width: 100, height: 50 } },
         ],
       },
     ])
@@ -126,5 +126,20 @@ describe('mapOneNotePage', () => {
     const page = mapOneNotePage(html)
     expect(page.boxes[0]).toMatchObject({ x: 40, y: 40, width: 200 })
     expect(page.lossy).toEqual(['External image', 'Ink drawing (imported as image)', 'Ink drawing (not imported)'])
+  })
+
+  it('keeps the displayed image size from max-width/max-height styles (one2html) or width/height', () => {
+    const html = `<html><head><title>T</title></head><body data-absolute-enabled="true">
+<div style="position:absolute;left:48px;top:40px;width:600px">
+<img src="data:image/png;base64,AA" style="max-height: 74px; max-width: 357px;" />
+<img src="data:image/png;base64,BB" style="width: 120px; height: 60px" />
+<img src="data:image/png;base64,CC" />
+</div></body></html>`
+    const images = mapOneNotePage(html).boxes[0]!.blocks.filter((b) => b.type === 'image').map((b) => b.attrs)
+    expect(images).toEqual([
+      { src: 'data:image/png;base64,AA', alt: '', width: 357, height: 74 },
+      { src: 'data:image/png;base64,BB', alt: '', width: 120, height: 60 },
+      { src: 'data:image/png;base64,CC', alt: '' },
+    ])
   })
 })

@@ -202,7 +202,28 @@ function imageBlock(el: Element, st: State): PMJSON[] {
   if (!src) return []
   const isGraphResource = el.hasAttribute('data-src-type') || /\/onenote\/resources\//.test(src) || src.startsWith('data:')
   if (!isGraphResource) st.lossy.push('External image')
-  return [{ type: 'image', attrs: { src, alt: el.getAttribute('alt') ?? '' } }]
+  return [{ type: 'image', attrs: { src, alt: el.getAttribute('alt') ?? '', ...displaySize(el) } }]
+}
+
+/**
+ * The size the image was shown at in OneNote: Graph puts it in width/height attributes, one2html
+ * in max-width/max-height styles. Without it a screenshot shows at full resolution and overlaps
+ * the boxes below it.
+ */
+function displaySize(el: Element): { width?: number; height?: number } {
+  const style = parseStyle(el.getAttribute('style') ?? '')
+  const pick = (attr: string, ...props: string[]): number | undefined => {
+    const fromAttr = Number(el.getAttribute(attr))
+    if (Number.isFinite(fromAttr) && fromAttr > 0) return Math.round(fromAttr)
+    for (const prop of props) {
+      const v = px(style[prop] ?? '')
+      if (v !== null && v > 0) return Math.round(v)
+    }
+    return undefined
+  }
+  const width = pick('width', 'width', 'max-width')
+  const height = pick('height', 'height', 'max-height')
+  return { ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) }
 }
 
 /** Ink, attachments and embeds: OneNote content Slate cannot show, kept as far as it can be. */
