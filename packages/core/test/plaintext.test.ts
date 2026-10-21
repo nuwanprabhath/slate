@@ -31,7 +31,7 @@ describe('toPlainText', () => {
   })
 
   it('replaces NBSP and strips zero-width characters in text', () => {
-    expect(toPlainText([p('a b​c﻿d⁠')])).toBe('a bcd')
+    expect(toPlainText([p('a\u00A0b\u200Bc\uFEFFd\u2060')])).toBe('a bcd')
   })
 
   it('turns hard breaks into LF and normalises CRLF', () => {

@@ -7,8 +7,8 @@ export interface PMJSON {
   marks?: Array<{ type: string; attrs?: Record<string, unknown> }>
 }
 
-const NBSP = / /g
-const ZERO_WIDTH = /[​-‍⁠﻿]/g
+const NBSP = /\u00A0/g
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g
 const INDENT = '  '
 
 function cleanText(s: string): string {
