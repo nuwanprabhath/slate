@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import type { TreeItem } from '@slate/core'
 import { activeEditor, EditorServicesContext, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
 import { currentSession } from './currentSession'
 import { Library } from './library'
 import { PageView } from './PageView'
-
-function firstPage(items: TreeItem[]): TreeItem | undefined {
-  for (const item of items) {
-    if (item.kind === 'page') return item
-    const found = firstPage(item.children)
-    if (found) return found
-  }
-  return undefined
-}
+import { loadSelection, saveSelection, type Selection } from './selection'
+import { NotebookPicker } from './sidebar/NotebookPicker'
+import { PageList } from './sidebar/PageList'
+import { SectionList } from './sidebar/SectionList'
+import { findItem, firstOfKind } from './treeUtils'
 
 export function useMenuCommands(setSettings: (s: Settings) => void): void {
   useEffect(
@@ -70,13 +65,52 @@ export function App() {
   if (!library) return <div className="app-loading">Loading…</div>
   return (
     <EditorServicesContext.Provider value={services}>
-      <Interim library={library} />
+      <Workspace library={library} />
     </EditorServicesContext.Provider>
   )
 }
 
-function Interim({ library }: { library: Library }) {
+function Workspace({ library }: { library: Library }) {
   useSyncExternalStore(library.subscribe, library.getVersion)
-  const page = firstPage(library.notebooks()[0].doc.items())
-  return <main className="app-main">{page?.pageId && <PageView key={page.pageId} pageId={page.pageId} />}</main>
+  const [selection, setSelection] = useState<Selection>(loadSelection)
+  const notebooks = library.notebooks()
+  const entry = notebooks.find((n) => n.id === selection.notebookId) ?? notebooks[0]
+  const items = entry.doc.items()
+  const sectionCandidate = findItem(items, selection.sectionId)
+  const section = sectionCandidate?.kind === 'section' ? sectionCandidate : firstOfKind(items, 'section')
+  const pages = section?.children.filter((c) => c.kind === 'page') ?? []
+  const page = pages.find((p) => p.id === selection.pageId) ?? pages[0]
+
+  useEffect(() => {
+    saveSelection({ notebookId: entry.id, sectionId: section?.id ?? null, pageId: page?.id ?? null })
+  }, [entry.id, section?.id, page?.id])
+
+  const removeDocs = (pageIds: string[]) => void library.removePageDocs(pageIds)
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <NotebookPicker library={library} current={entry} onSelect={(id) => setSelection({ notebookId: id, sectionId: null, pageId: null })} />
+        <div className="sidebar-cols">
+          <SectionList
+            nb={entry.doc}
+            items={items}
+            selectedSectionId={section?.id ?? null}
+            onSelect={(id) => setSelection({ notebookId: entry.id, sectionId: id, pageId: null })}
+            onDeleted={removeDocs}
+          />
+          <PageList
+            nb={entry.doc}
+            section={section}
+            selectedPageId={page?.id ?? null}
+            onSelect={(id) => setSelection({ notebookId: entry.id, sectionId: section?.id ?? null, pageId: id })}
+            onDeleted={removeDocs}
+          />
+        </div>
+      </aside>
+      <main className="app-main">
+        {page?.pageId ? <PageView key={page.pageId} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}
+      </main>
+    </div>
+  )
 }
