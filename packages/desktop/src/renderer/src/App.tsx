@@ -7,6 +7,7 @@ import { AiActivity } from './AiActivity'
 import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
 import { Splitter } from './Splitter'
 import { currentSession } from './currentSession'
+import { ImportDialog } from './import/ImportDialog'
 import { Library } from './library'
 import { PageView } from './PageView'
 import { loadSelection, saveSelection, type Selection } from './selection'
@@ -16,7 +17,7 @@ import { SectionList } from './sidebar/SectionList'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
-export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void): void {
+export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void, onShowImport: () => void): void {
   useEffect(
     () =>
       window.slate.onMenu((command) => {
@@ -44,9 +45,12 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
           case 'show-ai-activity':
             onShowAiActivity()
             break
+          case 'show-import':
+            onShowImport()
+            break
         }
       }),
-    [setSettings, onShowAiActivity],
+    [setSettings, onShowAiActivity, onShowImport],
   )
 }
 
@@ -71,18 +75,22 @@ export function App() {
   }, [])
   const [aiActivity, setAiActivity] = useState(false)
   const showAiActivity = useCallback(() => setAiActivity(true), [])
-  useMenuCommands(setSettings, showAiActivity)
+  const [importOpen, setImportOpen] = useState(false)
+  const showImport = useCallback(() => setImportOpen(true), [])
+  const closeImport = useCallback(() => setImportOpen(false), [])
+  useMenuCommands(setSettings, showAiActivity, showImport)
   const services = useServices(settings)
   if (!library) return <div className="app-loading">Loading…</div>
   return (
     <EditorServicesContext.Provider value={services}>
-      <Workspace library={library} />
+      <Workspace library={library} onShowImport={showImport} />
       {aiActivity && <AiActivity onClose={() => setAiActivity(false)} />}
+      {importOpen && <ImportDialog onClose={closeImport} />}
     </EditorServicesContext.Provider>
   )
 }
 
-function Workspace({ library }: { library: Library }) {
+function Workspace({ library, onShowImport }: { library: Library; onShowImport: () => void }) {
   useSyncExternalStore(library.subscribe, library.getVersion)
   const [selection, setSelection] = useState<Selection>(loadSelection)
   const notebooks = library.notebooks()
@@ -130,7 +138,12 @@ function Workspace({ library }: { library: Library }) {
 
   const tools = createTools(() => (
     <aside className="sidebar" data-testid="library-panel">
-      <NotebookPicker library={library} current={entry} onSelect={(id) => setSelection({ notebookId: id, sectionId: null, pageId: null })} />
+      <NotebookPicker
+        library={library}
+        current={entry}
+        onSelect={(id) => setSelection({ notebookId: id, sectionId: null, pageId: null })}
+        onImport={onShowImport}
+      />
       <div className="sidebar-cols">
         <div className="column" data-testid="sections-column" style={{ width: layout.sectionsWidth }}>
           <SectionList

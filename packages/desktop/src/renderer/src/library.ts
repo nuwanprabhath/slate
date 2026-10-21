@@ -56,11 +56,27 @@ export class Library {
     await Promise.all(pageIds.map((p) => this.api.docs.remove(pageDocId(p))))
   }
 
-  /** Agents cannot create notebooks, so updates for an unknown one are ignored. */
+  /**
+   * Updates for an unknown notebook mean the importer created it: load it whole. Batches that
+   * arrive while it loads are already in the database, so the load includes them.
+   */
   importExternal(notebookId: string, updates: Uint8Array[]): void {
     const entry = this.entries.find((e) => e.id === notebookId)
-    if (entry && updates.length > 0) entry.doc.doc.importBatch(updates)
+    if (entry) {
+      if (updates.length > 0) entry.doc.doc.importBatch(updates)
+      return
+    }
+    if (this.loading.has(notebookId)) return
+    this.loading.add(notebookId)
+    void this.api.docs.load(notebookDocId(notebookId)).then((parts) => {
+      this.loading.delete(notebookId)
+      if (parts.length === 0 || this.entries.some((e) => e.id === notebookId)) return
+      this.attach(notebookId, NotebookDoc.fromUpdates(parts))
+      this.bump()
+    })
   }
+
+  private loading = new Set<string>()
 
   getVersion =(): number => this.version
 

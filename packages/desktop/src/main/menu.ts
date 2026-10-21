@@ -13,7 +13,14 @@ export function buildMenu(store: DocStore): void {
   const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
-    { role: 'fileMenu' },
+    {
+      label: 'File',
+      submenu: [
+        { id: 'import-onenote', label: 'Import from OneNote…', click: () => send({ cmd: 'show-import' }) },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
     {
       label: 'Edit',
       submenu: [
