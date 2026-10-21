@@ -15,7 +15,7 @@ import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
 import { PageList } from './sidebar/PageList'
 import { SectionList } from './sidebar/SectionList'
-import { SyncStatus, syncStateText, useSyncState } from './sync/SyncStatus'
+import { providerName, SyncStatus, syncStateText, useSyncState } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
@@ -136,7 +136,7 @@ function WaitingForNotebooks({ library }: { library: Library }) {
   if (!syncOn) return <div className="app-loading">Loading…</div>
   return (
     <div className="empty" data-testid="waiting-for-sync" role="status">
-      <p>Waiting for your notebooks from OneDrive…</p>
+      <p>Waiting for your notebooks from {providerName(state)}…</p>
       <p data-testid="waiting-sync-state">{state ? syncStateText(state) : 'Starting sync…'}</p>
     </div>
   )

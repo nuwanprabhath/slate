@@ -18,6 +18,8 @@ export interface RemoteDrive {
   remove(path: string): Promise<void>
   /** All changes since `cursor` (null = from scratch), following paging; returns the next cursor. */
   delta(cursor: string | null): Promise<DeltaPage>
+  /** Publishes the writes so far, for drives that batch them (git: commit and push). */
+  flush?(): Promise<void>
 }
 
 /** The drive could not be reached; sync reports `offline` and tries again later. */

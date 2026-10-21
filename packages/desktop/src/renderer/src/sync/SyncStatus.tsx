@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyncState } from '../../../shared/api'
+import { SyncSettings } from './SyncSettings'
 import './sync.css'
 
 const LABELS: Record<SyncState['status'], string> = {
@@ -9,6 +10,17 @@ const LABELS: Record<SyncState['status'], string> = {
   error: 'Sync error',
   'signed-out': 'Signed out',
   disabled: 'Sync is off',
+}
+
+/** "OneDrive", "GitHub" or "your git repository": where this device syncs to. */
+export function providerName(state: Pick<SyncState, 'provider' | 'remote'> | null): string {
+  if (state?.provider === 'git') return /github\.com[:/]/.test(state.remote ?? '') ? 'GitHub' : 'your git repository'
+  return 'OneDrive'
+}
+
+function statusLabel(state: SyncState | null): string {
+  const status = state?.status ?? 'disabled'
+  return status === 'idle-synced' && state?.provider ? `Synced to ${providerName(state)}` : LABELS[status]
 }
 
 export function lastSyncedText(at: number | undefined, now = Date.now()): string {
@@ -21,7 +33,7 @@ export function lastSyncedText(at: number | undefined, now = Date.now()): string
 }
 
 export function syncStateText(state: SyncState): string {
-  return [LABELS[state.status], state.message, lastSyncedText(state.lastSyncedAt)].filter(Boolean).join(' · ')
+  return [statusLabel(state), state.message, lastSyncedText(state.lastSyncedAt)].filter(Boolean).join(' · ')
 }
 
 export function useSyncState(): SyncState | null {
@@ -59,6 +71,7 @@ function CloudIcon({ status }: { status: SyncState['status'] }) {
 export function SyncStatus() {
   const state = useSyncState()
   const [open, setOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [, tick] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -80,7 +93,7 @@ export function SyncStatus() {
   }, [open])
 
   const status = state?.status ?? 'disabled'
-  const label = LABELS[status]
+  const label = statusLabel(state)
   const last = lastSyncedText(state?.lastSyncedAt)
   return (
     <div className="sync-status-wrap" ref={ref}>
@@ -101,6 +114,7 @@ export function SyncStatus() {
           {state?.status === 'error' && state.message && <div className="sync-popover-detail">{state.message}</div>}
           <div className="sync-popover-detail">{last}</div>
           {state?.account && <div className="sync-popover-detail">{state.account}</div>}
+          {state?.remote && <div className="sync-popover-detail">{state.remote}</div>}
           <div className="sync-popover-actions">
             <button type="button" data-testid="sync-now" disabled={!state?.enabled} onClick={() => void window.slate.sync.now()}>
               Sync now
@@ -109,8 +123,20 @@ export function SyncStatus() {
               {state?.enabled ? 'Turn off sync' : 'Turn on sync'}
             </button>
           </div>
+          <button
+            type="button"
+            className="sync-popover-link"
+            data-testid="sync-settings-open"
+            onClick={() => {
+              setOpen(false)
+              setSettingsOpen(true)
+            }}
+          >
+            Sync settings…
+          </button>
         </div>
       )}
+      {settingsOpen && <SyncSettings onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }

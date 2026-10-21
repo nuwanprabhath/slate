@@ -6,16 +6,61 @@ export interface Settings {
   markdownShortcuts: boolean
   /** Application (client) id of the user's Azure app registration, for OneNote import. */
   msClientId: string | null
-  /** OneDrive sync. Off by default; while off, sync never touches the network. */
-  syncEnabled: boolean
+  /** Where notebooks sync to; null (the default) is off, and sync then never touches the network. */
+  syncProvider: SyncProvider | null
+  /** The repository for the git provider. */
+  git: GitSettings | null
   /** This install's id in the sync folder, created once. */
   deviceId: string | null
 }
 
-export const DEFAULT_SETTINGS: Settings = { markdownShortcuts: false, msClientId: null, syncEnabled: false, deviceId: null }
+export type SyncProvider = 'onedrive' | 'git'
+
+/**
+ * `system`: the machine's SSH keys or credential helper. `token`: a personal access token.
+ * `gh`: the GitHub CLI's token, read at each sync. `device`: signed in through GitHub's device flow.
+ */
+export type GitAuthMode = 'system' | 'token' | 'gh' | 'device'
+
+export interface GitSettings {
+  remoteUrl: string
+  branch: string
+  auth: GitAuthMode
+}
+
+export const DEFAULT_SETTINGS: Settings = { markdownShortcuts: false, msClientId: null, syncProvider: null, git: null, deviceId: null }
+
+/** What the sync settings overlay saves. A token is stored encrypted, never in the settings. */
+export interface SyncConfig {
+  provider: SyncProvider | null
+  git?: GitSettings
+  token?: string
+}
+
+export interface GitAuthInfo {
+  /** Sign in with GitHub is offered only when the build has an OAuth app (SLATE_GITHUB_CLIENT_ID). */
+  deviceFlow: boolean
+  hasToken: boolean
+  hasDeviceToken: boolean
+}
+
+export interface GitCheck {
+  ok: boolean
+  message: string
+  /** The new repository's URL, from createRepo. */
+  url?: string
+}
+
+export interface DeviceCode {
+  userCode: string
+  verificationUri: string
+}
 
 export interface SyncState extends SyncReport {
   enabled: boolean
+  provider: SyncProvider | null
+  /** The git repository URL, when syncing to git. */
+  remote?: string
   account?: string
   /** When the last sync that reached the drive finished. */
   lastSyncedAt?: number
@@ -74,7 +119,15 @@ export interface SlateApi {
   }
   sync: {
     status(): Promise<SyncState>
+    /** OneDrive on, or sync off. */
     setEnabled(on: boolean): Promise<void>
+    configure(config: SyncConfig): Promise<void>
+    testGit(git: GitSettings, token?: string): Promise<GitCheck>
+    gitAuthInfo(): Promise<GitAuthInfo>
+    createRepo(name: string, auth: GitAuthMode, token?: string): Promise<GitCheck>
+    /** Starts GitHub's device flow; `deviceSignInWait` resolves once the user approved it. */
+    deviceSignIn(): Promise<DeviceCode>
+    deviceSignInWait(): Promise<GitCheck>
     now(): Promise<SyncReport>
     conflicts(pageId?: string): Promise<ConflictRecord[]>
     resolve(id: string, choice: 'merged' | 'mine' | 'theirs'): Promise<void>

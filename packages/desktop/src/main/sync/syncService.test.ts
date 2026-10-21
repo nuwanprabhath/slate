@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PageDoc } from '@slate/core'
 import { parseRemotePath } from '@slate/sync'
 import { startFakeDrive, type FakeDrive } from '../../../../sync/test/fakeDrive'
 import { addTextBox, boxText } from '../../../../sync/test/memoryLocal'
-import type { SyncState } from '../../shared/api'
+import type { GitAuthMode, SyncState } from '../../shared/api'
 import { BlobStore } from '../blobs'
 import { createAuthService } from '../onenote/auth'
 import { writeSettings } from '../settings'
@@ -21,6 +22,12 @@ interface Device {
   service: SyncService
   states: SyncState[]
   notices: string[]
+}
+
+const secrets = {
+  isEncryptionAvailable: () => true,
+  encryptString: (s: string) => Buffer.from(`enc:${s}`),
+  decryptString: (b: Buffer) => b.toString().slice(4),
 }
 
 let dir: string
@@ -40,13 +47,15 @@ async function device(name: string, opts: { enabled?: boolean; signedIn?: boolea
     blobs,
     auth,
     graphUrl: drive.url,
+    gitDir: join(dir, `${name}-git`),
+    secrets,
     deviceName: name,
     intervalMs: 0,
     emitStatus: (s) => states.push(s),
     emitNotice: (m) => notices.push(m),
   })
   // setEnabled signs in when needed, so a signed-out device has the setting written directly.
-  if (opts.enabled !== false && opts.signedIn === false) writeSettings(store, { syncEnabled: true })
+  if (opts.enabled !== false && opts.signedIn === false) writeSettings(store, { syncProvider: 'onedrive' })
   else if (opts.enabled !== false) await service.setEnabled(true)
   const d = { store, blobs, service, states, notices }
   devices.push(d)
@@ -142,5 +151,58 @@ describe('SyncService', () => {
     await a.service.resolve('c1', 'theirs')
     expect(boxText(PageDoc.fromUpdates(a.store.load(PAGE)), boxId)).toBe('their text')
     expect(await a.service.conflicts(PAGE)).toEqual([])
+  })
+})
+
+describe('SyncService over git', { timeout: 30_000 }, () => {
+  let bare: string
+  const gitSettings = (auth: GitAuthMode = 'system') => ({ remoteUrl: `file://${bare}`, branch: 'main', auth })
+
+  beforeEach(() => {
+    bare = join(dir, 'remote.git')
+    execFileSync('git', ['init', '--bare', '--initial-branch=main', bare])
+  })
+
+  const gitLog = () => execFileSync('git', ['--git-dir', bare, 'log', '--format=%an|%s', 'main']).toString()
+
+  it('delivers a page from A to B through the repository', async () => {
+    const a = await device('A', { enabled: false })
+    const b = await device('B', { enabled: false })
+    await a.service.configure({ provider: 'git', git: gitSettings() })
+    await b.service.configure({ provider: 'git', git: gitSettings() })
+    const boxId = writePage(a.store, 'hello over git')
+    expect((await a.service.now()).status).toBe('idle-synced')
+    expect((await b.service.now()).status).toBe('idle-synced')
+    expect(boxText(PageDoc.fromUpdates(b.store.load(PAGE)), boxId)).toBe('hello over git')
+    expect(await a.service.status()).toMatchObject({ provider: 'git', enabled: true, remote: `file://${bare}` })
+    expect(gitLog()).toMatch(/Slate \(A\)\|slate: A \(\d+ files?\)/)
+    expect(gitLog()).toContain('Slate (B)')
+    expect(drive.files.size).toBe(0)
+  })
+
+  it('is signed out in token mode until a token is saved, and keeps the token out of settings', async () => {
+    const a = await device('A', { enabled: false })
+    await a.service.configure({ provider: 'git', git: gitSettings('token') })
+    expect((await a.service.now()).status).toBe('signed-out')
+    await a.service.configure({ provider: 'git', git: gitSettings('token'), token: 'ghp_secret' })
+    expect((await a.service.now()).status).toBe('idle-synced')
+    expect(JSON.stringify(a.store.getSetting('settings'))).not.toContain('ghp_secret')
+    expect(await a.service.gitAuthInfo()).toMatchObject({ hasToken: true, deviceFlow: false })
+    const configs = readdirSync(join(dir, 'A-git'), { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('config'))
+    for (const f of configs) expect(readFileSync(join(dir, 'A-git', f), 'utf8')).not.toMatch(/ghp_secret|extraheader/)
+  })
+
+  it('checks a connection before saving', async () => {
+    const a = await device('A', { enabled: false })
+    expect(await a.service.testGit(gitSettings())).toMatchObject({ ok: true })
+    expect((await a.service.testGit({ ...gitSettings(), remoteUrl: 'file:///does/not/exist' })).ok).toBe(false)
+  })
+
+  it('turns off through configure', async () => {
+    const a = await device('A', { enabled: false })
+    await a.service.configure({ provider: 'git', git: gitSettings() })
+    await a.service.configure({ provider: null })
+    expect((await a.service.now()).status).toBe('disabled')
+    expect(await a.service.status()).toMatchObject({ provider: null, enabled: false })
   })
 })

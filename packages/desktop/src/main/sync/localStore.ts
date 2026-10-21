@@ -33,3 +33,21 @@ export function docStoreLocal(store: DocStore, blobs: BlobStore, notify: (messag
     },
   }
 }
+
+/**
+ * The same device seen by another remote: what was pushed to, seen on or uploaded to one remote
+ * says nothing about the next, so switching remotes pushes everything there once.
+ */
+export function scopedLocal(local: LocalStore, prefix: string): LocalStore {
+  return {
+    ...local,
+    getMeta: (key) => local.getMeta(prefix + key),
+    setMeta: (key, value) => local.setMeta(prefix + key, value),
+    getBytesMeta: (key) => local.getBytesMeta(prefix + key),
+    setBytesMeta: (key, value) => local.setBytesMeta(prefix + key, value),
+    seen: (itemId, eTag) => local.seen(prefix + itemId, eTag),
+    markSeen: (itemId, eTag) => local.markSeen(prefix + itemId, eTag),
+    blobSynced: async (name) => (await local.getMeta(`${prefix}blob:${name}`)) === '1',
+    markBlobSynced: (name) => local.setMeta(`${prefix}blob:${name}`, '1'),
+  }
+}
