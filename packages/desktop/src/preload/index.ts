@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { ExternalBatch, MenuCommand, SlateApi } from '../shared/api'
+import type { ExternalBatch, MenuCommand, SlateApi, SyncState } from '../shared/api'
 import type { ImportProgress } from '@slate/importer'
 import { CH } from '../shared/ipc'
 
@@ -35,6 +35,23 @@ const api: SlateApi = {
       return () => ipcRenderer.removeListener(CH.onenoteProgress, listener)
     },
     setClientId: (id) => ipcRenderer.invoke(CH.onenoteSetClientId, id),
+  },
+  sync: {
+    status: () => ipcRenderer.invoke(CH.syncStatus),
+    setEnabled: (on) => ipcRenderer.invoke(CH.syncSetEnabled, on),
+    now: () => ipcRenderer.invoke(CH.syncNow),
+    conflicts: (pageId) => ipcRenderer.invoke(CH.syncConflicts, pageId),
+    resolve: (id, choice) => ipcRenderer.invoke(CH.syncResolve, id, choice),
+    onStatus(handler) {
+      const listener = (_e: IpcRendererEvent, state: SyncState) => handler(state)
+      ipcRenderer.on(CH.syncStatusEvent, listener)
+      return () => ipcRenderer.removeListener(CH.syncStatusEvent, listener)
+    },
+    onNotice(handler) {
+      const listener = (_e: IpcRendererEvent, message: string) => handler(message)
+      ipcRenderer.on(CH.syncNotice, listener)
+      return () => ipcRenderer.removeListener(CH.syncNotice, listener)
+    },
   },
   onMenu(handler) {
     const listener = (_e: IpcRendererEvent, command: MenuCommand) => handler(command)

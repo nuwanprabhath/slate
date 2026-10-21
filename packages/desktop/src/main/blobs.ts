@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const BLOB_SCHEME = 'slate-blob'
@@ -27,6 +27,28 @@ export class BlobStore {
       renameSync(`${file}.tmp`, file)
     }
     return `${BLOB_SCHEME}://blob/${name}`
+  }
+
+  /** Stored file names (`<sha256>.<ext>`). */
+  list(): string[] {
+    return readdirSync(this.dir).filter((n) => FILE_NAME.test(n))
+  }
+
+  has(name: string): boolean {
+    return FILE_NAME.test(name) && existsSync(join(this.dir, name))
+  }
+
+  read(name: string): Uint8Array {
+    if (!FILE_NAME.test(name)) throw new Error(`Bad blob name: ${name}`)
+    return new Uint8Array(readFileSync(join(this.dir, name)))
+  }
+
+  /** Stores bytes fetched under a known name, e.g. from another device. */
+  write(name: string, bytes: Uint8Array): void {
+    if (!FILE_NAME.test(name)) throw new Error(`Bad blob name: ${name}`)
+    const file = join(this.dir, name)
+    writeFileSync(`${file}.tmp`, bytes)
+    renameSync(`${file}.tmp`, file)
   }
 
   pathForUrl(url: string): string | null {

@@ -20,4 +20,11 @@ export const CH = {
   onenoteCancel: 'onenote:cancel',
   onenoteSetClientId: 'onenote:set-client-id',
   onenoteProgress: 'onenote:progress',
+  syncStatus: 'sync:status',
+  syncSetEnabled: 'sync:set-enabled',
+  syncNow: 'sync:now',
+  syncConflicts: 'sync:conflicts',
+  syncResolve: 'sync:resolve',
+  syncStatusEvent: 'sync:status-event',
+  syncNotice: 'sync:notice',
 } as const

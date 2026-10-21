@@ -25,6 +25,7 @@
     "@slate/editor": "*",
     "@slate/importer": "*",
     "@slate/mcp": "*",
+    "@slate/sync": "*",
     "@types/better-sqlite3": "^9.6.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

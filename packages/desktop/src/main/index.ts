@@ -1,16 +1,17 @@
 import { app, BrowserWindow, net, protocol, shell } from 'electron'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CH } from '../shared/ipc'
 import { BLOB_SCHEME, BlobStore } from './blobs'
 import { createExternalWatch } from './externalWatch'
-import { registerIpc, registerOneNoteIpc } from './ipc'
+import { registerIpc, registerOneNoteIpc, registerSyncIpc } from './ipc'
 import { buildMenu } from './menu'
 import { createAuthService, type AuthService } from './onenote/auth'
 import { ImportService } from './onenote/importService'
 import { readSettings, writeSettings } from './settings'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { DocStore } from './store'
+import { SyncService } from './sync/syncService'
 
 app.setName(APP_NAME)
 const userData = defaultUserDataDir()
@@ -52,11 +53,15 @@ void app.whenReady().then(() => {
   const dataDir = app.getPath('userData')
   const store = new DocStore(join(dataDir, 'slate.db'))
   const blobs = new BlobStore(join(dataDir, 'blobs'))
-  protocol.handle(BLOB_SCHEME, (request) => {
+  let sync: SyncService | undefined
+  protocol.handle(BLOB_SCHEME, async (request) => {
     const file = blobs.pathForUrl(request.url)
-    return file ? net.fetch(pathToFileURL(file).toString()) : new Response('Not found', { status: 404 })
+    if (!file) return new Response('Not found', { status: 404 })
+    // An image added on another device arrives with its page; its bytes are fetched on first view.
+    if ((await sync?.ensureBlob(basename(file))) === false) return new Response('Not found', { status: 404 })
+    return net.fetch(pathToFileURL(file).toString())
   })
-  registerIpc(store, blobs)
+  registerIpc(store, blobs, () => sync?.edited())
   const makeAuth = () =>
     createAuthService({
       clientId: process.env.SLATE_MS_CLIENT_ID ?? readSettings(store).msClientId ?? null,
@@ -83,6 +88,19 @@ void app.whenReady().then(() => {
     writeSettings(store, { msClientId: id || null })
     auth = makeAuth()
   })
+  const toWindows = (channel: string, payload: unknown) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(channel, payload))
+  const intervalMs = Number(process.env.SLATE_SYNC_INTERVAL_MS)
+  sync = new SyncService({
+    dbFile: join(dataDir, 'slate.db'),
+    blobs,
+    auth: currentAuth,
+    graphUrl: process.env.SLATE_GRAPH_URL ?? 'https://graph.microsoft.com/v1.0',
+    ...(intervalMs > 0 ? { intervalMs } : {}),
+    emitStatus: (state) => toWindows(CH.syncStatusEvent, state),
+    emitNotice: (message) => toWindows(CH.syncNotice, message),
+  })
+  registerSyncIpc(sync)
+  sync.start()
   buildMenu(store)
   createWindow()
   app.on('activate', () => {
@@ -93,6 +111,7 @@ void app.whenReady().then(() => {
   )
   app.on('will-quit', () => {
     watch.stop()
+    sync?.close()
     importer.close()
     store.close()
   })
