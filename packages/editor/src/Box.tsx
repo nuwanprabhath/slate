@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { BoxState } from '@slate/core'
 import { BoxEditor } from './BoxEditor'
 import type { PageSession } from './PageSession'
@@ -11,12 +11,13 @@ interface Props {
   session: PageSession
   scrollRoot: HTMLElement
   autoFocus: boolean
-  onFocus: () => void
+  onFocus: (id: string) => void
 }
 
 type Gesture = { x: number; y: number; width: number }
 
-export function Box({ box, session, scrollRoot, autoFocus, onFocus }: Props) {
+function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox }: Props) {
+  const onFocus = () => onFocusBox(box.id)
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
   const [gesture, setGesture] = useState<Gesture | null>(null)
@@ -92,3 +93,20 @@ export function Box({ box, session, scrollRoot, autoFocus, onFocus }: Props) {
     </div>
   )
 }
+
+// Every doc change hands the canvas fresh BoxState objects, so compare by value: typing in one box
+// must not re-render the other 199.
+export const Box = memo(
+  BoxImpl,
+  (a, b) =>
+    a.session === b.session &&
+    a.scrollRoot === b.scrollRoot &&
+    a.autoFocus === b.autoFocus &&
+    a.onFocus === b.onFocus &&
+    a.box.id === b.box.id &&
+    a.box.x === b.box.x &&
+    a.box.y === b.box.y &&
+    a.box.width === b.box.width &&
+    a.box.private === b.box.private &&
+    a.box.contentId === b.box.contentId,
+)

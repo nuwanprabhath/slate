@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { NotebookDoc, TreeItem } from '@slate/core'
 import { Canvas, PageSession } from '@slate/editor'
 import { currentSession } from './currentSession'
+
+/** Read by the e2e test hooks; cheap enough to keep in production builds. */
+export const pageOpenTiming = { startedAt: 0, lastMs: null as number | null }
 
 export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
   const pageId = item.pageId!
@@ -15,6 +18,7 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
   }, [item.title])
 
   useEffect(() => {
+    pageOpenTiming.startedAt = performance.now()
     let opened: PageSession | null = null
     let cancelled = false
     void PageSession.open(pageId, window.slate.docs).then((s) => {
@@ -31,6 +35,11 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
       }
     }
   }, [pageId])
+
+  // Time from page selection to the canvas being committed to the DOM (static boxes rendered).
+  useLayoutEffect(() => {
+    if (session) pageOpenTiming.lastMs = performance.now() - pageOpenTiming.startedAt
+  }, [session])
 
   return (
     <div

@@ -47,7 +47,7 @@ export function Canvas({ session }: { session: PageSession }) {
       <div className="slate-canvas" data-testid="canvas" style={{ minHeight: bottom + 400, minWidth: right + 200 }} onMouseDown={onMouseDown}>
         {scrollRoot &&
           boxes.map((b) => (
-            <Box key={b.id} box={b} session={session} scrollRoot={scrollRoot} autoFocus={b.id === focusId} onFocus={() => setFocusId(b.id)} />
+            <Box key={b.id} box={b} session={session} scrollRoot={scrollRoot} autoFocus={b.id === focusId} onFocus={setFocusId} />
           ))}
       </div>
     </div>
