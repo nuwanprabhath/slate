@@ -1,0 +1,12 @@
+{
+  "name": "@slate/importer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@slate/core": "*",
+    "linkedom": "^0.18.14",
+    "loro-crdt": "^1.16.4"
+  }
+}
