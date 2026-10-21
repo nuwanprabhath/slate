@@ -46,7 +46,7 @@ run('typecheck', 'npx', ['--no', '--', 'tsc', '-p', 'tsconfig.json'])
 
 // Every unit test, not only the changed ones: core and editor are fast, and a change in core can
 // break the editor's tests.
-if (changed.some((f) => /^packages\/(core|editor|mcp)\//.test(f))) run('unit tests (npm test)', 'npm', ['test', '--silent'])
+if (changed.some((f) => /^packages\/(core|editor|mcp|importer)\//.test(f))) run('unit tests (npm test)', 'npm', ['test', '--silent'])
 if (changed.some((f) => /^packages\/desktop\/src\/main\//.test(f))) run('main-process tests (npm run test:main)', 'npm', ['run', 'test:main', '--silent'])
 
 const isTest = (f) => /\.(test|spec)\.tsx?$/.test(f)
