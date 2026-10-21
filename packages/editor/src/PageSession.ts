@@ -63,7 +63,7 @@ export class PageSession {
 
   createBoxWithContent(x: number, y: number, blocks: PMJSON[], width = DEFAULT_BOX_WIDTH): string {
     const id = this.page.addBox({ x, y, width })
-    writeContent(this.page.contentMap(id)!, blocks)
+    writeContent(this.page.contentMap(id)!, blocks, this.doc)
     this.doc.commit()
     return id
   }
