@@ -93,6 +93,18 @@ function Workspace({ library }: { library: Library }) {
     saveSelection({ notebookId: entry.id, sectionId: section?.id ?? null, pageId: page?.id ?? null })
   }, [entry.id, section?.id, page?.id])
 
+  useEffect(
+    () =>
+      window.slate.onExternalUpdates((batches) => {
+        for (const { docId, updates } of batches) {
+          if (docId.startsWith('notebook:')) library.importExternal(docId.slice('notebook:'.length), updates)
+          const session = currentSession.get()
+          if (session && docId === `page:${session.pageId}`) session.importExternal(updates)
+        }
+      }),
+    [library],
+  )
+
   const removeDocs = (pageIds: string[]) => void library.removePageDocs(pageIds)
 
   return (

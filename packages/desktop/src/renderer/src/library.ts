@@ -56,7 +56,13 @@ export class Library {
     await Promise.all(pageIds.map((p) => this.api.docs.remove(pageDocId(p))))
   }
 
-  getVersion = (): number => this.version
+  /** Agents cannot create notebooks, so updates for an unknown one are ignored. */
+  importExternal(notebookId: string, updates: Uint8Array[]): void {
+    const entry = this.entries.find((e) => e.id === notebookId)
+    if (entry && updates.length > 0) entry.doc.doc.importBatch(updates)
+  }
+
+  getVersion =(): number => this.version
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)

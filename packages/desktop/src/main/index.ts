@@ -1,7 +1,9 @@
 import { app, BrowserWindow, net, protocol } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { CH } from '../shared/ipc'
 import { BLOB_SCHEME, BlobStore } from './blobs'
+import { createExternalWatch } from './externalWatch'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
@@ -57,7 +59,13 @@ void app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
-  app.on('will-quit', () => store.close())
+  const watch = createExternalWatch(store, (batches) =>
+    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.externalUpdates, batches)),
+  )
+  app.on('will-quit', () => {
+    watch.stop()
+    store.close()
+  })
 })
 
 app.on('window-all-closed', () => {

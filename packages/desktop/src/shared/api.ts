@@ -39,4 +39,11 @@ export interface SlateApi {
   audit: { list(limit?: number): Promise<AuditEntryRow[]> }
   clipboardText(): Promise<string>
   onMenu(handler: (command: MenuCommand) => void): () => void
+  /** Updates another process (an agent via slate-mcp) wrote to the database. */
+  onExternalUpdates(handler: (batches: ExternalBatch[]) => void): () => void
+}
+
+export interface ExternalBatch {
+  docId: string
+  updates: Uint8Array[]
 }

@@ -10,4 +10,5 @@ export const CH = {
   clipboardText: 'clipboard:text',
   auditList: 'audit:list',
   menu: 'menu:command',
+  externalUpdates: 'docs:external',
 } as const
