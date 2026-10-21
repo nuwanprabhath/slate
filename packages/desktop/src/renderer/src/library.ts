@@ -1,6 +1,13 @@
 import { NotebookDoc, newId } from '@slate/core'
 import { pageDocId } from '@slate/editor'
-import type { SlateApi } from '../../shared/api'
+import type { SlateApi, SyncState } from '../../shared/api'
+
+/**
+ * Whether a waiting device has heard all it will from sync: a sync reached the drive this session,
+ * or sync can no longer run (turned off, signed out).
+ */
+export const syncSettled = (s: SyncState): boolean =>
+  (s.status === 'idle-synced' && s.lastSyncedAt !== undefined) || s.status === 'disabled' || s.status === 'signed-out'
 
 export const notebookDocId = (id: string): string => `notebook:${id}`
 
@@ -18,13 +25,38 @@ export class Library {
 
   private constructor(private readonly api: SlateApi) {}
 
+  /** Loads the stored notebooks. It may come back empty: see `settle` for the default notebook. */
   static async load(api: SlateApi): Promise<Library> {
     const library = new Library(api)
-    for (const docId of await api.docs.list('notebook:')) {
-      library.attach(docId.slice('notebook:'.length), NotebookDoc.fromUpdates(await api.docs.load(docId)))
-    }
-    if (library.entries.length === 0) library.createNotebook('My Notebook')
+    await library.loadUnknown()
     return library
+  }
+
+  isEmpty(): boolean {
+    return this.entries.length === 0
+  }
+
+  /**
+   * Called once nothing more is coming (sync off at start-up, or the first sync done): picks up
+   * notebooks that landed in the store meanwhile, and only then creates the default, so a newly
+   * synced device does not add an empty "My Notebook" to every device.
+   */
+  async settle(): Promise<void> {
+    await this.loadUnknown()
+    if (this.entries.length === 0) this.createNotebook('My Notebook')
+  }
+
+  private async loadUnknown(): Promise<void> {
+    let added = false
+    for (const docId of await this.api.docs.list('notebook:')) {
+      const id = docId.slice('notebook:'.length)
+      if (this.entries.some((e) => e.id === id)) continue
+      const parts = await this.api.docs.load(docId)
+      if (parts.length === 0 || this.entries.some((e) => e.id === id)) continue
+      this.attach(id, NotebookDoc.fromUpdates(parts))
+      added = true
+    }
+    if (added) this.bump()
   }
 
   notebooks(): NotebookEntry[] {

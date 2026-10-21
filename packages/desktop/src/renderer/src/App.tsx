@@ -8,13 +8,13 @@ import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
 import { Splitter } from './Splitter'
 import { currentSession } from './currentSession'
 import { ImportDialog } from './import/ImportDialog'
-import { Library } from './library'
+import { Library, syncSettled } from './library'
 import { PageView } from './PageView'
 import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
 import { PageList } from './sidebar/PageList'
 import { SectionList } from './sidebar/SectionList'
-import { SyncStatus } from './sync/SyncStatus'
+import { SyncStatus, syncStateText, useSyncState } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
@@ -67,6 +67,9 @@ export function useServices(settings: Settings): EditorServices {
   )
 }
 
+const noSubscribe = () => () => {}
+const noVersion = () => 0
+
 export function App() {
   const [library, setLibrary] = useState<Library | null>(null)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
@@ -81,7 +84,10 @@ export function App() {
   const closeImport = useCallback(() => setImportOpen(false), [])
   useMenuCommands(setSettings, showAiActivity, showImport)
   const services = useServices(settings)
+  // Re-renders when the first notebook arrives, to swap the waiting state for the workspace.
+  useSyncExternalStore(library?.subscribe ?? noSubscribe, library?.getVersion ?? noVersion)
   if (!library) return <div className="app-loading">Loading…</div>
+  if (library.isEmpty()) return <WaitingForNotebooks library={library} />
   return (
     <EditorServicesContext.Provider value={services}>
       <Workspace library={library} onShowImport={showImport} />
@@ -89,6 +95,38 @@ export function App() {
       {importOpen && <ImportDialog onClose={closeImport} />}
       <Notices />
     </EditorServicesContext.Provider>
+  )
+}
+
+/**
+ * A device with no notebooks yet. With sync off at start-up it gets the default notebook at once;
+ * with sync on it waits, so notebooks from other devices arrive instead of a new empty one.
+ */
+function WaitingForNotebooks({ library }: { library: Library }) {
+  const state = useSyncState()
+  const [syncOn, setSyncOn] = useState<boolean | null>(null)
+  useEffect(() => {
+    void window.slate.sync.status().then((s) => {
+      setSyncOn(s.enabled)
+      if (!s.enabled) void library.settle()
+    })
+  }, [library])
+  useEffect(
+    () =>
+      window.slate.onExternalUpdates((batches) => {
+        for (const { docId, updates } of batches) if (docId.startsWith('notebook:')) library.importExternal(docId.slice('notebook:'.length), updates)
+      }),
+    [library],
+  )
+  useEffect(() => {
+    if (syncOn && state && syncSettled(state)) void library.settle()
+  }, [library, syncOn, state])
+  if (!syncOn) return <div className="app-loading">Loading…</div>
+  return (
+    <div className="empty" data-testid="waiting-for-sync" role="status">
+      <p>Waiting for your notebooks from OneDrive…</p>
+      <p data-testid="waiting-sync-state">{state ? syncStateText(state) : 'Starting sync…'}</p>
+    </div>
   )
 }
 
