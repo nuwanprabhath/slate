@@ -2,31 +2,33 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    env:
-      # Signing is optional: without these secrets the build is unsigned.
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      SLATE_UPDATE_URL: ${{ vars.SLATE_UPDATE_URL }}
+  test-linux:
+    name: Typecheck, tests and e2e (Ubuntu)
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
+      - name: Install Electron's system libraries and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libasound2t64 libxss1 libxshmfence1
+      # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox uses.
+      - name: Allow Electron's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm ci
       - name: Install Rust nightly (for the one2html converter)
         run: rustup toolchain install nightly --profile minimal
@@ -34,20 +36,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:main
-      - name: E2E (Linux, virtual display)
-        if: runner.os == 'Linux'
+      - name: E2E (virtual display)
         run: xvfb-run --auto-servernum npm run e2e
-      - name: E2E (macOS)
-        if: runner.os == 'macOS'
-        run: npm run e2e
-      - run: npm run dist -- --publish never
-      - uses: actions/upload-artifact@v4
+
+  test-mac:
+    name: Unit tests (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          name: slate-${{ matrix.os }}
-          if-no-files-found: error
-          path: |
-            packages/desktop/release/*.dmg
-            packages/desktop/release/*.zip
-            packages/desktop/release/*.exe
-            packages/desktop/release/*.AppImage
-            packages/desktop/release/*.deb
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test

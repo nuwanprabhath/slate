@@ -34,6 +34,15 @@ build plan: `docs/superpowers/plans/2026-10-21-phase-1-local-editor.md`.
 - Delete or weaken a test to get green, or leave `.only` in a test.
 - Let the renderer touch the disk or network directly: everything goes through `window.slate`.
 
+## Releasing
+
+1. Bump `version` in the root and `packages/desktop` `package.json` (they must match), and move
+   `CHANGELOG.md`'s Unreleased entries under the new version. Commit as `chore(release): vX.Y.Z`.
+2. The maintainer tags `vX.Y.Z` and pushes the tag. `.github/workflows/release.yml` checks the tag
+   against both versions, runs the tests, builds macOS arm64 and Linux x64 and publishes the
+   GitHub release with `latest-mac.yml` and `latest-linux.yml`, which the in-app updater reads
+   (`packages/desktop/src/main/update/`). Never tag or push yourself.
+
 ## Definition of done
 
 Checked by `.claude/hooks/definition-of-done.mjs` (Stop hook) on the whole branch since

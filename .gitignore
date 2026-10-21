@@ -8,6 +8,5 @@ playwright-report/
 .worktrees/
 .agent-reports/
 release/
-.generated/
 .tools/
 packages/desktop/resources/bin/

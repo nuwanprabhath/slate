@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { ExternalBatch, MenuCommand, SlateApi, SyncState } from '../shared/api'
+import type { ExternalBatch, MenuCommand, SlateApi, SyncState, UpdateState } from '../shared/api'
 import type { ImportProgress } from '@slate/importer'
 import { CH } from '../shared/ipc'
 
@@ -60,6 +60,23 @@ const api: SlateApi = {
       const listener = (_e: IpcRendererEvent, message: string) => handler(message)
       ipcRenderer.on(CH.syncNotice, listener)
       return () => ipcRenderer.removeListener(CH.syncNotice, listener)
+    },
+  },
+  update: {
+    state: () => ipcRenderer.invoke(CH.updateState),
+    check: () => ipcRenderer.invoke(CH.updateCheck),
+    download: () => ipcRenderer.invoke(CH.updateDownload),
+    install: () => ipcRenderer.invoke(CH.updateInstall),
+    openInstaller: () => ipcRenderer.invoke(CH.updateOpenInstaller),
+    showInFolder: () => ipcRenderer.invoke(CH.updateShowInFolder),
+    copyCommand: () => ipcRenderer.invoke(CH.updateCopyCommand),
+    copyReleaseUrl: () => ipcRenderer.invoke(CH.updateCopyReleaseUrl),
+    skip: () => ipcRenderer.invoke(CH.updateSkip),
+    dismiss: () => ipcRenderer.invoke(CH.updateDismiss),
+    onState(handler) {
+      const listener = (_e: IpcRendererEvent, state: UpdateState) => handler(state)
+      ipcRenderer.on(CH.updateStateEvent, listener)
+      return () => ipcRenderer.removeListener(CH.updateStateEvent, listener)
     },
   },
   onMenu(handler) {

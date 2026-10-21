@@ -66,6 +66,28 @@ export interface SyncState extends SyncReport {
   lastSyncedAt?: number
 }
 
+/**
+ * How this installation takes an update. `auto`: electron-updater installs it (AppImage).
+ * `dmg`: an unsigned mac build downloads the dmg and opens it. `deb`: downloads the .deb and offers
+ * the apt command. `manual`: only the release page (dev runs, other platforms).
+ */
+export type InstallKind = 'auto' | 'dmg' | 'deb' | 'manual'
+
+export interface UpdateState {
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+  kind: InstallKind
+  version?: string
+  releaseUrl?: string
+  /** 0–100 while downloading. */
+  progress?: number
+  /** The downloaded installer. */
+  file?: string
+  /** The shell command that installs `file`, for dmg and deb. */
+  command?: string
+  /** Whether the banner shows: an update is available or downloaded, and not skipped or dismissed. */
+  visible: boolean
+}
+
 export interface AuditEntryRow {
   id: number
   ts: number
@@ -134,6 +156,19 @@ export interface SlateApi {
     resolve(id: string, choice: 'merged' | 'mine' | 'theirs'): Promise<void>
     onStatus(handler: (state: SyncState) => void): () => void
     onNotice(handler: (message: string) => void): () => void
+  }
+  update: {
+    state(): Promise<UpdateState>
+    check(): Promise<void>
+    download(): Promise<void>
+    install(): Promise<void>
+    openInstaller(): Promise<void>
+    showInFolder(): Promise<void>
+    copyCommand(): Promise<void>
+    copyReleaseUrl(): Promise<void>
+    skip(): Promise<void>
+    dismiss(): Promise<void>
+    onState(handler: (state: UpdateState) => void): () => void
   }
   onMenu(handler: (command: MenuCommand) => void): () => void
   /** Updates another process (an agent via slate-mcp) wrote to the database. */

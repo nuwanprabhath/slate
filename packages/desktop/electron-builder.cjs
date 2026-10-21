@@ -1,16 +1,6 @@
-// electron-builder configuration. A .cjs (not .yml) so auto-update can be switched on by an
-// environment variable at build time: with SLATE_UPDATE_URL set, the build publishes a generic
-// feed and ships resources/update.json (read by src/main/updates.ts); without it neither exists.
-const { mkdirSync, rmSync, writeFileSync } = require('node:fs')
-const { join } = require('node:path')
-
-const updateUrl = (process.env.SLATE_UPDATE_URL ?? '').trim()
-const generated = join(__dirname, '.generated')
-rmSync(generated, { recursive: true, force: true })
-if (updateUrl) {
-  mkdirSync(generated, { recursive: true })
-  writeFileSync(join(generated, 'update.json'), JSON.stringify({ url: updateUrl }))
-}
+// electron-builder configuration. Every build runs with --publish never: the release workflow
+// uploads the installers and latest-*.yml, and `publish` here only tells the app where its
+// update feed is (it becomes resources/app-update.yml).
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
@@ -21,22 +11,50 @@ module.exports = {
   electronVersion: '45.0.0',
   directories: { output: 'release', buildResources: 'build' },
   files: ['out/**', 'resources/**', 'package.json'],
+  // better-sqlite3's .node is loaded from app.asar.unpacked, which onlyLoadAppFromAsar allows: that fuse only governs where the app's entry point comes from.
   asarUnpack: ['**/*.node'],
-  extraResources: [{ from: 'launchers', to: 'bin' }, { from: 'resources/bin', to: 'converter' }, ...(updateUrl ? [{ from: '.generated/update.json', to: 'update.json' }] : [])],
-  ...(updateUrl ? { publish: { provider: 'generic', url: updateUrl } } : {}),
+  // Both sit beside app.asar, outside it, so the asar fuses do not touch them.
+  extraResources: [{ from: 'launchers', to: 'bin' }, { from: 'resources/bin', to: 'converter' }],
+  publish: { provider: 'github', owner: 'nuwanprabhath', repo: 'slate' },
+  electronFuses: {
+    // The slate-mcp launcher runs the app binary as Node (ELECTRON_RUN_AS_NODE), so this one stays on.
+    runAsNode: true,
+    enableCookieEncryption: true,
+    enableNodeOptionsEnvironmentVariable: false,
+    // Playwright attaches to Electron through --inspect; without it e2e-packaged cannot launch the build.
+    enableNodeCliInspectArguments: true,
+    enableEmbeddedAsarIntegrityValidation: true,
+    onlyLoadAppFromAsar: true,
+    // Flipping fuses invalidates the ad-hoc signature of an unsigned mac build; without a fresh one Apple Silicon refuses to launch it.
+    resetAdHocDarwinSignature: true,
+  },
   mac: {
     category: 'public.app-category.productivity',
-    target: [
-      { target: 'dmg', arch: ['arm64', 'x64'] },
-      { target: 'zip', arch: ['arm64', 'x64'] },
-    ],
+    // Arch comes from the script: dist:mac:arm64 (what CI releases) or dist:mac:x64.
+    target: ['dmg', 'zip'],
     icon: 'build/icon.icns',
-    hardenedRuntime: true,
+    // Unsigned: no identity, so electron-builder signs ad hoc and skips notarisation.
+    identity: null,
+    hardenedRuntime: false,
     gatekeeperAssess: false,
   },
   win: { target: 'nsis', icon: 'build/icon.ico' },
   nsis: { oneClick: false, allowToChangeInstallationDirectory: true },
-  linux: { target: ['AppImage', 'deb'], icon: 'build/icons', category: 'Office', maintainer: 'Nuwan Munasinghe' },
+  linux: {
+    target: [
+      { target: 'deb', arch: ['x64'] },
+      { target: 'AppImage', arch: ['x64'] },
+    ],
+    icon: 'build/icons',
+    category: 'Office',
+    maintainer: 'Nuwan Munasinghe <nuwanprabhath@gmail.com>',
+    executableName: 'slate',
+  },
+  deb: {
+    afterInstall: 'build/linux-after-install.sh',
+    // pickInstaller looks for amd64 in the name; the release workflow adds this file to latest-linux.yml.
+    artifactName: 'Slate-${version}-linux-amd64.${ext}',
+  },
   artifactName: 'Slate-${version}-${os}-${arch}.${ext}',
   npmRebuild: true,
 }
