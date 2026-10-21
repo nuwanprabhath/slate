@@ -40,6 +40,12 @@ const api: SlateApi = {
   sync: {
     status: () => ipcRenderer.invoke(CH.syncStatus),
     setEnabled: (on) => ipcRenderer.invoke(CH.syncSetEnabled, on),
+    configure: (config) => ipcRenderer.invoke(CH.syncConfigure, config),
+    testGit: (git, token) => ipcRenderer.invoke(CH.syncTestGit, git, token),
+    gitAuthInfo: () => ipcRenderer.invoke(CH.syncGitAuthInfo),
+    createRepo: (name, auth, token) => ipcRenderer.invoke(CH.syncCreateRepo, name, auth, token),
+    deviceSignIn: () => ipcRenderer.invoke(CH.syncDeviceSignIn),
+    deviceSignInWait: () => ipcRenderer.invoke(CH.syncDeviceSignInWait),
     now: () => ipcRenderer.invoke(CH.syncNow),
     conflicts: (pageId) => ipcRenderer.invoke(CH.syncConflicts, pageId),
     resolve: (id, choice) => ipcRenderer.invoke(CH.syncResolve, id, choice),

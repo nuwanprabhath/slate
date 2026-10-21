@@ -1,6 +1,6 @@
 import { clipboard, ClipboardItem, ipcMain, nativeImage } from 'electron'
 import { CH } from '../shared/ipc'
-import type { Settings } from '../shared/api'
+import type { GitAuthMode, GitSettings, Settings, SyncConfig } from '../shared/api'
 import type { BlobStore } from './blobs'
 import type { AuthService } from './onenote/auth'
 import type { ImportService } from './onenote/importService'
@@ -34,6 +34,12 @@ export function registerIpc(store: DocStore, blobs: BlobStore, onAppend: () => v
 export function registerSyncIpc(sync: SyncService): void {
   ipcMain.handle(CH.syncStatus, () => sync.status())
   ipcMain.handle(CH.syncSetEnabled, (_e, on: boolean) => sync.setEnabled(on))
+  ipcMain.handle(CH.syncConfigure, (_e, config: SyncConfig) => sync.configure(config))
+  ipcMain.handle(CH.syncTestGit, (_e, git: GitSettings, token?: string) => sync.testGit(git, token))
+  ipcMain.handle(CH.syncGitAuthInfo, () => sync.gitAuthInfo())
+  ipcMain.handle(CH.syncCreateRepo, (_e, name: string, auth: GitAuthMode, token?: string) => sync.createRepo(name, auth, token))
+  ipcMain.handle(CH.syncDeviceSignIn, () => sync.deviceSignIn())
+  ipcMain.handle(CH.syncDeviceSignInWait, () => sync.deviceSignInWait())
   ipcMain.handle(CH.syncNow, () => sync.now())
   ipcMain.handle(CH.syncConflicts, (_e, pageId?: string) => sync.conflicts(pageId))
   ipcMain.handle(CH.syncResolve, (_e, id: string, choice: 'merged' | 'mine' | 'theirs') => sync.resolve(id, choice))

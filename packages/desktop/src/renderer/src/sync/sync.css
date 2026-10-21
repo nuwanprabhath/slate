@@ -12,6 +12,21 @@
 .sync-popover-actions button, .conflict-actions button { padding: 4px 8px; background: var(--hover); color: var(--text); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font: inherit; }
 .sync-popover-actions button:disabled { opacity: 0.5; cursor: default; }
 
+.sync-popover-link { display: block; margin-top: 8px; padding: 0; background: none; border: none; color: var(--muted); cursor: pointer; font: inherit; text-decoration: underline; }
+.sync-settings { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; }
+.sync-settings h2 { margin: 0; font-size: 15px; }
+.sync-settings fieldset { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.sync-settings legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
+.sync-settings label { display: flex; align-items: center; gap: 6px; }
+.sync-settings .sync-field { flex-direction: column; align-items: stretch; gap: 4px; color: var(--muted); font-size: 12px; }
+.sync-settings input:not([type="radio"]) { padding: 5px 7px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+.sync-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sync-check { padding: 6px 8px; border-radius: 5px; background: var(--hover); overflow-wrap: anywhere; }
+.sync-check.failed { color: var(--danger); }
+.sync-settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sync-settings button { padding: 4px 10px; background: var(--hover); color: var(--text); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font: inherit; }
+.sync-settings button:disabled { opacity: 0.5; cursor: default; }
+
 .overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); }
 .conflict-resolver { width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; color: var(--text); }
 .conflict-resolver h2 { margin: 0; font-size: 15px; }

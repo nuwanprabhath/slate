@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, net, protocol, safeStorage, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -102,6 +102,9 @@ void app.whenReady().then(() => {
     blobs,
     auth: currentAuth,
     graphUrl: process.env.SLATE_GRAPH_URL ?? 'https://graph.microsoft.com/v1.0',
+    gitDir: join(dataDir, 'git-sync'),
+    secrets: safeStorage,
+    ...(process.env.SLATE_GITHUB_CLIENT_ID ? { githubClientId: process.env.SLATE_GITHUB_CLIENT_ID } : {}),
     ...(intervalMs > 0 ? { intervalMs } : {}),
     emitStatus: (state) => toWindows(CH.syncStatusEvent, state),
     emitNotice: (message) => toWindows(CH.syncNotice, message),
