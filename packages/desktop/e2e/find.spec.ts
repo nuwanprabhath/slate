@@ -1,8 +1,8 @@
 import type { Page } from '@playwright/test'
-import { expect, MOD, test } from './fixtures'
+import { createBoxAt, expect, MOD, test } from './fixtures'
 
 async function boxWith(page: Page, y: number, text: string) {
-  await page.getByTestId('canvas').click({ position: { x: 100, y } })
+  await createBoxAt(page, 100, y)
   await expect(page.locator('[data-testid="box-editor"]:focus')).toHaveText('')
   await page.keyboard.type(text)
 }
