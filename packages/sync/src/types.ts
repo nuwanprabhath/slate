@@ -55,7 +55,10 @@ export interface ConflictRecord {
 export interface LocalStore {
   docIds(): Promise<string[]>
   loadDoc(docId: string): Promise<Uint8Array[]>
-  /** Appends updates that came from another device (they are never pushed back). */
+  /**
+   * Appends updates the sync engine made: other devices' files, and restored boxes. What gets
+   * pushed is decided by version, so remote ops are never pushed back and restores are.
+   */
   appendRemote(docId: string, update: Uint8Array): Promise<void>
   getMeta(key: string): Promise<string | undefined>
   setMeta(key: string, value: string): Promise<void>

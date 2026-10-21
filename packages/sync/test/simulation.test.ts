@@ -70,6 +70,12 @@ async function simulate(seed: number, steps: number): Promise<Device[]> {
         const y = Math.floor(rand() * 2000)
         editPage(d.local, PAGE, (p) => p.updateBox(id, { y }), nextPeer++)
       }
+    } else if (action < 0.62) {
+      const ids = new PageDoc(d.local.doc(PAGE)).listBoxes().map((b) => b.id)
+      if (ids.length > 1) {
+        const id = pick(ids)
+        editPage(d.local, PAGE, (p) => p.deleteBox(id), nextPeer++)
+      }
     } else if (action < 0.65) {
       const name = `n${step}`
       editPage(d.local, NOTEBOOK, (p) => p.doc.getMap('pages').set(name, d.id), nextPeer++)
@@ -82,8 +88,16 @@ async function simulate(seed: number, steps: number): Promise<Device[]> {
   }
 
   for (const d of devices) d.remote.offline = false
-  for (let round = 0; round < 2; round++) {
-    for (const d of devices) expect((await d.engine.syncOnce()).status).toBe('idle-synced')
+  // Twice reaches everyone; a box restored on pulling a delete is a new local change, so rounds
+  // continue until one pushes nothing. Restores cannot cascade: they delete nothing.
+  for (let round = 0, pushed = 1; round < 2 || pushed > 0; round++) {
+    expect(round).toBeLessThan(6)
+    pushed = 0
+    for (const d of devices) {
+      const report = await d.engine.syncOnce()
+      expect(report.status).toBe('idle-synced')
+      pushed += report.pushed
+    }
   }
   return devices
 }

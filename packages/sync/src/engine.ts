@@ -1,4 +1,6 @@
 import { LoroDoc, VersionVector } from 'loro-crdt'
+import { contentToJSON, newId, PageDoc, writeContent, type BoxState, type PMJSON } from '@slate/core'
+import { boxesTouched, boxMarkdown } from './conflicts'
 import { chunkPath, parseRemotePath, snapshotPath } from './paths'
 import type { LocalStore, RemoteDrive, SyncReport, SyncStatus } from './types'
 
@@ -20,7 +22,16 @@ interface PullState {
   /** Stored version at pull start. */
   before: VersionVector
   pushed: VersionVector
+  /** Boxes whose content this device changed since its last completed sync. */
+  localEdited: Set<string>
+  /** The doc at that last sync plus remote imports only: "theirs" in a conflict. */
+  remoteOnly: LoroDoc | undefined
+  conflicts: Map<string, { mine: string; device: string }>
+  /** Boxes a remote change deleted while edited here, as they were before the import. */
+  restores: Map<string, { box: BoxState; content: PMJSON | null }>
 }
+
+export const RESTORED_MESSAGE = 'A box deleted on another device was restored because you edited it'
 
 const META = {
   pushed: (docId: string) => `pushed:${docId}`,
@@ -28,6 +39,8 @@ const META = {
   chunks: (docId: string) => `chunks:${docId}`,
   snapshot: (docId: string) => `snapshot:${docId}`,
   stale: (docId: string) => `stale:${docId}`,
+  /** The doc's version when this device last finished a sync: later local edits are "mine". */
+  base: (docId: string) => `base:${docId}`,
   cursor: 'deltaCursor'
 }
 
@@ -72,10 +85,11 @@ export class SyncEngine {
   async syncOnce(): Promise<SyncReport> {
     const counts: Counts = { pushed: 0, pulled: 0, conflicts: 0 }
     try {
-      for (const docId of await this.local.docIds()) await this.pushDoc(docId, counts)
+      const pushedAt = new Map<string, VersionVector>()
+      for (const docId of await this.local.docIds()) pushedAt.set(docId, await this.pushDoc(docId, counts))
       await this.pushBlobs()
       await this.writeDevice()
-      await this.pull(counts)
+      await this.pull(counts, pushedAt)
       return { status: 'idle-synced', ...counts, at: Date.now() }
     } catch (err) {
       return { status: statusOf(err), message: err instanceof Error ? err.message : String(err), ...counts, at: Date.now() }
@@ -99,12 +113,13 @@ export class SyncEngine {
     return raw === undefined ? fallback : (JSON.parse(raw) as T)
   }
 
-  private async pushDoc(docId: string, counts: Counts): Promise<void> {
+  /** Returns the doc version it considered. */
+  private async pushDoc(docId: string, counts: Counts): Promise<VersionVector> {
     await this.removeStale(docId)
     const doc = await this.load(docId)
     const pushed = await this.pushedVersion(docId)
     const version = doc.oplogVersion()
-    if (!ahead(version, pushed)) return
+    if (!ahead(version, pushed)) return version
 
     const seq = Number((await this.local.getMeta(META.seq(docId))) ?? 0) + 1
     const path = chunkPath(docId, this.deviceId, seq)
@@ -116,6 +131,7 @@ export class SyncEngine {
     counts.pushed++
 
     if (chunks.length > this.compactAfter) await this.compact(docId, doc, seq + 1, chunks)
+    return version
   }
 
   /**
@@ -157,7 +173,77 @@ export class SyncEngine {
     await this.remote.upload(`devices/${this.deviceId}.json`, new TextEncoder().encode(JSON.stringify(record)))
   }
 
-  private async pull(counts: Counts): Promise<void> {
+  private async pullState(docId: string): Promise<PullState> {
+    const doc = await this.load(docId)
+    const state: PullState = {
+      doc,
+      before: doc.oplogVersion(),
+      pushed: await this.pushedVersion(docId),
+      localEdited: new Set(),
+      remoteOnly: undefined,
+      conflicts: new Map(),
+      restores: new Map()
+    }
+    const baseBytes = await this.local.getBytesMeta(META.base(docId))
+    if (baseBytes) {
+      const base = VersionVector.decode(baseBytes)
+      const atBase = doc.forkAt(doc.vvToFrontiers(base))
+      state.localEdited = boxesTouched(atBase, doc.export({ mode: 'update', from: base })).contentEdited
+      state.remoteOnly = atBase
+    }
+    return state
+  }
+
+  /** Notes, before `bytes` is imported, the boxes it touches that this device also edited. */
+  private detect(state: PullState, bytes: Uint8Array, device: string): void {
+    state.remoteOnly?.import(bytes)
+    if (state.localEdited.size === 0) return
+    const touched = boxesTouched(state.doc, bytes)
+    const page = new PageDoc(state.doc)
+    for (const id of touched.contentEdited) {
+      if (!state.localEdited.has(id)) continue
+      const known = state.conflicts.get(id)
+      state.conflicts.set(id, { mine: known?.mine ?? boxMarkdown(state.doc, id), device })
+    }
+    for (const id of touched.deleted) {
+      const box = page.getBox(id)
+      if (!state.localEdited.has(id) || state.restores.has(id) || !box) continue
+      const content = page.contentMap(id)
+      state.restores.set(id, { box, content: content ? contentToJSON(content) : null })
+    }
+  }
+
+  private async settle(docId: string, state: PullState, counts: Counts): Promise<void> {
+    for (const [boxId, { mine, device }] of state.conflicts) {
+      await this.local.addConflict({
+        id: newId(),
+        pageId: docId,
+        boxId,
+        device,
+        mine,
+        theirs: state.remoteOnly ? boxMarkdown(state.remoteOnly, boxId) : '',
+        merged: boxMarkdown(state.doc, boxId),
+        at: Date.now()
+      })
+      counts.conflicts++
+    }
+    const page = new PageDoc(state.doc)
+    const missing = [...state.restores.values()].filter(({ box }) => !page.getBox(box.id))
+    if (missing.length === 0) return
+    // A new local change (fresh box ids), so it goes out with this device's next push.
+    const from = state.doc.oplogVersion()
+    for (const { box, content } of missing) {
+      const id = page.addBox({ x: box.x, y: box.y, width: box.width })
+      if (box.private) page.updateBox(id, { private: true })
+      const root = page.contentMap(id)
+      if (root && content) writeContent(root, content.content ?? [])
+    }
+    state.doc.commit()
+    await this.local.appendRemote(docId, state.doc.export({ mode: 'update', from }))
+    for (let i = 0; i < missing.length; i++) await this.local.notify(RESTORED_MESSAGE)
+  }
+
+  private async pull(counts: Counts, pushedAt: Map<string, VersionVector>): Promise<void> {
     const page = await this.remote.delta((await this.local.getMeta(META.cursor)) ?? null)
     const states = new Map<string, PullState>()
     for (const item of page.items) {
@@ -175,17 +261,29 @@ export class SyncEngine {
       }
       let state = states.get(parsed.docId)
       if (!state) {
-        const doc = await this.load(parsed.docId)
-        state = { doc, before: doc.oplogVersion(), pushed: await this.pushedVersion(parsed.docId) }
+        state = await this.pullState(parsed.docId)
         states.set(parsed.docId, state)
       }
+      this.detect(state, bytes, parsed.deviceId)
       state.doc.import(bytes)
       await this.local.appendRemote(parsed.docId, bytes)
       await this.local.markSeen(item.id, item.eTag)
       counts.pulled++
     }
     await this.local.setMeta(META.cursor, page.cursor)
-    for (const [docId, state] of states) await this.local.setBytesMeta(META.pushed(docId), this.afterPull(state).encode())
+    for (const [docId, state] of states) {
+      await this.local.setBytesMeta(META.pushed(docId), this.afterPull(state).encode())
+      await this.local.setBytesMeta(META.base(docId), state.doc.oplogVersion().encode())
+      await this.settle(docId, state, counts)
+    }
+    for (const [docId, version] of pushedAt) {
+      if (states.has(docId)) continue
+      const bytes = version.encode()
+      const stored = await this.local.getBytesMeta(META.base(docId))
+      if (!stored || stored.length !== bytes.length || stored.some((b, i) => b !== bytes[i])) {
+        await this.local.setBytesMeta(META.base(docId), bytes)
+      }
+    }
   }
 
   /**
