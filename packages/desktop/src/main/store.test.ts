@@ -1,0 +1,79 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { LoroDoc } from 'loro-crdt'
+import { DocStore } from './store'
+
+const dirs: string[] = []
+function tempDb(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'slate-store-'))
+  dirs.push(dir)
+  return join(dir, 'slate.db')
+}
+afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
+
+function edits(n: number): { doc: LoroDoc; updates: Uint8Array[] } {
+  const doc = new LoroDoc()
+  const updates: Uint8Array[] = []
+  for (let i = 0; i < n; i++) {
+    const from = doc.oplogVersion()
+    doc.getMap('m').set(`k${i}`, i)
+    doc.commit()
+    updates.push(doc.export({ mode: 'update', from }))
+  }
+  return { doc, updates }
+}
+
+describe('DocStore', () => {
+  it('appends and loads updates in order', () => {
+    const store = new DocStore(tempDb())
+    store.append('page:1', new Uint8Array([1, 2]))
+    store.append('page:1', new Uint8Array([3]))
+    expect(store.load('page:1').map((u) => Array.from(u))).toEqual([[1, 2], [3]])
+    expect(store.load('page:missing')).toEqual([])
+    store.close()
+  })
+
+  it('lists doc ids by literal prefix', () => {
+    const store = new DocStore(tempDb())
+    store.append('notebook:a', new Uint8Array([1]))
+    store.append('page:b', new Uint8Array([1]))
+    store.append('notebook_x', new Uint8Array([1]))
+    expect(store.list('notebook:')).toEqual(['notebook:a'])
+    store.close()
+  })
+
+  it('compacts automatically and preserves document state', () => {
+    const store = new DocStore(tempDb())
+    const { doc, updates } = edits(520)
+    for (const u of updates) store.append('page:c', u)
+    const parts = store.load('page:c')
+    expect(parts.length).toBeLessThan(30)
+    const restored = new LoroDoc()
+    restored.importBatch(parts)
+    expect(restored.toJSON()).toEqual(doc.toJSON())
+    store.close()
+  })
+
+  it('persists across reopen and removes docs', () => {
+    const file = tempDb()
+    const first = new DocStore(file)
+    first.append('page:p', new Uint8Array([9]))
+    first.close()
+    const second = new DocStore(file)
+    expect(second.load('page:p')).toHaveLength(1)
+    second.remove('page:p')
+    expect(second.load('page:p')).toEqual([])
+    expect(second.list('page:')).toEqual([])
+    second.close()
+  })
+
+  it('stores settings as JSON', () => {
+    const store = new DocStore(tempDb())
+    expect(store.getSetting('settings')).toBeUndefined()
+    store.setSetting('settings', { markdownShortcuts: true })
+    expect(store.getSetting('settings')).toEqual({ markdownShortcuts: true })
+    store.close()
+  })
+})

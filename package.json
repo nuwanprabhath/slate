@@ -4,7 +4,11 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
+    "dev": "npm run dev -w @slate/desktop",
+    "e2e": "npm run e2e -w @slate/desktop",
+    "postinstall": "electron-rebuild -f -o better-sqlite3",
     "test": "vitest run",
+    "test:main": "npm run test -w @slate/desktop",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
