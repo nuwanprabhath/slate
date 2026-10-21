@@ -11,14 +11,19 @@ export interface GraphClientOptions {
   maxRetries?: number
 }
 
-interface Named {
-  id: string
-  displayName?: string
-  lastModifiedDateTime?: string
+/** A non-OK Graph response; `status` lets callers tell 401 (sign in again) from the rest. */
+export class GraphError extends Error {
+  readonly status: number
+
+  constructor(status: number, path: string) {
+    super(`Graph ${status} ${path}`)
+    this.status = status
+  }
 }
 
-export class GraphClient implements GraphSource {
-  private readonly baseUrl: string
+/** Authenticated Graph requests: bounded concurrency, 429/503 retried honouring Retry-After. */
+export class GraphHttp {
+  readonly baseUrl: string
   private readonly getToken: () => Promise<string>
   private readonly doFetch: typeof fetch
   private readonly maxConcurrent: number
@@ -34,6 +39,72 @@ export class GraphClient implements GraphSource {
     this.maxConcurrent = opts.maxConcurrent ?? 2
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
     this.maxRetries = opts.maxRetries ?? 5
+  }
+
+  /** A path under the base URL, or an absolute URL; public Graph URLs (from nextLinks) map onto the base. */
+  url(pathOrUrl: string): string {
+    if (pathOrUrl.startsWith(PUBLIC_GRAPH)) return this.baseUrl + pathOrUrl.slice(PUBLIC_GRAPH.length)
+    return /^https?:\/\//.test(pathOrUrl) ? pathOrUrl : this.baseUrl + pathOrUrl
+  }
+
+  async json<T>(pathOrUrl: string, init: RequestInit = {}): Promise<T> {
+    const res = await this.send(pathOrUrl, init)
+    return (await res.json()) as T
+  }
+
+  async bytes(pathOrUrl: string): Promise<{ bytes: Uint8Array; mime: string }> {
+    const res = await this.send(pathOrUrl, {})
+    const mime = (res.headers.get('content-type') ?? 'application/octet-stream').split(';')[0]!.trim()
+    return { bytes: new Uint8Array(await res.arrayBuffer()), mime }
+  }
+
+  async send(pathOrUrl: string, init: RequestInit): Promise<Response> {
+    const url = this.url(pathOrUrl)
+    await this.acquire()
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const headers = new Headers(init.headers)
+        headers.set('Authorization', `Bearer ${await this.getToken()}`)
+        const res = await this.doFetch(url, { ...init, headers })
+        if (res.ok) return res
+        if ((res.status !== 429 && res.status !== 503) || attempt >= this.maxRetries) {
+          throw new GraphError(res.status, new URL(url).pathname)
+        }
+        const header = res.headers.get('retry-after')
+        const seconds = header === null ? NaN : Number(header)
+        await this.sleep(Number.isFinite(seconds) ? seconds * 1000 : 2 ** attempt * 1000)
+      }
+    } finally {
+      this.release()
+    }
+  }
+
+  private acquire(): Promise<void> {
+    if (this.active < this.maxConcurrent) {
+      this.active++
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => this.waiting.push(resolve))
+  }
+
+  private release(): void {
+    const next = this.waiting.shift()
+    if (next) next()
+    else this.active--
+  }
+}
+
+interface Named {
+  id: string
+  displayName?: string
+  lastModifiedDateTime?: string
+}
+
+export class GraphClient implements GraphSource {
+  private readonly http: GraphHttp
+
+  constructor(opts: GraphClientOptions | GraphHttp) {
+    this.http = opts instanceof GraphHttp ? opts : new GraphHttp(opts)
   }
 
   async listTree(): Promise<OneNoteNotebook[]> {
@@ -68,18 +139,16 @@ export class GraphClient implements GraphSource {
   }
 
   async pageContent(pageId: string): Promise<string> {
-    const res = await this.request(`${this.baseUrl}/me/onenote/pages/${pageId}/content?includeIDs=true`)
+    const res = await this.http.send(`/me/onenote/pages/${pageId}/content?includeIDs=true`, {})
     return res.text()
   }
 
   async resource(url: string): Promise<{ bytes: Uint8Array; mime: string }> {
-    let target = url
-    if (url.startsWith(PUBLIC_GRAPH)) target = this.baseUrl + url.slice(PUBLIC_GRAPH.length)
     // The bearer token only ever goes to the configured Graph host.
-    else if (!url.startsWith(this.baseUrl)) throw new Error(`Refusing resource outside Graph: ${new URL(url).host}`)
-    const res = await this.request(target)
-    const mime = (res.headers.get('content-type') ?? 'application/octet-stream').split(';')[0]!.trim()
-    return { bytes: new Uint8Array(await res.arrayBuffer()), mime }
+    if (!url.startsWith(PUBLIC_GRAPH) && !url.startsWith(this.http.baseUrl)) {
+      throw new Error(`Refusing resource outside Graph: ${new URL(url).host}`)
+    }
+    return this.http.bytes(url)
   }
 
   private async sections(base: string): Promise<OneNoteSection[]> {
@@ -105,46 +174,12 @@ export class GraphClient implements GraphSource {
   /** Follows `@odata.nextLink` until the collection is exhausted. */
   private async list<T>(path: string): Promise<T[]> {
     const items: T[] = []
-    let next: string | undefined = this.baseUrl + path
+    let next: string | undefined = path
     while (next) {
-      const res: Response = await this.request(next)
-      const body = (await res.json()) as { value: T[]; '@odata.nextLink'?: string }
+      const body: { value: T[]; '@odata.nextLink'?: string } = await this.http.json(next)
       items.push(...body.value)
       next = body['@odata.nextLink']
-      if (next?.startsWith(PUBLIC_GRAPH)) next = this.baseUrl + next.slice(PUBLIC_GRAPH.length)
     }
     return items
-  }
-
-  private async request(url: string): Promise<Response> {
-    await this.acquire()
-    try {
-      for (let attempt = 0; ; attempt++) {
-        const res = await this.doFetch(url, { headers: { Authorization: `Bearer ${await this.getToken()}` } })
-        if (res.ok) return res
-        if ((res.status !== 429 && res.status !== 503) || attempt >= this.maxRetries) {
-          throw new Error(`Graph ${res.status} ${new URL(url).pathname}`)
-        }
-        const header = res.headers.get('retry-after')
-        const seconds = header === null ? NaN : Number(header)
-        await this.sleep(Number.isFinite(seconds) ? seconds * 1000 : 2 ** attempt * 1000)
-      }
-    } finally {
-      this.release()
-    }
-  }
-
-  private acquire(): Promise<void> {
-    if (this.active < this.maxConcurrent) {
-      this.active++
-      return Promise.resolve()
-    }
-    return new Promise((resolve) => this.waiting.push(resolve))
-  }
-
-  private release(): void {
-    const next = this.waiting.shift()
-    if (next) next()
-    else this.active--
   }
 }
