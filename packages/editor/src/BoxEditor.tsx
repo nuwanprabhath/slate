@@ -3,11 +3,15 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { loroSyncPluginKey } from 'loro-prosemirror'
 import type { BoxState } from '@slate/core'
 import { activeEditor } from './activeEditor'
-import { buildExtensions } from './extensions'
+import { cleanPastedHtml, makeClipboardSerializer, serializeSliceAsText } from './clipboard'
+import { buildExtensions, schema } from './extensions'
+import { copySelectedImage, imageFilesFrom, insertImages } from './images'
 import { SlateKeymap } from './keymap'
 import { LoroBinding } from './loroBinding'
 import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
+
+const clipboardSerializer = makeClipboardSerializer(schema)
 
 interface Props {
   box: BoxState
@@ -36,10 +40,24 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
           autocapitalize: 'off',
           'data-testid': 'box-editor',
         },
+        clipboardTextSerializer: serializeSliceAsText,
+        clipboardSerializer,
+        transformPastedHTML: cleanPastedHtml,
+        handlePaste: (view, event) => {
+          const files = imageFilesFrom(event.clipboardData)
+          if (files.length === 0) return false
+          event.preventDefault()
+          insertImages(view, files, services.putBlob)
+          return true
+        },
+        handleDOMEvents: {
+          copy: (view, event) => copySelectedImage(view, event, services.copyImage),
+        },
       },
       onUpdate: ({ transaction }) => {
         // Transactions from loro-prosemirror (initial load, remote changes, undo) carry its meta.
-        if (!transaction.getMeta(loroSyncPluginKey)) session.noteLocalEdit(box.id)
+        if (transaction.getMeta(loroSyncPluginKey)) session.noteRemoteEdit(box.id)
+        else session.noteLocalEdit(box.id)
       },
       onFocus: ({ editor: e }) => {
         activeEditor.set(e)

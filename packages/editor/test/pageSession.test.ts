@@ -57,6 +57,36 @@ describe('PageSession', () => {
     session.close()
   })
 
+  it('pushes even when the height report arrives long after the edit (slow machine)', async () => {
+    const session = await PageSession.open('p6', memoryPersistence())
+    const a = session.createBox(0, 0, 300)
+    const b = session.createBox(0, 200, 300)
+    await tick()
+    session.reportHeight(a, 100)
+    session.reportHeight(b, 50)
+    session.noteLocalEdit(a)
+    await new Promise((r) => setTimeout(r, 700))
+    session.reportHeight(a, 150)
+    await tick()
+    expect(session.getBoxes().find((x) => x.id === b)!.y).toBe(250)
+    session.close()
+  })
+
+  it('does not push when a remote or undo change follows the last local edit', async () => {
+    const session = await PageSession.open('p7', memoryPersistence())
+    const a = session.createBox(0, 0, 300)
+    const b = session.createBox(0, 200, 300)
+    await tick()
+    session.reportHeight(a, 100)
+    session.reportHeight(b, 50)
+    session.noteLocalEdit(a) // typed without changing height…
+    session.noteRemoteEdit(a) // …then an undo or remote change grew the box
+    session.reportHeight(a, 180)
+    await tick()
+    expect(session.getBoxes().find((x) => x.id === b)!.y).toBe(200)
+    session.close()
+  })
+
   it('undoes and redoes page changes', async () => {
     const session = await PageSession.open('p4', memoryPersistence())
     session.createBox(0, 0)
