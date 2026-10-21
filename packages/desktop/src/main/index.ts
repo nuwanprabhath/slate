@@ -10,7 +10,9 @@ import { buildMenu } from './menu'
 import { launcherInfo } from './mcpLauncher'
 import { startUpdates, updateConfig } from './updates'
 import { createAuthService, type AuthService } from './onenote/auth'
+import { converterPath, defaultConverterDirs } from './onenote/backup'
 import { ImportService } from './onenote/importService'
+import { acquireLock } from './lock'
 import { readSettings, writeSettings } from './settings'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { DocStore } from './store'
@@ -54,6 +56,8 @@ function createWindow(): BrowserWindow {
 void app.whenReady().then(() => {
   if (!app.isPackaged) app.dock?.setIcon(iconPath)
   const dataDir = app.getPath('userData')
+  // Tells the headless import CLI that this process has the database open.
+  const releaseLock = acquireLock(dataDir)
   const store = new DocStore(join(dataDir, 'slate.db'))
   const blobs = new BlobStore(join(dataDir, 'blobs'))
   let sync: SyncService | undefined
@@ -90,6 +94,7 @@ void app.whenReady().then(() => {
     auth: currentAuth,
     graphUrl: process.env.SLATE_GRAPH_URL ?? 'https://graph.microsoft.com/v1.0',
     emit: (p) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.onenoteProgress, p)),
+    converter: converterPath(defaultConverterDirs()),
   })
   registerOneNoteIpc(currentAuth, importer, (id) => {
     writeSettings(store, { msClientId: id || null })
@@ -127,6 +132,7 @@ void app.whenReady().then(() => {
     sync?.close()
     importer.close()
     store.close()
+    releaseLock()
   })
 })
 

@@ -56,8 +56,16 @@ function widthOf(outline: Element): number | undefined {
  * positioned div per outline. The page title lives in `<title>`, so the converter's title block
  * (title, date, time) is dropped, as Graph's body does not carry it either.
  */
-export function normalizeOne2HtmlPage(html: string): string {
+export function normalizeOne2HtmlPage(html: string, options: { rewriteSrc?: (src: string) => string } = {}): string {
   const { document } = parseHTML(html)
+  // The image src is relative to the converted page; the caller knows where that is.
+  for (const img of Array.from(document.querySelectorAll('img'))) {
+    const src = img.getAttribute('src')
+    if (!src) continue
+    if (options.rewriteSrc) img.setAttribute('src', options.rewriteSrc(src))
+    // Marks the image as the importer's own resource rather than an external link.
+    img.setAttribute('data-src-type', 'image')
+  }
   const title = (document.querySelector('title')?.textContent ?? '').trim()
   const boxes: string[] = []
   let ink = false

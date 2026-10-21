@@ -36,6 +36,7 @@ export type MenuCommand =
   | { cmd: 'settings-changed'; settings: Settings }
   | { cmd: 'show-ai-activity' }
   | { cmd: 'show-import' }
+  | { cmd: 'show-import-backup' }
   | { cmd: 'show-connect-agents' }
 
 export interface SlateApi {
@@ -65,6 +66,9 @@ export interface SlateApi {
     start(ids: string[]): Promise<ImportProgress>
     retryFailed(): Promise<ImportProgress>
     cancel(): Promise<void>
+    /** Asks for backup files or folders (a native dialog) and lists their sections; null when cancelled. */
+    pickBackup(): Promise<BackupPick | null>
+    startBackup(paths: string[], sectionIds: string[]): Promise<ImportProgress>
     onProgress(handler: (p: ImportProgress) => void): () => void
     setClientId(id: string): Promise<void>
   }
@@ -80,6 +84,12 @@ export interface SlateApi {
   onMenu(handler: (command: MenuCommand) => void): () => void
   /** Updates another process (an agent via slate-mcp) wrote to the database. */
   onExternalUpdates(handler: (batches: ExternalBatch[]) => void): () => void
+}
+
+export interface BackupPick {
+  paths: string[]
+  /** `date` is the backup date from the file name (ISO), or '' when it has none. */
+  sections: Array<{ id: string; name: string; date: string; notebook: string }>
 }
 
 export interface OneNoteStatus {

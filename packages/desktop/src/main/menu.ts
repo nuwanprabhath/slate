@@ -18,6 +18,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates?: () => void): void
       label: 'File',
       submenu: [
         { id: 'import-onenote', label: 'Import from OneNote…', click: () => send({ cmd: 'show-import' }) },
+        { id: 'import-onenote-backup', label: 'Import from OneNote backup…', click: () => send({ cmd: 'show-import-backup' }) },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],

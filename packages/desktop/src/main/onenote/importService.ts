@@ -4,6 +4,7 @@ import type { TreeID } from 'loro-crdt'
 import type { BlobStore } from '../blobs'
 import { DocStore } from '../store'
 import { SIGN_IN_SCOPES, type AuthService } from './auth'
+import { BackupSource, scanBackup } from './backup'
 
 const notebookDocId = (id: string): string => `notebook:${id}`
 const pageDocId = (id: string): string => `page:${id}`
@@ -106,14 +107,18 @@ export class ImportService {
   private readonly store: DocStore
   private readonly sink: ImportSink & ImportState
   private readonly graph: GraphSource
+  private readonly pageOrder = new Map<string, number>()
+  // What the current run reads: the Graph client, or a backup source after startBackup.
+  private active: GraphSource
+  private backup: BackupSource | null = null
   private cachedTree: OneNoteNotebook[] | null = null
   private lastPaths: SectionPath[] = []
   private controller: AbortController | null = null
 
-  constructor(private readonly deps: { dbFile: string; blobs: BlobStore; auth: AuthService; graphUrl: string; emit: (p: ImportProgress) => void }) {
+  constructor(private readonly deps: { dbFile: string; blobs: BlobStore; auth: AuthService; graphUrl: string; emit: (p: ImportProgress) => void; converter?: string }) {
     // Never compacts: compaction deletes update rows the watcher has not delivered yet.
     this.store = new DocStore(deps.dbFile, { compact: false })
-    const pageOrder = new Map<string, number>()
+    const pageOrder = this.pageOrder
     this.sink = docStoreSink(this.store, deps.blobs, pageOrder)
     const client = new GraphClient({ baseUrl: deps.graphUrl, getToken: () => deps.auth.token(SIGN_IN_SCOPES) })
     this.graph = {
@@ -126,6 +131,7 @@ export class ImportService {
       pageContent: (id) => client.pageContent(id),
       resource: (url) => client.resource(url),
     }
+    this.active = this.graph
   }
 
   async tree(): Promise<OneNoteNotebook[]> {
@@ -133,7 +139,40 @@ export class ImportService {
     return this.cachedTree
   }
 
+  /** Imports sections from OneNote backup files; `selected` holds section ids or names (all when empty). */
+  async startBackup(paths: string[], selected: string[] = []): Promise<ImportProgress> {
+    if (this.controller) throw new Error('An import is already running')
+    const sections = scanBackup(paths).filter((s) => selected.length === 0 || selected.includes(s.id) || selected.includes(s.name))
+    if (sections.length === 0) throw new Error('No OneNote sections found in the chosen backup files')
+    this.useGraph()
+    const source = new BackupSource(sections, { converter: this.deps.converter ?? '' })
+    this.backup = source
+    this.active = {
+      listTree: () => source.listTree(),
+      listPages: async (sectionId) => {
+        const pages = await source.listPages(sectionId)
+        for (const p of pages) this.pageOrder.set(p.id, p.order)
+        return pages
+      },
+      pageContent: (id) => source.pageContent(id),
+      resource: (url) => source.resource(url),
+    }
+    this.lastPaths = selectionToPaths(await source.listTree(), new Set(sections.map((s) => s.id)))
+    const result = await this.run(false)
+    // The converted pages stay on disk only while a retry of failed pages may need them.
+    if (result.failed.length === 0) this.useGraph()
+    return result
+  }
+
+  /** Drops the backup source (and its temp dirs) and points back at Graph. */
+  private useGraph(): void {
+    this.backup?.close()
+    this.backup = null
+    this.active = this.graph
+  }
+
   async start(selectedIds: string[]): Promise<ImportProgress> {
+    this.useGraph()
     this.lastPaths = selectionToPaths(this.cachedTree ?? (await this.tree()), new Set(selectedIds))
     return this.run(false)
   }
@@ -148,6 +187,7 @@ export class ImportService {
 
   close(): void {
     this.cancel()
+    this.backup?.close()
     this.store.close()
   }
 
@@ -157,7 +197,7 @@ export class ImportService {
     this.controller = controller
     try {
       return await runImport({
-        graph: this.graph,
+        graph: this.active,
         sink: this.sink,
         state: this.sink,
         paths: this.lastPaths,
