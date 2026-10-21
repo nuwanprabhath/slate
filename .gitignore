@@ -9,3 +9,5 @@ playwright-report/
 .agent-reports/
 release/
 .generated/
+.tools/
+packages/desktop/resources/bin/
