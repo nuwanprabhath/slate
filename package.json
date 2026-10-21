@@ -1,8 +1,11 @@
 {
   "name": "slate",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm run dev -w @slate/desktop",
     "e2e": "npm run e2e -w @slate/desktop",
