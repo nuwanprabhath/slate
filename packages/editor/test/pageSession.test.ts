@@ -140,3 +140,55 @@ describe('PageSession', () => {
     session.close()
   })
 })
+
+describe('PageSession layout settle', () => {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  async function openOverlapping(flagged: boolean) {
+    const seed = new PageDoc()
+    const a = seed.addBox({ x: 0, y: 0, width: 200 })
+    const b = seed.addBox({ x: 0, y: 20, width: 200 })
+    if (flagged) seed.setNeedsLayout(true)
+    const persistence = memoryPersistence()
+    persistence.data.set(pageDocId('p'), [seed.doc.export({ mode: 'update' })])
+    const session = await PageSession.open('p', persistence)
+    return { session, a, b }
+  }
+
+  it('settles a flagged page once every box has reported a height', async () => {
+    const { session, a, b } = await openOverlapping(true)
+    session.reportHeight(a, 100)
+    await wait(300)
+    expect(session.page.getBox(b)!.y).toBe(20) // b has not reported yet
+    session.reportHeight(b, 50)
+    await wait(300)
+    expect(session.page.getBox(b)!.y).toBe(112)
+    expect(session.page.getBox(a)!.y).toBe(0)
+    session.close()
+  })
+
+  it('leaves an unflagged page alone', async () => {
+    const { session, a, b } = await openOverlapping(false)
+    session.reportHeight(a, 100)
+    session.reportHeight(b, 50)
+    await wait(300)
+    expect(session.page.getBox(b)!.y).toBe(20)
+    session.close()
+  })
+
+  it('clears the flag when the session closes', async () => {
+    const { session } = await openOverlapping(true)
+    session.close()
+    expect(session.page.needsLayout()).toBe(false)
+  })
+
+  it('does not undo a settle', async () => {
+    const { session, a, b } = await openOverlapping(true)
+    session.reportHeight(a, 100)
+    session.reportHeight(b, 50)
+    await wait(300)
+    session.undo()
+    expect(session.page.getBox(b)!.y).toBe(112)
+    session.close()
+  })
+})

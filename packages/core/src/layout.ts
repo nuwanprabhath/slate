@@ -35,3 +35,24 @@ export function computePush(boxes: BoxRect[], grownId: string, oldHeight: number
   }
   return moved
 }
+
+/**
+ * Imported pages keep the source app's coordinates, but Slate renders text taller, so a box can
+ * run into the one below it. Walks the boxes top to bottom and moves a box down until it clears
+ * every earlier box that overlaps it horizontally, leaving `gap` between them. Earlier boxes count
+ * at their moved position, so moves cascade down a column. Boxes only ever move down.
+ * Returns the new y for every box that moved.
+ */
+export function settleOverlaps(boxes: BoxRect[], gap = 12): Map<string, number> {
+  const moved = new Map<string, number>()
+  const placed: BoxRect[] = []
+  for (const box of [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    let y = box.y
+    for (const above of placed) {
+      if (overlapsX(above, box) && above.y + above.height > box.y - gap) y = Math.max(y, above.y + above.height + gap)
+    }
+    if (y !== box.y) moved.set(box.id, y)
+    placed.push({ ...box, y })
+  }
+  return moved
+}

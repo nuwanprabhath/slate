@@ -85,9 +85,19 @@ export class PageDoc {
     this.doc.commit()
   }
 
-  moveBoxes(ys: Map<string, number>): void {
+  moveBoxes(ys: Map<string, number>, origin?: string): void {
     for (const [id, y] of ys) this.boxMap(id)?.set('y', y)
-    this.doc.commit()
+    this.doc.commit(origin === undefined ? undefined : { origin })
+  }
+
+  /** Set on imported pages: their boxes keep the source app's coordinates until the editor has measured them. */
+  needsLayout(): boolean {
+    return this.doc.getMap('meta').get('needsLayout') === true
+  }
+
+  setNeedsLayout(on: boolean): void {
+    this.doc.getMap('meta').set('needsLayout', on)
+    this.doc.commit({ origin: 'sys:layout' })
   }
 
   deleteBox(id: string): void {

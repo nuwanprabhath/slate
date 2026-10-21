@@ -65,4 +65,15 @@ describe('PageDoc', () => {
     expect(one.getBox(a)!.x).toBe(50)
     expect(one.getBox(b)!.y).toBe(300)
   })
+
+  it('keeps the needs-layout flag in the doc, off by default', () => {
+    const one = new PageDoc()
+    expect(one.needsLayout()).toBe(false)
+    one.setNeedsLayout(true)
+    expect(one.needsLayout()).toBe(true)
+    const two = PageDoc.fromUpdates([one.doc.export({ mode: 'update' })])
+    expect(two.needsLayout()).toBe(true)
+    two.setNeedsLayout(false)
+    expect(two.needsLayout()).toBe(false)
+  })
 })

@@ -83,6 +83,8 @@ function docStoreSink(store: DocStore, blobs: BlobStore, pageOrder: Map<string, 
       // renderer has open merges the change instead of keeping its old boxes.
       const page = PageDoc.fromUpdates(store.load(pageDocId(pageId)))
       const from = page.doc.oplogVersion()
+      // The renderer settles overlaps once it has measured the boxes (see PageSession).
+      page.setNeedsLayout(true)
       for (const box of page.listBoxes()) page.deleteBox(box.id)
       for (const box of mapped.boxes) {
         const id = page.addBox({ x: box.x, y: box.y, width: box.width })

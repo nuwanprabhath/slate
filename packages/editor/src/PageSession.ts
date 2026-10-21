@@ -1,5 +1,5 @@
 import { UndoManager, type LoroDoc } from 'loro-crdt'
-import { PageDoc, computePush, type BoxState, type PMJSON } from '@slate/core'
+import { PageDoc, computePush, settleOverlaps, type BoxState, type PMJSON } from '@slate/core'
 import { writeContent } from './content'
 
 export interface DocPersistence {
@@ -11,6 +11,8 @@ export const pageDocId = (pageId: string): string => `page:${pageId}`
 export const DEFAULT_BOX_WIDTH = 480
 /** Edits this close together form one undo step (so an edit and the push it caused undo together). */
 const UNDO_MERGE_MS = 500
+/** Quiet time after the last height report before an imported page is settled, so the first burst of reports is one settle. */
+const SETTLE_DEBOUNCE_MS = 150
 
 /** One open page: its Loro doc, page-wide undo, persistence and auto-push. */
 export class PageSession {
@@ -22,6 +24,7 @@ export class PageSession {
   /** Boxes whose latest content change was the user's own; only their growth pushes others. */
   private localEdits = new Set<string>()
   private cleanup: Array<() => void> = []
+  private settleTimer: ReturnType<typeof setTimeout> | undefined
 
   private constructor(readonly pageId: string, page: PageDoc, persistence: DocPersistence) {
     this.page = page
@@ -86,10 +89,24 @@ export class PageSession {
     this.heights.set(boxId, height)
     // Event-based, not time-based: on a slow machine the resize can arrive long after the edit.
     const local = this.localEdits.delete(boxId)
+    if (this.page.needsLayout()) this.scheduleSettle()
     if (!local || old === undefined || height <= old) return
     const rects = this.snapshot.map((b) => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: this.heights.get(b.id) ?? 0 }))
     const moved = computePush(rects, boxId, old, height)
     if (moved.size > 0) this.page.moveBoxes(moved)
+  }
+
+  /** Imported boxes keep the source app's positions; once all are measured, push overlapping ones down. */
+  private scheduleSettle(): void {
+    clearTimeout(this.settleTimer)
+    this.settleTimer = setTimeout(() => {
+      if (!this.page.needsLayout()) return
+      const boxes = this.page.listBoxes()
+      if (boxes.some((b) => !this.heights.has(b.id))) return
+      const moved = settleOverlaps(boxes.map((b) => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: this.heights.get(b.id)! })))
+      // sys:* is ignored by the UndoManager, so undo never un-settles the page.
+      if (moved.size > 0) this.page.moveBoxes(moved, 'sys:layout')
+    }, SETTLE_DEBOUNCE_MS)
   }
 
   /** Updates another process wrote; they arrive as `import` events like any remote change. */
@@ -106,6 +123,8 @@ export class PageSession {
   }
 
   close(): void {
+    clearTimeout(this.settleTimer)
+    if (this.page.needsLayout()) this.page.setNeedsLayout(false)
     this.cleanup.forEach((c) => c())
     this.cleanup = []
     this.listeners.clear()
