@@ -14,6 +14,7 @@ import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
 import { PageList } from './sidebar/PageList'
 import { SectionList } from './sidebar/SectionList'
+import { SyncStatus } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
@@ -86,7 +87,23 @@ export function App() {
       <Workspace library={library} onShowImport={showImport} />
       {aiActivity && <AiActivity onClose={() => setAiActivity(false)} />}
       {importOpen && <ImportDialog onClose={closeImport} />}
+      <Notices />
     </EditorServicesContext.Provider>
+  )
+}
+
+/** Sync's notices (a box restored because it was edited here) as a dismissible toast. */
+function Notices() {
+  const [messages, setMessages] = useState<string[]>([])
+  useEffect(() => window.slate.sync.onNotice((m) => setMessages((all) => [...all, m])), [])
+  if (messages.length === 0) return null
+  return (
+    <div className="notice" data-testid="notice" role="status">
+      <span>{messages[0]}</span>
+      <button type="button" aria-label="Dismiss" data-testid="notice-dismiss" onClick={() => setMessages((all) => all.slice(1))}>
+        ×
+      </button>
+    </div>
   )
 }
 
@@ -172,7 +189,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
 
   return (
     <div className="app">
-      <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
+      <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} bottom={<SyncStatus />} />
       {layout.panelOpen && activeTool.panel()}
       <main className="app-main">
         <Toolbar />

@@ -12,11 +12,13 @@ interface Props {
   scrollRoot: HTMLElement
   autoFocus: boolean
   onFocus: (id: string) => void
+  conflict?: boolean
+  onConflictClick?: (id: string) => void
 }
 
 type Gesture = { x: number; y: number; width: number }
 
-function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox }: Props) {
+function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick }: Props) {
   const onFocus = () => onFocusBox(box.id)
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
@@ -66,9 +68,21 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox }: P
 
   const { x, y, width } = gesture ?? box
   return (
-    <div ref={ref} className={box.private ? 'slate-box is-private' : 'slate-box'} data-testid="box" data-box-id={box.id} style={{ left: x, top: y, width }}>
+    <div ref={ref} className={['slate-box', box.private && 'is-private', conflict && 'has-conflict'].filter(Boolean).join(' ')} data-testid="box" data-box-id={box.id} style={{ left: x, top: y, width }}>
       <div className="slate-box-bar">
         <div className="slate-box-handle" data-testid="box-handle" onPointerDown={(e) => startGesture(e, 'move')} />
+        {conflict && (
+          <button
+            type="button"
+            className="slate-box-conflict"
+            data-testid="conflict-chip"
+            title="Edits from another device were merged here. Review them."
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onConflictClick?.(box.id)}
+          >
+            merged edits
+          </button>
+        )}
         <button
           type="button"
           className="slate-box-lock"
@@ -103,6 +117,8 @@ export const Box = memo(
     a.scrollRoot === b.scrollRoot &&
     a.autoFocus === b.autoFocus &&
     a.onFocus === b.onFocus &&
+    a.conflict === b.conflict &&
+    a.onConflictClick === b.onConflictClick &&
     a.box.id === b.box.id &&
     a.box.x === b.box.x &&
     a.box.y === b.box.y &&
