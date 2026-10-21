@@ -40,6 +40,20 @@ jobs:
       - run: npm run test:main
       - name: E2E (virtual display)
         run: xvfb-run --auto-servernum npm run e2e
+      # Playwright hides the app's own output, so a launch that hangs shows only timeouts. Start it
+      # once by hand and print what Electron and the main process said.
+      - name: App startup log
+        if: failure()
+        working-directory: packages/desktop
+        run: |
+          SLATE_E2E=1 SLATE_USER_DATA="$(mktemp -d)" ELECTRON_ENABLE_LOGGING=1 \
+            timeout 25 xvfb-run --auto-servernum npx electron out/main/index.js 2>&1 | tail -100 || true
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-results
+          path: packages/desktop/test-results/
+          if-no-files-found: ignore
 
   test-mac:
     name: Unit tests (macOS)
