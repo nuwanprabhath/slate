@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
+import { Extension } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { loroSyncPluginKey } from 'loro-prosemirror'
 import type { BoxState } from '@slate/core'
@@ -6,6 +7,7 @@ import { activeEditor } from './activeEditor'
 import { currentTheme, onThemeChange } from './colorContrast'
 import { cleanPastedHtml, makeClipboardSerializer, serializeSliceAsText } from './clipboard'
 import { buildExtensions, schema } from './extensions'
+import { findHighlightPlugin } from './find'
 import { copySelectedImage, imageFilesFrom, insertImages } from './images'
 import { SlateKeymap } from './keymap'
 import { LoroBinding } from './loroBinding'
@@ -31,6 +33,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         ...buildExtensions(),
         LoroBinding.configure({ doc: session.doc, containerId: box.contentId }),
         SlateKeymap.configure({ session, services }),
+        Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
       ],
       enableInputRules: services.markdownShortcuts,
       enablePasteRules: false,

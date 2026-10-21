@@ -8,6 +8,7 @@ import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
 import { Column, Splitter } from './Splitter'
 import { currentSession } from './currentSession'
 import { ConnectAgents } from './ConnectAgents'
+import { findBar } from './find/FindBar'
 import { ImportDialog } from './import/ImportDialog'
 import { Library, syncSettled } from './library'
 import { PageView } from './PageView'
@@ -55,6 +56,9 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
             break
           case 'show-connect-agents':
             onShowConnectAgents()
+            break
+          case 'find':
+            findBar.open()
             break
         }
       }),

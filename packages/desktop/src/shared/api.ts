@@ -83,6 +83,7 @@ export type MenuCommand =
   | { cmd: 'show-import' }
   | { cmd: 'show-import-backup' }
   | { cmd: 'show-connect-agents' }
+  | { cmd: 'find' }
 
 export interface SlateApi {
   isE2E: boolean
