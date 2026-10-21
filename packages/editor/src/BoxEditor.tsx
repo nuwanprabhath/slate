@@ -56,7 +56,8 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
       },
       onUpdate: ({ transaction }) => {
         // Transactions from loro-prosemirror (initial load, remote changes, undo) carry its meta.
-        if (!transaction.getMeta(loroSyncPluginKey)) session.noteLocalEdit(box.id)
+        if (transaction.getMeta(loroSyncPluginKey)) session.noteRemoteEdit(box.id)
+        else session.noteLocalEdit(box.id)
       },
       onFocus: ({ editor: e }) => {
         activeEditor.set(e)
