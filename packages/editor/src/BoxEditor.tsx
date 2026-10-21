@@ -63,8 +63,8 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         activeEditor.set(e)
         onFocus()
       },
-      onBlur: ({ editor: e }) => {
-        if (e.isEmpty) session.page.deleteBox(box.id)
+      onBlur: () => {
+        session.deleteIfEmpty(box.id)
       },
     },
     [box.contentId, services.markdownShortcuts],

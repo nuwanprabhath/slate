@@ -2,10 +2,10 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, launchApp, test } from './fixtures'
+import { createBoxAt,expect, launchApp, test } from './fixtures'
 
 async function newBox(page: Page, x: number, y: number, text: string) {
-  await page.getByTestId('canvas').click({ position: { x, y } })
+  await createBoxAt(page, x, y)
   // Wait for the NEW (empty) box to own focus: DOM order is by random box id, so .last() may be an old box.
   await expect(page.locator('[data-testid="box-editor"]:focus')).toHaveText('')
   await page.keyboard.type(text)

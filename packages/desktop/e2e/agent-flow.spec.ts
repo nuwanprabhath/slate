@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MOD, expect, launchApp, test } from './fixtures'
+import { createBoxAt,MOD, expect, launchApp, test } from './fixtures'
 import { connectMcp, textOf } from './mcpClient'
 
 test('an agent reads shared notes without private boxes, writes live into the open app, and is audited', async () => {
@@ -9,12 +9,12 @@ test('an agent reads shared notes without private boxes, writes live into the op
   const { app, page } = await launchApp(userData)
   const focused = page.locator('[data-testid="box-editor"]:focus')
 
-  await page.getByTestId('canvas').click({ position: { x: 60, y: 60 } })
+  await createBoxAt(page, 60, 60)
   await expect(focused).toHaveText('')
   await page.keyboard.type('visible ')
   await page.keyboard.press(`${MOD}+b`)
   await page.keyboard.type('bold')
-  await page.getByTestId('canvas').click({ position: { x: 60, y: 260 } })
+  await createBoxAt(page, 60, 260)
   await expect(focused).toHaveText('')
   await page.keyboard.type('API_KEY=hunter2')
   const secret = page.getByTestId('box').filter({ hasText: 'hunter2' })

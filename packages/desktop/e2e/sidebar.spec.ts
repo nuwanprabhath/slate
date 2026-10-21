@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, launchApp, test } from './fixtures'
+import { createBoxAt,expect, launchApp, test } from './fixtures'
 
 test('a new install has one notebook, section and page', async ({ page }) => {
   await expect(page.getByTestId('notebook-picker')).toContainText('My Notebook')
@@ -20,7 +20,7 @@ test('sections and pages can be created, renamed and switched', async ({ page })
   await page.getByTestId('page-title').fill('Second')
   await expect(page.getByTestId('page-item')).toHaveText(['Untitled page', 'Second'])
 
-  await page.getByTestId('canvas').click({ position: { x: 100, y: 100 } })
+  await createBoxAt(page, 100, 100)
   await expect(page.getByTestId('box-editor')).toBeFocused()
   await page.keyboard.type('on second page')
   await expect(page.getByTestId('box')).toContainText('on second page')

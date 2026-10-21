@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, launchApp, MOD, test } from './fixtures'
+import { createBoxAt,expect, launchApp, MOD, test } from './fixtures'
 
 const width = async (page: Page, testId: string) => (await page.getByTestId(testId).boundingBox())!.width
 
@@ -30,7 +30,7 @@ test('the activity bar button hides and shows the library panel', async ({ page 
 })
 
 test('Mod+\\ toggles the panel while typing without inserting a backslash', async ({ page }) => {
-  await page.getByTestId('canvas').click({ position: { x: 100, y: 100 } })
+  await createBoxAt(page, 100, 100)
   await expect(page.getByTestId('box-editor')).toBeFocused()
   await page.keyboard.type('hi')
   await page.keyboard.press(`${MOD}+\\`)
