@@ -30,6 +30,8 @@ const api: SlateApi = {
     start: (ids) => ipcRenderer.invoke(CH.onenoteStart, ids),
     retryFailed: () => ipcRenderer.invoke(CH.onenoteRetry),
     cancel: () => ipcRenderer.invoke(CH.onenoteCancel),
+    pickBackup: () => ipcRenderer.invoke(CH.onenotePickBackup),
+    startBackup: (paths, sectionIds) => ipcRenderer.invoke(CH.onenoteStartBackup, paths, sectionIds),
     onProgress(handler) {
       const listener = (_e: IpcRendererEvent, p: ImportProgress) => handler(p)
       ipcRenderer.on(CH.onenoteProgress, listener)

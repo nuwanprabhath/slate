@@ -6,7 +6,7 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: { index: 'src/main/index.ts', mcp: 'src/mcp/cli.ts' },
+        input: { index: 'src/main/index.ts', mcp: 'src/mcp/cli.ts', 'import-cli': 'src/mcp/importCli.ts' },
       },
     },
   },

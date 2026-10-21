@@ -28,6 +28,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Install Rust nightly (for the one2html converter)
+        run: rustup toolchain install nightly --profile minimal
+      - run: npm run build:one2html
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:main

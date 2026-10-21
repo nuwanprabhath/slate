@@ -19,7 +19,7 @@ import { SyncStatus, syncStateText, useSyncState } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
-export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void, onShowImport: () => void, onShowConnectAgents: () => void): void {
+export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void, onShowImport: () => void, onShowConnectAgents: () => void, onShowBackupImport: () => void): void {
   useEffect(
     () =>
       window.slate.onMenu((command) => {
@@ -50,12 +50,15 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
           case 'show-import':
             onShowImport()
             break
+          case 'show-import-backup':
+            onShowBackupImport()
+            break
           case 'show-connect-agents':
             onShowConnectAgents()
             break
         }
       }),
-    [setSettings, onShowAiActivity, onShowImport, onShowConnectAgents],
+    [setSettings, onShowAiActivity, onShowImport, onShowConnectAgents, onShowBackupImport],
   )
 }
 
@@ -83,13 +86,14 @@ export function App() {
   }, [])
   const [aiActivity, setAiActivity] = useState(false)
   const showAiActivity = useCallback(() => setAiActivity(true), [])
-  const [importOpen, setImportOpen] = useState(false)
-  const showImport = useCallback(() => setImportOpen(true), [])
+  const [importOpen, setImportOpen] = useState<false | 'graph' | 'backup'>(false)
+  const showImport = useCallback(() => setImportOpen('graph'), [])
+  const showBackupImport = useCallback(() => setImportOpen('backup'), [])
   const closeImport = useCallback(() => setImportOpen(false), [])
   const [connectOpen, setConnectOpen] = useState(false)
   const showConnectAgents = useCallback(() => setConnectOpen(true), [])
   const closeConnectAgents = useCallback(() => setConnectOpen(false), [])
-  useMenuCommands(setSettings, showAiActivity, showImport, showConnectAgents)
+  useMenuCommands(setSettings, showAiActivity, showImport, showConnectAgents, showBackupImport)
   const services = useServices(settings)
   // Re-renders when the first notebook arrives, to swap the waiting state for the workspace.
   useSyncExternalStore(library?.subscribe ?? noSubscribe, library?.getVersion ?? noVersion)
@@ -99,7 +103,7 @@ export function App() {
     <EditorServicesContext.Provider value={services}>
       <Workspace library={library} onShowImport={showImport} />
       {aiActivity && <AiActivity onClose={() => setAiActivity(false)} />}
-      {importOpen && <ImportDialog onClose={closeImport} />}
+      {importOpen && <ImportDialog onClose={closeImport} initial={importOpen} />}
       {connectOpen && <ConnectAgents onClose={closeConnectAgents} />}
       <Notices />
     </EditorServicesContext.Provider>

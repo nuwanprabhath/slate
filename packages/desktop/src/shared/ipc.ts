@@ -18,6 +18,8 @@ export const CH = {
   onenoteStart: 'onenote:start',
   onenoteRetry: 'onenote:retry',
   onenoteCancel: 'onenote:cancel',
+  onenotePickBackup: 'onenote:pick-backup',
+  onenoteStartBackup: 'onenote:start-backup',
   onenoteSetClientId: 'onenote:set-client-id',
   onenoteProgress: 'onenote:progress',
   syncStatus: 'sync:status',

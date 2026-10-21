@@ -1,6 +1,7 @@
-import { clipboard, ClipboardItem, ipcMain, nativeImage } from 'electron'
+import { BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, type OpenDialogOptions } from 'electron'
 import { CH } from '../shared/ipc'
-import type { Settings } from '../shared/api'
+import type { BackupPick, Settings } from '../shared/api'
+import { scanBackup } from './onenote/backup'
 import type { BlobStore } from './blobs'
 import type { AuthService } from './onenote/auth'
 import type { ImportService } from './onenote/importService'
@@ -39,7 +40,26 @@ export function registerSyncIpc(sync: SyncService): void {
   ipcMain.handle(CH.syncResolve, (_e, id: string, choice: 'merged' | 'mine' | 'theirs') => sync.resolve(id, choice))
 }
 
+/** Asks for backup files or folders. E2E runs set SLATE_E2E_BACKUP_PATH instead of opening a window. */
+async function chooseBackupPaths(): Promise<string[] | null> {
+  if (process.env.SLATE_E2E === '1' && process.env.SLATE_E2E_BACKUP_PATH) return [process.env.SLATE_E2E_BACKUP_PATH]
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const options: OpenDialogOptions = {
+    title: 'Choose OneNote backup files or folders',
+    properties: ['openFile', 'openDirectory', 'multiSelections'],
+    filters: [{ name: 'OneNote sections', extensions: ['one', 'onepkg'] }],
+  }
+  const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths
+}
+
 export function registerOneNoteIpc(auth: AuthService, importer: ImportService, setClientId: (id: string) => void): void {
+  ipcMain.handle(CH.onenotePickBackup, async (): Promise<BackupPick | null> => {
+    const paths = await chooseBackupPaths()
+    if (!paths) return null
+    return { paths, sections: scanBackup(paths).map(({ id, name, date, notebook }) => ({ id, name, date, notebook })) }
+  })
+  ipcMain.handle(CH.onenoteStartBackup, (_e, paths: string[], ids: string[]) => importer.startBackup(paths, ids))
   ipcMain.handle(CH.onenoteStatus, () => auth.status())
   ipcMain.handle(CH.onenoteSignIn, () => auth.signIn())
   ipcMain.handle(CH.onenoteSignOut, () => auth.signOut())

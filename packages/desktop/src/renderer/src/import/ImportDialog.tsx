@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ImportProgress, OneNoteNotebook, OneNoteSectionGroup } from '@slate/importer'
-import type { OneNoteStatus } from '../../../shared/api'
+import type { BackupPick, OneNoteStatus } from '../../../shared/api'
 import './import.css'
 
 type Stage =
   | { kind: 'loading' }
+  | { kind: 'backup'; pick: BackupPick | null }
   | { kind: 'not-configured' }
   | { kind: 'signed-out' }
   | { kind: 'picker'; account?: string; tree: OneNoteNotebook[] | null }
@@ -38,13 +39,26 @@ function leaves(node: Node, isSection: (n: Node) => boolean): string[] {
 
 const ERROR_TEXT = (e: unknown): string => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
 
-export function ImportDialog({ onClose }: { onClose: () => void }) {
+export function ImportDialog({ onClose, initial = 'graph' }: { onClose: () => void; initial?: 'graph' | 'backup' }) {
   const [stage, setStage] = useState<Stage>({ kind: 'loading' })
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<ImportProgress | null>(null)
 
+  const chooseBackup = useCallback(async () => {
+    setError(null)
+    setStage({ kind: 'backup', pick: null })
+    try {
+      const pick = await window.slate.onenote.pickBackup()
+      if (!pick) return onClose()
+      setStage({ kind: 'backup', pick })
+    } catch (e) {
+      setError(ERROR_TEXT(e))
+    }
+  }, [onClose])
+
   const refresh = useCallback(async () => {
     setError(null)
+    if (initial === 'backup') return void chooseBackup()
     try {
       const status: OneNoteStatus = await window.slate.onenote.status()
       if (!status.configured) return setStage({ kind: 'not-configured' })
@@ -55,7 +69,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
     } catch (e) {
       setError(ERROR_TEXT(e))
     }
-  }, [])
+  }, [initial, chooseBackup])
 
   useEffect(() => void refresh(), [refresh])
   useEffect(() => window.slate.onenote.onProgress(setProgress), [])
@@ -67,7 +81,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', key)
   }, [onClose, running])
 
-  const run = async (go: () => Promise<ImportProgress>) => {
+  const run = async (go: () => Promise<ImportProgress>, backTo?: Stage) => {
     setProgress(null)
     setError(null)
     setStage({ kind: 'running' })
@@ -75,7 +89,8 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
       setStage({ kind: 'report', result: await go() })
     } catch (e) {
       setError(ERROR_TEXT(e))
-      void refresh()
+      if (backTo) setStage(backTo)
+      else void refresh()
     }
   }
 
@@ -96,6 +111,24 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
           </p>
         )}
         {stage.kind === 'loading' && <p className="muted">Checking your Microsoft account…</p>}
+        {stage.kind === 'backup' && (
+          <BackupPicker
+            pick={stage.pick}
+            onStart={(ids) => {
+              const paths = stage.pick!.paths
+              // A failed start returns to this list, not to the Graph sign-in.
+              void run(() => window.slate.onenote.startBackup(paths, ids), stage)
+            }}
+          />
+        )}
+        {(stage.kind === 'not-configured' || stage.kind === 'signed-out' || stage.kind === 'picker') && (
+          <p className="import-alt">
+            No Microsoft account?{' '}
+            <button type="button" className="link" data-testid="import-from-backup" onClick={() => void chooseBackup()}>
+              Import from OneNote backup files
+            </button>
+          </p>
+        )}
         {stage.kind === 'not-configured' && <NotConfigured onSaved={refresh} />}
         {stage.kind === 'signed-out' && (
           <div className="import-body">
@@ -243,6 +276,70 @@ function Picker({ account, tree, onSignOut, onStart }: { account?: string; tree:
       <footer>
         <button type="button" className="primary" data-testid="import-start" disabled={n === 0} onClick={() => onStart([...checked])}>
           Import {n} {n === 1 ? 'section' : 'sections'}
+        </button>
+      </footer>
+    </div>
+  )
+}
+
+function BackupPicker({ pick, onStart }: { pick: BackupPick | null; onStart: (ids: string[]) => void }) {
+  const [unchecked, setUnchecked] = useState<Set<string>>(new Set())
+  if (!pick) return <p className="muted">Choose your OneNote backup files…</p>
+  if (pick.sections.length === 0) return <p className="muted">No OneNote sections (.one files) were found there.</p>
+  const ids = pick.sections.filter((s) => !unchecked.has(s.id)).map((s) => s.id)
+  const toggle = (id: string) => {
+    const next = new Set(unchecked)
+    if (!next.delete(id)) next.add(id)
+    setUnchecked(next)
+  }
+  const notebooks = [...new Set(pick.sections.map((s) => s.notebook))]
+  return (
+    <div className="import-body" data-testid="backup-picker">
+      <p>
+        Slate converts each section with the <code>one2html</code> tool and imports it. The newest backup of each section is used; nothing in OneNote is changed.
+      </p>
+      <ul className="import-tree" role="group" aria-label="Sections in the backup">
+        {notebooks.map((nb) => (
+          <li key={nb} role="none">
+            <div className="import-tree-row import-nb">
+              <strong>{nb}</strong>
+            </div>
+            <ul role="group">
+              {pick.sections
+                .filter((s) => s.notebook === nb)
+                .map((s) => {
+                  const on = !unchecked.has(s.id)
+                  return (
+                    <li key={s.id} role="none">
+                      <div
+                        role="checkbox"
+                        aria-checked={on}
+                        aria-label={s.name}
+                        tabIndex={0}
+                        className="import-tree-row"
+                        style={{ paddingLeft: 26 }}
+                        onClick={() => toggle(s.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            e.preventDefault()
+                            toggle(s.id)
+                          }
+                        }}
+                      >
+                        <span className={`import-check is-${on}`} aria-hidden="true" />
+                        <span>{s.name}</span>
+                        {s.date && <span className="muted import-date">backup of {s.date}</span>}
+                      </div>
+                    </li>
+                  )
+                })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      <footer>
+        <button type="button" className="primary" data-testid="import-start" disabled={ids.length === 0} onClick={() => onStart(ids)}>
+          Import {ids.length} {ids.length === 1 ? 'section' : 'sections'}
         </button>
       </footer>
     </div>

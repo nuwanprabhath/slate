@@ -26,3 +26,6 @@
 .import-dialog progress { width: 100%; }
 .import-current { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-failed, .import-lossy { padding-left: 18px; margin: 0; }
+.import-alt { margin-top: 14px; color: var(--muted); }
+.import-date { margin-left: auto; font-size: 12px; }
+.import-nb { cursor: default; }

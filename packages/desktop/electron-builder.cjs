@@ -22,7 +22,7 @@ module.exports = {
   directories: { output: 'release', buildResources: 'build' },
   files: ['out/**', 'resources/**', 'package.json'],
   asarUnpack: ['**/*.node'],
-  extraResources: [{ from: 'launchers', to: 'bin' }, ...(updateUrl ? [{ from: '.generated/update.json', to: 'update.json' }] : [])],
+  extraResources: [{ from: 'launchers', to: 'bin' }, { from: 'resources/bin', to: 'converter' }, ...(updateUrl ? [{ from: '.generated/update.json', to: 'update.json' }] : [])],
   ...(updateUrl ? { publish: { provider: 'generic', url: updateUrl } } : {}),
   mac: {
     category: 'public.app-category.productivity',
