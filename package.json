@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "npm run dev -w @slate/desktop",
     "e2e": "npm run e2e -w @slate/desktop",
+    "build:one2html": "node scripts/build-one2html.mjs",
     "dist": "npm run dist -w @slate/desktop",
     "dist:dir": "npm run dist:dir -w @slate/desktop",
     "e2e:packaged": "npm run e2e:packaged -w @slate/desktop",
