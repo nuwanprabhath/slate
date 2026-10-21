@@ -1,0 +1,11 @@
+.activity-bar { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 48px; flex: none; padding-top: 8px; background: var(--panel-2); border-right: 1px solid var(--border); }
+.activity-button { position: relative; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; background: none; border: none; border-radius: 6px; color: var(--muted); cursor: pointer; }
+.activity-button:hover { background: var(--hover); color: var(--text); }
+.activity-button.active { color: var(--text); }
+.activity-button.active::before { content: ''; position: absolute; left: -4px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); }
+.column { display: flex; flex: none; min-width: 0; min-height: 0; }
+.column > .sidebar-col { flex: 1; min-width: 0; border-right: none; }
+.splitter { position: relative; flex: none; width: 1px; background: var(--border); cursor: col-resize; outline: none; z-index: 5; }
+.splitter::before { content: ''; position: absolute; top: 0; bottom: 0; left: -3px; right: -3px; }
+.splitter:hover, .splitter:focus-visible, .splitter.dragging { background: var(--accent); }
+body.resizing-columns { user-select: none; cursor: col-resize; }

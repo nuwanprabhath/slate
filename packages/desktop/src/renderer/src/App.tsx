@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { activeEditor, EditorServicesContext, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
+import { ActivityBar } from './activity/ActivityBar'
+import { createTools } from './activity/tools'
 import { AiActivity } from './AiActivity'
+import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
+import { Splitter } from './Splitter'
 import { currentSession } from './currentSession'
 import { Library } from './library'
 import { PageView } from './PageView'
@@ -107,11 +111,28 @@ function Workspace({ library }: { library: Library }) {
 
   const removeDocs = (pageIds: string[]) => void library.removePageDocs(pageIds)
 
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <NotebookPicker library={library} current={entry} onSelect={(id) => setSelection({ notebookId: id, sectionId: null, pageId: null })} />
-        <div className="sidebar-cols">
+  const [layout, setLayout] = useState<Layout>(loadLayout)
+  useEffect(() => saveLayout(layout), [layout])
+  const togglePanel = useCallback(() => setLayout((l) => ({ ...l, panelOpen: !l.panelOpen })), [])
+  const selectTool = (id: string) =>
+    setLayout((l) => (id === l.activeTool ? { ...l, panelOpen: !l.panelOpen } : { ...l, activeTool: id, panelOpen: true }))
+  // Capture phase so it also fires inside a box editor, before ProseMirror can insert a backslash.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== '\\' || e.altKey || e.shiftKey || !(e.metaKey || e.ctrlKey)) return
+      e.preventDefault()
+      e.stopPropagation()
+      togglePanel()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [togglePanel])
+
+  const tools = createTools(() => (
+    <aside className="sidebar" data-testid="library-panel">
+      <NotebookPicker library={library} current={entry} onSelect={(id) => setSelection({ notebookId: id, sectionId: null, pageId: null })} />
+      <div className="sidebar-cols">
+        <div className="column" data-testid="sections-column" style={{ width: layout.sectionsWidth }}>
           <SectionList
             nb={entry.doc}
             items={items}
@@ -119,6 +140,9 @@ function Workspace({ library }: { library: Library }) {
             onSelect={(id) => setSelection({ notebookId: entry.id, sectionId: id, pageId: null })}
             onDeleted={removeDocs}
           />
+        </div>
+        <Splitter testId="splitter-sections" label="Resize sections" width={layout.sectionsWidth} onChange={(w) => setLayout((l) => ({ ...l, sectionsWidth: clampWidth(w) }))} />
+        <div className="column" data-testid="pages-column" style={{ width: layout.pagesWidth }}>
           <PageList
             nb={entry.doc}
             section={section}
@@ -127,7 +151,16 @@ function Workspace({ library }: { library: Library }) {
             onDeleted={removeDocs}
           />
         </div>
-      </aside>
+        <Splitter testId="splitter-pages" label="Resize pages" width={layout.pagesWidth} onChange={(w) => setLayout((l) => ({ ...l, pagesWidth: clampWidth(w) }))} />
+      </div>
+    </aside>
+  ))
+  const activeTool = tools.find((t) => t.id === layout.activeTool) ?? tools[0]
+
+  return (
+    <div className="app">
+      <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
+      {layout.panelOpen && activeTool.panel()}
       <main className="app-main">
         <Toolbar />
         {page?.pageId ? <PageView key={page.pageId} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}

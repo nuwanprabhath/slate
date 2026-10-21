@@ -1,4 +1,4 @@
-.sidebar { display: flex; flex-direction: column; width: 520px; min-height: 0; background: var(--panel); border-right: 1px solid var(--border); }
+.sidebar { display: flex; flex-direction: column; flex: none; min-height: 0; background: var(--panel); border-right: 1px solid var(--border); }
 .notebook-picker { position: relative; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .notebook-current { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; color: var(--text); font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; text-align: left; }
 .notebook-current .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -12,7 +12,7 @@
 .danger { color: var(--danger) !important; }
 .swatches { display: flex; gap: 6px; padding: 6px 10px; }
 .swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); cursor: pointer; padding: 0; }
-.sidebar-cols { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
+.sidebar-cols { display: flex; flex: 1; min-height: 0; }
 .sidebar-col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
 .sidebar-col:last-child { border-right: none; }
 .tree { list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; flex: 1; }
@@ -23,7 +23,7 @@
 .tree-row.drop-before { border-top-color: var(--accent); }
 .tree-row.drop-after { border-bottom-color: var(--accent); }
 .tree-row.drop-inside { outline: 1px solid var(--accent); outline-offset: -1px; }
-.tree-row .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .color-bar { width: 6px; height: 22px; border-radius: 3px; flex: none; }
 .chevron { width: 12px; color: var(--muted); flex: none; }
 .inline-rename { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 3px; padding: 2px 4px; }
