@@ -1,6 +1,7 @@
 import { UndoManager, type LoroDoc } from 'loro-crdt'
-import { PageDoc, computePush, settleOverlaps, type BoxState, type PMJSON } from '@slate/core'
+import { PageDoc, computePush, contentToJSON, settleOverlaps, type BoxState, type PMJSON } from '@slate/core'
 import { writeContent } from './content'
+import { isEmptyContent } from './emptyBox'
 
 export interface DocPersistence {
   load(docId: string): Promise<Uint8Array[]>
@@ -69,6 +70,16 @@ export class PageSession {
     writeContent(this.page.contentMap(id)!, blocks, this.doc)
     this.doc.commit()
     return id
+  }
+
+  /** Removes a box left empty (no text, no image, not private). Returns whether it was removed. */
+  deleteIfEmpty(boxId: string): boolean {
+    const box = this.page.getBox(boxId)
+    const content = this.page.contentMap(boxId)
+    if (!box || box.private || !content || !isEmptyContent(contentToJSON(content))) return false
+    // sys:* is ignored by the UndoManager: undo must not bring back an empty box.
+    this.page.deleteBox(boxId, 'sys:empty')
+    return true
   }
 
   noteLocalEdit(boxId: string): void {

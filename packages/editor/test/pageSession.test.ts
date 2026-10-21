@@ -108,6 +108,31 @@ describe('PageSession', () => {
     session.close()
   })
 
+  it('deletes an empty box without making an undo step', async () => {
+    const session = await PageSession.open('p-empty', memoryPersistence())
+    const empty = session.createBox(0, 200)
+    await tick()
+    expect(session.deleteIfEmpty(empty)).toBe(true)
+    expect(session.page.getBox(empty)).toBeUndefined()
+    // Undo and redo step over the creation; neither may bring back the deleted empty box.
+    session.undo()
+    expect(session.page.getBox(empty)).toBeUndefined()
+    session.redo()
+    expect(session.page.getBox(empty)).toBeUndefined()
+    session.close()
+  })
+
+  it('never deletes a box with content, an image or the private flag', async () => {
+    const session = await PageSession.open('p-keep', memoryPersistence())
+    const text = session.createBoxWithContent(0, 0, [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }])
+    const image = session.createBoxWithContent(0, 100, [{ type: 'image', attrs: { src: 'slate-blob://a' } }])
+    const priv = session.createBox(0, 200)
+    session.page.updateBox(priv, { private: true })
+    for (const id of [text, image, priv]) expect(session.deleteIfEmpty(id)).toBe(false)
+    expect(session.getBoxes()).toHaveLength(3)
+    session.close()
+  })
+
   it('undoes and redoes page changes', async () => {
     const session = await PageSession.open('p4', memoryPersistence())
     session.createBox(0, 0)
