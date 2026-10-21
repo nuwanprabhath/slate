@@ -8,6 +8,7 @@ import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
 import { PageList } from './sidebar/PageList'
 import { SectionList } from './sidebar/SectionList'
+import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
 export function useMenuCommands(setSettings: (s: Settings) => void): void {
@@ -109,6 +110,7 @@ function Workspace({ library }: { library: Library }) {
         </div>
       </aside>
       <main className="app-main">
+        <Toolbar />
         {page?.pageId ? <PageView key={page.pageId} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}
       </main>
     </div>
