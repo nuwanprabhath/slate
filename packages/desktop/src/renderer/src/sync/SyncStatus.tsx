@@ -20,6 +20,10 @@ export function lastSyncedText(at: number | undefined, now = Date.now()): string
   return hours < 24 ? `Last synced ${hours} h ago` : `Last synced ${new Date(at).toLocaleDateString()}`
 }
 
+export function syncStateText(state: SyncState): string {
+  return [LABELS[state.status], state.message, lastSyncedText(state.lastSyncedAt)].filter(Boolean).join(' · ')
+}
+
 export function useSyncState(): SyncState | null {
   const [state, setState] = useState<SyncState | null>(null)
   useEffect(() => {

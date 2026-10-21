@@ -50,12 +50,17 @@ export function encryptedCachePlugin(file: string, storage: SecretStorage, warn:
   }
 }
 
-function fakeAuth(): AuthService {
-  let signedIn = false
+/** Keeps its sign-in in `cacheFile`, as MSAL does, so a relaunched e2e app is still signed in. */
+function fakeAuth(cacheFile: string): AuthService {
+  let signedIn = existsSync(cacheFile) && readFileSync(cacheFile, 'utf8') === 'fake-signed-in'
+  const save = (value: boolean) => {
+    signedIn = value
+    writeFileSync(cacheFile, value ? 'fake-signed-in' : '')
+  }
   return {
     status: async () => ({ configured: true, signedIn, ...(signedIn ? { account: 'test@example.com' } : {}) }),
-    signIn: async () => void (signedIn = true),
-    signOut: async () => void (signedIn = false),
+    signIn: async () => save(true),
+    signOut: async () => save(false),
     token: async () => {
       if (!signedIn) throw new Error('not signed in')
       return 'fake-token'
@@ -70,7 +75,7 @@ export function createAuthService(opts: {
   fake: boolean
   storage?: SecretStorage
 }): AuthService {
-  if (opts.fake) return fakeAuth()
+  if (opts.fake) return fakeAuth(opts.cacheFile)
   let pca: PublicClientApplication | null = null
   const client = (): PublicClientApplication => {
     if (!opts.clientId) throw new Error('No Microsoft client id is configured')

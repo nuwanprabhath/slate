@@ -70,4 +70,13 @@ describe('createAuthService', () => {
     await auth.signOut()
     expect((await auth.status()).signedIn).toBe(false)
   })
+
+  it('fake auth stays signed in across restarts, like the real token cache', async () => {
+    const cacheFile = tempFile()
+    const make = () => createAuthService({ clientId: null, cacheFile, openBrowser: async () => {}, fake: true })
+    await make().signIn()
+    expect((await make().status()).signedIn).toBe(true)
+    await make().signOut()
+    expect((await make().status()).signedIn).toBe(false)
+  })
 })

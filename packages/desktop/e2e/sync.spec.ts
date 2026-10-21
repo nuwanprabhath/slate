@@ -12,8 +12,8 @@ const apps: ElectronApplication[] = []
 let a: Page
 let b: Page
 
-async function launch(): Promise<Page> {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-sync-')), {
+async function launch(userData = mkdtempSync(join(tmpdir(), 'slate-e2e-sync-'))): Promise<Page> {
+  const { app, page } = await launchApp(userData, {
     SLATE_GRAPH_URL: drive.url,
     SLATE_FAKE_AUTH: '1',
     SLATE_SYNC_INTERVAL_MS: '500',
@@ -113,5 +113,46 @@ test.describe.serial('OneDrive sync between two devices', () => {
       .toBe(true)
     const mine = page === a ? 'edit-on-A' : 'edit-on-B'
     await expect(a.getByTestId('box-editor')).toContainText(mine)
+  })
+})
+
+test.describe.serial('a new device that starts with sync on', () => {
+  test.afterAll(async () => {
+    for (const app of apps.splice(0)) await app.close()
+    await drive.close()
+  })
+
+  test('gets the notebooks from the drive and no default notebook of its own', async () => {
+    test.setTimeout(60_000)
+    drive = await startFakeDrive()
+    const notebookIds = (page: Page) => page.evaluate(() => window.slate.docs.list('notebook:'))
+
+    // Pre-seed B: sync turned on, nothing in its store. The drive is offline, so B's default
+    // notebook never reaches it, and B drops that notebook before quitting.
+    drive.offline(true)
+    const bData = mkdtempSync(join(tmpdir(), 'slate-e2e-sync-'))
+    const seed = await launch(bData)
+    await turnOnSync(seed)
+    await seed.evaluate(async () => {
+      for (const id of await window.slate.docs.list('notebook:')) await window.slate.docs.remove(id)
+    })
+    await apps.pop()!.close()
+    drive.offline(false)
+
+    a = await launch()
+    await turnOnSync(a)
+    await expect(status(a)).toHaveAttribute('data-state', 'idle-synced', { timeout: 10_000 })
+    const aNotebooks = await notebookIds(a)
+    expect(aNotebooks).toHaveLength(1)
+
+    drive.offline(true)
+    b = await launch(bData)
+    await expect(b.getByTestId('waiting-for-sync')).toContainText('Waiting for your notebooks from OneDrive…')
+    drive.offline(false)
+    await expect(b.getByTestId('notebook-picker')).toBeVisible({ timeout: 10_000 })
+    await expect(status(b)).toHaveAttribute('data-state', 'idle-synced', { timeout: 10_000 })
+    expect(await notebookIds(b)).toEqual(aNotebooks)
+    await b.getByTestId('notebook-picker').click()
+    await expect(b.locator('.notebook-menu > [role="menuitem"]:has(~ hr)')).toHaveCount(1)
   })
 })
