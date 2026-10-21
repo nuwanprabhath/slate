@@ -107,3 +107,22 @@ describe('DocStore', () => {
     store.close()
   })
 })
+
+describe('DocStore import tables', () => {
+  it('round-trips import items and OneNote id mappings', () => {
+    const file = tempDb()
+    const store = new DocStore(file)
+    expect(store.getImportItem('p1')).toBeUndefined()
+    store.setImportItem('p1', { lastModified: '2026-01-01T00:00:00Z', status: 'failed', error: 'Graph 503' })
+    store.setImportItem('p2', { lastModified: '2026-01-02T00:00:00Z', status: 'done' })
+    store.setImportItem('p1', { lastModified: '2026-01-03T00:00:00Z', status: 'done' })
+    expect(store.getMapping('nb1')).toBeUndefined()
+    store.setMapping('nb1', 'slate-nb')
+    store.close()
+    const again = new DocStore(file)
+    expect(again.getImportItem('p1')).toEqual({ lastModified: '2026-01-03T00:00:00Z', status: 'done' })
+    expect(again.getImportItem('p2')).toEqual({ lastModified: '2026-01-02T00:00:00Z', status: 'done' })
+    expect(again.getMapping('nb1')).toBe('slate-nb')
+    again.close()
+  })
+})

@@ -2,6 +2,8 @@ import { clipboard, ClipboardItem, ipcMain, nativeImage } from 'electron'
 import { CH } from '../shared/ipc'
 import type { Settings } from '../shared/api'
 import type { BlobStore } from './blobs'
+import type { AuthService } from './onenote/auth'
+import type { ImportService } from './onenote/importService'
 import { readSettings, writeSettings } from './settings'
 import type { DocStore } from './store'
 
@@ -23,4 +25,15 @@ export function registerIpc(store: DocStore, blobs: BlobStore): void {
   ipcMain.handle(CH.settingsSet, (_e, patch: Partial<Settings>) => writeSettings(store, patch))
   ipcMain.handle(CH.auditList, (_e, limit?: number) => store.listAudit(limit ?? 200))
   ipcMain.handle(CH.clipboardText, () => clipboard.readText())
+}
+
+export function registerOneNoteIpc(auth: AuthService, importer: ImportService, setClientId: (id: string) => void): void {
+  ipcMain.handle(CH.onenoteStatus, () => auth.status())
+  ipcMain.handle(CH.onenoteSignIn, () => auth.signIn())
+  ipcMain.handle(CH.onenoteSignOut, () => auth.signOut())
+  ipcMain.handle(CH.onenoteTree, () => importer.tree())
+  ipcMain.handle(CH.onenoteStart, (_e, ids: string[]) => importer.start(ids))
+  ipcMain.handle(CH.onenoteRetry, () => importer.retryFailed())
+  ipcMain.handle(CH.onenoteCancel, () => importer.cancel())
+  ipcMain.handle(CH.onenoteSetClientId, (_e, id: string) => setClientId(id.trim()))
 }

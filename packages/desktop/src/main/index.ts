@@ -1,11 +1,14 @@
-import { app, BrowserWindow, net, protocol } from 'electron'
+import { app, BrowserWindow, net, protocol, shell } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CH } from '../shared/ipc'
 import { BLOB_SCHEME, BlobStore } from './blobs'
 import { createExternalWatch } from './externalWatch'
-import { registerIpc } from './ipc'
+import { registerIpc, registerOneNoteIpc } from './ipc'
 import { buildMenu } from './menu'
+import { createAuthService, type AuthService } from './onenote/auth'
+import { ImportService } from './onenote/importService'
+import { readSettings, writeSettings } from './settings'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { DocStore } from './store'
 
@@ -54,6 +57,32 @@ void app.whenReady().then(() => {
     return file ? net.fetch(pathToFileURL(file).toString()) : new Response('Not found', { status: 404 })
   })
   registerIpc(store, blobs)
+  const makeAuth = () =>
+    createAuthService({
+      clientId: process.env.SLATE_MS_CLIENT_ID ?? readSettings(store).msClientId ?? null,
+      cacheFile: join(dataDir, 'msal-cache.bin'),
+      openBrowser: (url) => shell.openExternal(url),
+      fake: isE2E && process.env.SLATE_FAKE_AUTH === '1',
+    })
+  // Saving a client id swaps the MSAL client underneath the service.
+  let auth = makeAuth()
+  const currentAuth: AuthService = {
+    status: () => auth.status(),
+    signIn: () => auth.signIn(),
+    signOut: () => auth.signOut(),
+    token: (scopes) => auth.token(scopes),
+  }
+  const importer = new ImportService({
+    dbFile: join(dataDir, 'slate.db'),
+    blobs,
+    auth: currentAuth,
+    graphUrl: process.env.SLATE_GRAPH_URL ?? 'https://graph.microsoft.com/v1.0',
+    emit: (p) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.onenoteProgress, p)),
+  })
+  registerOneNoteIpc(currentAuth, importer, (id) => {
+    writeSettings(store, { msClientId: id || null })
+    auth = makeAuth()
+  })
   buildMenu(store)
   createWindow()
   app.on('activate', () => {
@@ -64,6 +93,7 @@ void app.whenReady().then(() => {
   )
   app.on('will-quit', () => {
     watch.stop()
+    importer.close()
     store.close()
   })
 })

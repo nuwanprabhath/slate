@@ -11,4 +11,13 @@ export const CH = {
   auditList: 'audit:list',
   menu: 'menu:command',
   externalUpdates: 'docs:external',
+  onenoteStatus: 'onenote:status',
+  onenoteSignIn: 'onenote:sign-in',
+  onenoteSignOut: 'onenote:sign-out',
+  onenoteTree: 'onenote:tree',
+  onenoteStart: 'onenote:start',
+  onenoteRetry: 'onenote:retry',
+  onenoteCancel: 'onenote:cancel',
+  onenoteSetClientId: 'onenote:set-client-id',
+  onenoteProgress: 'onenote:progress',
 } as const

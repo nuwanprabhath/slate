@@ -9,9 +9,10 @@ interface Props {
   library: Library
   current: NotebookEntry
   onSelect: (notebookId: string) => void
+  onImport: () => void
 }
 
-export function NotebookPicker({ library, current, onSelect }: Props) {
+export function NotebookPicker({ library, current, onSelect, onImport }: Props) {
   const [open, setOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [armedDelete, setArmedDelete] = useState(false)
@@ -70,6 +71,17 @@ export function NotebookPicker({ library, current, onSelect }: Props) {
             }}
           >
             New notebook
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="import-onenote"
+            onClick={() => {
+              close()
+              onImport()
+            }}
+          >
+            Import from OneNote…
           </button>
           <button
             type="button"

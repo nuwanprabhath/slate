@@ -1,0 +1,28 @@
+/* OneNote import overlay */
+.import-backdrop { position: fixed; inset: 0; z-index: 30; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; }
+.import-dialog { width: min(560px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; font-size: 13px; }
+.import-dialog header { display: flex; align-items: center; justify-content: space-between; }
+.import-dialog h2 { margin: 0; font-size: 16px; }
+.import-dialog h3 { margin: 14px 0 6px; font-size: 13px; }
+.import-dialog header button { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
+.import-dialog .muted { color: var(--muted); }
+.import-dialog button { font: inherit; color: var(--text); background: var(--hover); border: 1px solid var(--border); border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+.import-dialog button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.import-dialog button:disabled { opacity: 0.5; cursor: default; }
+.import-dialog button.link { background: none; border: none; padding: 0; color: var(--accent); }
+.import-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.import-dialog ol { padding-left: 20px; line-height: 1.6; }
+.import-dialog code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.import-error { color: var(--danger); overflow-wrap: anywhere; }
+.import-client-id { display: flex; gap: 8px; }
+.import-client-id input { flex: 1; font: 13px ui-monospace, Menlo, Consolas, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; }
+.import-tree, .import-tree ul { list-style: none; margin: 0; padding: 0; }
+.import-tree { border: 1px solid var(--border); border-radius: 4px; max-height: 40vh; overflow: auto; padding: 4px 0; }
+.import-tree-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer; user-select: none; }
+.import-tree-row:hover { background: var(--hover); }
+.import-check { width: 12px; height: 12px; border: 1px solid var(--muted); border-radius: 2px; flex: none; }
+.import-check.is-true { background: var(--accent); border-color: var(--accent); }
+.import-check.is-mixed { background: linear-gradient(var(--accent), var(--accent)) center / 6px 2px no-repeat; border-color: var(--accent); }
+.import-dialog progress { width: 100%; }
+.import-current { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-failed, .import-lossy { padding-left: 18px; margin: 0; }
