@@ -11,8 +11,6 @@
     "e2e": "electron-vite build && playwright test"
   },
   "dependencies": {
-    "@slate/core": "*",
-    "@slate/editor": "*",
     "better-sqlite3": "^13.0.3",
     "loro-crdt": "^1.16.4",
     "react": "^19.3.1",
@@ -20,7 +18,11 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@playwright/test": "^1.64.1",
+    "@slate/core": "*",
+    "@slate/editor": "*",
+    "@slate/mcp": "*",
     "@types/better-sqlite3": "^9.6.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
