@@ -1,0 +1,11 @@
+#!/bin/sh
+# A commit on a detached HEAD belongs to no branch: the next checkout leaves it behind.
+# Rebase and cherry-pick detach on purpose and finish on a branch, so they are let through.
+if ! git symbolic-ref -q HEAD >/dev/null; then
+  gitdir=$(git rev-parse --git-dir)
+  if [ ! -d "$gitdir/rebase-merge" ] && [ ! -d "$gitdir/rebase-apply" ] && [ ! -f "$gitdir/CHERRY_PICK_HEAD" ]; then
+    echo "pre-commit: HEAD is detached, so this commit would belong to no branch." >&2
+    echo "  Switch to a branch first (git switch <branch> or git switch -c <name>)." >&2
+    exit 1
+  fi
+fi

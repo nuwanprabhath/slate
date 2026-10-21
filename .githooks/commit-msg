@@ -1,0 +1,14 @@
+#!/bin/sh
+# Conventional Commits subject: type(scope)?: summary — the style the history uses.
+subject=$(head -1 "$1")
+if ! printf '%s' "$subject" | grep -qE '^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([a-z0-9-]+\))?!?: .+'; then
+  case "$subject" in Merge*) ;; *)
+    echo "commit-msg: subject must be a Conventional Commit, e.g. 'feat(editor): add toolbar'." >&2
+    exit 1 ;;
+  esac
+fi
+# No AI attribution in commit messages (CLAUDE.md, Never).
+if grep -qiE '^co-authored-by:.*(claude|anthropic|openai|copilot)|generated with \[?claude' "$1"; then
+  echo "commit-msg: remove the AI attribution line from the commit message." >&2
+  exit 1
+fi

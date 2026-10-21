@@ -1,0 +1,3 @@
+#!/bin/sh
+# Whole-repo checks too slow for every commit. E2E stays out: run `npm run e2e` before a release.
+npm run typecheck && npm test || exit 1
