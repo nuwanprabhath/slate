@@ -23,7 +23,7 @@ async function launch(userData = mkdtempSync(join(tmpdir(), 'slate-e2e-sync-')))
 }
 
 async function turnOnSync(page: Page) {
-  await page.getByTestId('sync-status').click()
+  await page.getByTestId('sync-menu').click()
   await expect(page.getByTestId('sync-popover')).toBeVisible()
   await page.getByTestId('sync-toggle').click()
   await expect(page.getByTestId('sync-toggle')).toHaveText('Turn off sync')

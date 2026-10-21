@@ -15,7 +15,7 @@ import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
 import { PageList } from './sidebar/PageList'
 import { SectionList } from './sidebar/SectionList'
-import { providerName, SyncStatus, syncStateText, useSyncState } from './sync/SyncStatus'
+import { providerName, syncStateText, useSyncState } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
@@ -239,7 +239,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
 
   return (
     <div className="app">
-      <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} bottom={<SyncStatus />} />
+      <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
       {layout.panelOpen && activeTool.panel()}
       <main className="app-main">
         <Toolbar />

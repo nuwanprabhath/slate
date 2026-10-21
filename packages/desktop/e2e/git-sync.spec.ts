@@ -21,7 +21,7 @@ async function launch(userData: string): Promise<{ app: ElectronApplication; pag
 }
 
 async function openSettings(page: Page) {
-  await page.getByTestId('sync-status').click()
+  await page.getByTestId('sync-menu').click()
   await page.getByTestId('sync-settings-open').click()
   await expect(page.getByTestId('sync-settings')).toBeVisible()
 }
@@ -53,6 +53,23 @@ const syncedToGit = (page: Page) =>
         setTimeout(() => reject(new Error(`never synced: ${button.getAttribute('title')}`)), 20_000)
       }),
   )
+
+test('with sync off the toolbar button opens Sync settings, at the toolbar right edge', async () => {
+  const { app, page } = await launch(join(root, 'off'))
+  try {
+    const button = page.getByTestId('sync-status')
+    await expect(button).toBeVisible()
+    const toolbar = (await page.getByRole('toolbar', { name: 'Formatting' }).boundingBox())!
+    const box = (await page.getByTestId('sync-menu').boundingBox())!
+    expect(box.x + box.width).toBeGreaterThan(toolbar.x + toolbar.width - 24)
+    expect(box.x + box.width).toBeLessThanOrEqual(toolbar.x + toolbar.width)
+    await button.click()
+    await expect(page.getByTestId('sync-settings')).toBeVisible()
+  } finally {
+    await app.close()
+    apps.splice(apps.length - 1, 1)
+  }
+})
 
 test.describe.serial('git sync between two devices', () => {
   test.beforeAll(async () => {
@@ -93,6 +110,15 @@ test.describe.serial('git sync between two devices', () => {
     await a.keyboard.press('Escape')
     await expect(a.getByTestId('sync-settings')).toHaveCount(0)
     await syncedToGit(a)
+  })
+
+  test('clicking the toolbar button runs a sync', async () => {
+    const button = a.getByTestId('sync-status')
+    await expect(button).toHaveAttribute('data-state', 'idle-synced', { timeout: 20_000 })
+    await expect(a.getByTestId('sync-age')).toHaveText(/just now|min ago/)
+    await button.click()
+    await expect(button).toHaveAttribute('data-state', 'idle-synced', { timeout: 20_000 })
+    await expect(button).toHaveAttribute('title', /Last synced just now/)
   })
 
   test('the repository has commits from both devices and no credentials anywhere', async () => {
