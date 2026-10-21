@@ -11,6 +11,10 @@ const isE2E = process.env.SLATE_E2E === '1'
 
 protocol.registerSchemesAsPrivileged([{ scheme: BLOB_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
+// Relative to out/main/index.js, which sits two levels below the package root both in dev and inside
+// a packaged app, so `resources/` only has to be included in the package files.
+const iconPath = join(__dirname, '../../resources/icon.png')
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
@@ -18,6 +22,7 @@ function createWindow(): BrowserWindow {
     show: false,
     title: 'Slate',
     backgroundColor: '#1e1e1e',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -34,6 +39,7 @@ function createWindow(): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
+  if (!app.isPackaged) app.dock?.setIcon(iconPath)
   const dataDir = app.getPath('userData')
   const store = new DocStore(join(dataDir, 'slate.db'))
   const blobs = new BlobStore(join(dataDir, 'blobs'))
