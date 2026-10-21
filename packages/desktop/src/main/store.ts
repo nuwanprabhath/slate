@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { LoroDoc } from 'loro-crdt'
 import type { ImportRecord } from '@slate/importer'
+import type { ConflictRecord } from '@slate/sync'
 
 const COMPACT_THRESHOLD = 500
 
@@ -30,7 +31,69 @@ export class DocStore {
       CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, target TEXT NOT NULL, outcome TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS import_items (id TEXT PRIMARY KEY, last_modified TEXT, status TEXT, error TEXT);
       CREATE TABLE IF NOT EXISTS import_map (onenote_id TEXT PRIMARY KEY, slate_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS sync_seen (item_id TEXT PRIMARY KEY, etag TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS blob_synced (name TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, box_id TEXT NOT NULL, device TEXT NOT NULL, mine TEXT NOT NULL, theirs TEXT NOT NULL, merged TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, message TEXT NOT NULL);
     `)
+    const columns = this.db.prepare('PRAGMA table_info(updates)').all() as Array<{ name: string }>
+    if (!columns.some((c) => c.name === 'origin')) this.db.exec(`ALTER TABLE updates ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'`)
+  }
+
+  /** Sync bookkeeping: strings and version-vector bytes share one table. */
+  getSyncMeta(key: string): Uint8Array | undefined {
+    const row = this.db.prepare('SELECT value FROM sync_meta WHERE key = ?').get(key) as { value: Buffer } | undefined
+    return row ? new Uint8Array(row.value) : undefined
+  }
+
+  setSyncMeta(key: string, value: Uint8Array): void {
+    this.db
+      .prepare('INSERT INTO sync_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, Buffer.from(value))
+  }
+
+  syncSeen(itemId: string, eTag: string): boolean {
+    return this.db.prepare('SELECT 1 FROM sync_seen WHERE item_id = ? AND etag = ?').get(itemId, eTag) !== undefined
+  }
+
+  markSyncSeen(itemId: string, eTag: string): void {
+    this.db
+      .prepare('INSERT INTO sync_seen (item_id, etag) VALUES (?, ?) ON CONFLICT(item_id) DO UPDATE SET etag = excluded.etag')
+      .run(itemId, eTag)
+  }
+
+  blobSynced(name: string): boolean {
+    return this.db.prepare('SELECT 1 FROM blob_synced WHERE name = ?').get(name) !== undefined
+  }
+
+  markBlobSynced(name: string): void {
+    this.db.prepare('INSERT OR IGNORE INTO blob_synced (name) VALUES (?)').run(name)
+  }
+
+  addConflict(c: ConflictRecord): void {
+    this.db
+      .prepare('INSERT INTO conflicts (id, page_id, box_id, device, mine, theirs, merged, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(c.id, c.pageId, c.boxId, c.device, c.mine, c.theirs, c.merged, c.at)
+  }
+
+  listConflicts(pageId?: string): ConflictRecord[] {
+    const sql = 'SELECT id, page_id AS pageId, box_id AS boxId, device, mine, theirs, merged, at FROM conflicts'
+    const rows = pageId === undefined ? this.db.prepare(`${sql} ORDER BY at`).all() : this.db.prepare(`${sql} WHERE page_id = ? ORDER BY at`).all(pageId)
+    return rows as ConflictRecord[]
+  }
+
+  removeConflict(id: string): void {
+    this.db.prepare('DELETE FROM conflicts WHERE id = ?').run(id)
+  }
+
+  addNotice(message: string): void {
+    this.db.prepare('INSERT INTO notices (ts, message) VALUES (?, ?)').run(Date.now(), message)
+  }
+
+  /** Per update row: 'local' (this app or an agent) or 'remote' (another device, through sync). */
+  origins(docId: string): string[] {
+    return (this.db.prepare('SELECT origin FROM updates WHERE doc_id = ? ORDER BY id').all(docId) as Array<{ origin: string }>).map((r) => r.origin)
   }
 
   /** Checkpoint of a OneNote page import. */
@@ -101,8 +164,8 @@ export class DocStore {
     return [...(snapshot ? [snapshot.data] : []), ...updates.map((u) => u.data)].map((b) => new Uint8Array(b))
   }
 
-  append(docId: string, update: Uint8Array): void {
-    this.db.prepare('INSERT INTO updates (doc_id, data) VALUES (?, ?)').run(docId, Buffer.from(update))
+  append(docId: string, update: Uint8Array, origin: 'local' | 'remote' = 'local'): void {
+    this.db.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
     const { n } = this.db.prepare('SELECT COUNT(*) AS n FROM updates WHERE doc_id = ?').get(docId) as { n: number }
     if (n >= COMPACT_THRESHOLD && this.options.compact !== false) this.compact(docId)
   }

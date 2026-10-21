@@ -6,11 +6,15 @@ import type { AuthService } from './onenote/auth'
 import type { ImportService } from './onenote/importService'
 import { readSettings, writeSettings } from './settings'
 import type { DocStore } from './store'
+import type { SyncService } from './sync/syncService'
 
-export function registerIpc(store: DocStore, blobs: BlobStore): void {
+export function registerIpc(store: DocStore, blobs: BlobStore, onAppend: () => void = () => {}): void {
   ipcMain.handle(CH.docsList, (_e, prefix: string) => store.list(prefix))
   ipcMain.handle(CH.docsLoad, (_e, docId: string) => store.load(docId))
-  ipcMain.handle(CH.docsAppend, (_e, docId: string, update: Uint8Array) => store.append(docId, update))
+  ipcMain.handle(CH.docsAppend, (_e, docId: string, update: Uint8Array) => {
+    store.append(docId, update)
+    onAppend()
+  })
   ipcMain.handle(CH.docsRemove, (_e, docId: string) => store.remove(docId))
   ipcMain.handle(CH.blobsPut, (_e, bytes: Uint8Array, mime: string) => blobs.put(bytes, mime))
   ipcMain.handle(CH.blobsCopyImage, async (_e, url: string) => {
@@ -25,6 +29,14 @@ export function registerIpc(store: DocStore, blobs: BlobStore): void {
   ipcMain.handle(CH.settingsSet, (_e, patch: Partial<Settings>) => writeSettings(store, patch))
   ipcMain.handle(CH.auditList, (_e, limit?: number) => store.listAudit(limit ?? 200))
   ipcMain.handle(CH.clipboardText, () => clipboard.readText())
+}
+
+export function registerSyncIpc(sync: SyncService): void {
+  ipcMain.handle(CH.syncStatus, () => sync.status())
+  ipcMain.handle(CH.syncSetEnabled, (_e, on: boolean) => sync.setEnabled(on))
+  ipcMain.handle(CH.syncNow, () => sync.now())
+  ipcMain.handle(CH.syncConflicts, (_e, pageId?: string) => sync.conflicts(pageId))
+  ipcMain.handle(CH.syncResolve, (_e, id: string, choice: 'merged' | 'mine' | 'theirs') => sync.resolve(id, choice))
 }
 
 export function registerOneNoteIpc(auth: AuthService, importer: ImportService, setClientId: (id: string) => void): void {

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { ActivityTool } from './tools'
 
 const isMac = navigator.platform.toLowerCase().includes('mac')
@@ -7,9 +8,11 @@ interface Props {
   activeId: string
   panelOpen: boolean
   onSelect: (id: string) => void
+  /** Status items pinned under the tools, at the bar's foot. */
+  bottom?: ReactNode
 }
 
-export function ActivityBar({ tools, activeId, panelOpen, onSelect }: Props) {
+export function ActivityBar({ tools, activeId, panelOpen, onSelect, bottom }: Props) {
   return (
     <div className="activity-bar" data-testid="activity-bar" role="toolbar" aria-orientation="vertical" aria-label="Tools">
       {tools.map((tool) => {
@@ -29,6 +32,11 @@ export function ActivityBar({ tools, activeId, panelOpen, onSelect }: Props) {
           </button>
         )
       })}
+      {bottom && (
+        <div className="activity-bottom" data-testid="activity-bottom">
+          {bottom}
+        </div>
+      )}
     </div>
   )
 }

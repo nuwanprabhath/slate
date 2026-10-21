@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { NotebookDoc, TreeItem } from '@slate/core'
 import { Canvas, PageSession } from '@slate/editor'
+import type { ConflictRecord } from '@slate/sync'
 import { currentSession } from './currentSession'
+import { ConflictResolver } from './sync/ConflictResolver'
 
 /** Read by the e2e test hooks; cheap enough to keep in production builds. */
 export const pageOpenTiming = { startedAt: 0, lastMs: null as number | null }
@@ -41,6 +43,24 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
     if (session) pageOpenTiming.lastMs = performance.now() - pageOpenTiming.startedAt
   }, [session])
 
+  // Every sync status event may follow a pull that recorded conflicts.
+  const [conflicts, setConflicts] = useState<ConflictRecord[]>([])
+  const refreshConflicts = useCallback(() => void window.slate.sync.conflicts(`page:${pageId}`).then(setConflicts), [pageId])
+  useEffect(() => {
+    refreshConflicts()
+    return window.slate.sync.onStatus(refreshConflicts)
+  }, [refreshConflicts])
+  const conflictBoxes = useMemo(() => new Set(conflicts.map((c) => c.boxId)), [conflicts])
+  const [resolving, setResolving] = useState<ConflictRecord | null>(null)
+  const openConflict = useCallback((boxId: string) => setResolving(conflicts.findLast((c) => c.boxId === boxId) ?? null), [conflicts])
+  const closeResolver = useCallback(
+    (resolved: boolean) => {
+      setResolving(null)
+      if (resolved) refreshConflicts()
+    },
+    [refreshConflicts],
+  )
+
   return (
     <div
       className="page-view"
@@ -62,7 +82,8 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
           nb.setTitle(item.id, e.target.value)
         }}
       />
-      {session && <Canvas session={session} />}
+      {session && <Canvas session={session} conflicts={conflictBoxes} onConflictClick={openConflict} />}
+      {resolving && <ConflictResolver conflict={resolving} onClose={closeResolver} />}
     </div>
   )
 }

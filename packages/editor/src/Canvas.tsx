@@ -6,7 +6,14 @@ import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
 import './canvas.css'
 
-export function Canvas({ session }: { session: PageSession }) {
+interface CanvasProps {
+  session: PageSession
+  /** Boxes whose edits were merged with another device's: they show a "merged edits" chip. */
+  conflicts?: Set<string>
+  onConflictClick?: (boxId: string) => void
+}
+
+export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   const boxes = useSyncExternalStore(session.subscribe, session.getBoxes)
   const [focusId, setFocusId] = useState<string | null>(null)
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
@@ -47,7 +54,16 @@ export function Canvas({ session }: { session: PageSession }) {
       <div className="slate-canvas" data-testid="canvas" style={{ minHeight: bottom + 400, minWidth: right + 200 }} onMouseDown={onMouseDown}>
         {scrollRoot &&
           boxes.map((b) => (
-            <Box key={b.id} box={b} session={session} scrollRoot={scrollRoot} autoFocus={b.id === focusId} onFocus={setFocusId} />
+            <Box
+              key={b.id}
+              box={b}
+              session={session}
+              scrollRoot={scrollRoot}
+              autoFocus={b.id === focusId}
+              onFocus={setFocusId}
+              conflict={conflicts?.has(b.id) ?? false}
+              onConflictClick={onConflictClick}
+            />
           ))}
       </div>
     </div>
