@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { LoroDoc } from 'loro-crdt'
+import type { ImportRecord } from '@slate/importer'
 
 const COMPACT_THRESHOLD = 500
 
@@ -27,7 +28,38 @@ export class DocStore {
       CREATE INDEX IF NOT EXISTS updates_doc ON updates (doc_id, id);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, target TEXT NOT NULL, outcome TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS import_items (id TEXT PRIMARY KEY, last_modified TEXT, status TEXT, error TEXT);
+      CREATE TABLE IF NOT EXISTS import_map (onenote_id TEXT PRIMARY KEY, slate_id TEXT NOT NULL);
     `)
+  }
+
+  /** Checkpoint of a OneNote page import. */
+  getImportItem(id: string): ImportRecord | undefined {
+    const row = this.db.prepare('SELECT last_modified, status, error FROM import_items WHERE id = ?').get(id) as
+      | { last_modified: string; status: ImportRecord['status']; error: string | null }
+      | undefined
+    if (!row) return undefined
+    return { lastModified: row.last_modified, status: row.status, ...(row.error !== null ? { error: row.error } : {}) }
+  }
+
+  setImportItem(id: string, record: ImportRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO import_items (id, last_modified, status, error) VALUES (?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET last_modified = excluded.last_modified, status = excluded.status, error = excluded.error`,
+      )
+      .run(id, record.lastModified, record.status, record.error ?? null)
+  }
+
+  /** The Slate id (notebook id or tree id) a OneNote notebook, group, section or page was imported as. */
+  getMapping(onenoteId: string): string | undefined {
+    return (this.db.prepare('SELECT slate_id FROM import_map WHERE onenote_id = ?').get(onenoteId) as { slate_id: string } | undefined)?.slate_id
+  }
+
+  setMapping(onenoteId: string, slateId: string): void {
+    this.db
+      .prepare('INSERT INTO import_map (onenote_id, slate_id) VALUES (?, ?) ON CONFLICT(onenote_id) DO UPDATE SET slate_id = excluded.slate_id')
+      .run(onenoteId, slateId)
   }
 
   appendAudit(entry: { tool: string; target: string; outcome: string }): void {

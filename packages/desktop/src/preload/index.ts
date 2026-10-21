@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { ExternalBatch, MenuCommand, SlateApi } from '../shared/api'
+import type { ImportProgress } from '@slate/importer'
 import { CH } from '../shared/ipc'
 
 const api: SlateApi = {
@@ -20,6 +21,21 @@ const api: SlateApi = {
   },
   audit: { list: (limit) => ipcRenderer.invoke(CH.auditList, limit) },
   clipboardText: () => ipcRenderer.invoke(CH.clipboardText),
+  onenote: {
+    status: () => ipcRenderer.invoke(CH.onenoteStatus),
+    signIn: () => ipcRenderer.invoke(CH.onenoteSignIn),
+    signOut: () => ipcRenderer.invoke(CH.onenoteSignOut),
+    tree: () => ipcRenderer.invoke(CH.onenoteTree),
+    start: (ids) => ipcRenderer.invoke(CH.onenoteStart, ids),
+    retryFailed: () => ipcRenderer.invoke(CH.onenoteRetry),
+    cancel: () => ipcRenderer.invoke(CH.onenoteCancel),
+    onProgress(handler) {
+      const listener = (_e: IpcRendererEvent, p: ImportProgress) => handler(p)
+      ipcRenderer.on(CH.onenoteProgress, listener)
+      return () => ipcRenderer.removeListener(CH.onenoteProgress, listener)
+    },
+    setClientId: (id) => ipcRenderer.invoke(CH.onenoteSetClientId, id),
+  },
   onMenu(handler) {
     const listener = (_e: IpcRendererEvent, command: MenuCommand) => handler(command)
     ipcRenderer.on(CH.menu, listener)
