@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyncState } from '../../../shared/api'
 import { SyncSettings } from './SyncSettings'
+import { syncAgeText } from './syncAge'
 import './sync.css'
 
 const LABELS: Record<SyncState['status'], string> = {
@@ -52,18 +53,19 @@ export function useSyncState(): SyncState | null {
 }
 
 /** A cloud with a badge per state; the syncing arrows hold still under reduced motion (sync.css). */
-function CloudIcon({ status }: { status: SyncState['status'] }) {
+function CloudIcon({ status, setUp }: { status: SyncState['status']; setUp: boolean }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M6 15.5h8a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 4.7 9.6 3 3 0 0 0 6 15.5Z" />
-      {status === 'idle-synced' && <path d="M7.5 11.5l1.8 1.8 3.4-3.6" />}
-      {status === 'syncing' && (
+      {!setUp && <path d="M10 9.5v4M8 11.5h4" />}
+      {setUp && status === 'idle-synced' && <path d="M7.5 11.5l1.8 1.8 3.4-3.6" />}
+      {setUp && status === 'syncing' && (
         <g className="sync-arrows">
           <path d="M7.5 11a2.5 2.5 0 0 1 4.3-1.6M12.5 12a2.5 2.5 0 0 1-4.3 1.6" />
         </g>
       )}
-      {status === 'offline' && <path d="M3 3l14 14" />}
-      {status === 'error' && <path d="M10 9.5v2.5M10 14h.01" />}
+      {setUp && status === 'offline' && <path d="M3 3l14 14" />}
+      {setUp && status === 'error' && <path d="M10 9.5v2.5M10 14h.01" />}
     </svg>
   )
 }
@@ -72,6 +74,8 @@ export function SyncStatus() {
   const state = useSyncState()
   const [open, setOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Set from the click until the report arrives, so the icon doesn't wait for the status event.
+  const [running, setRunning] = useState(false)
   const [, tick] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -92,21 +96,55 @@ export function SyncStatus() {
     }
   }, [open])
 
-  const status = state?.status ?? 'disabled'
-  const label = statusLabel(state)
+  const setUp = state?.enabled ?? false
+  const status = running ? 'syncing' : (state?.status ?? 'disabled')
+  const label = running ? LABELS.syncing : statusLabel(state)
   const last = lastSyncedText(state?.lastSyncedAt)
+  const age = setUp ? syncAgeText(state?.lastSyncedAt) : ''
+  const busy = status === 'syncing'
+  const tooltip = !setUp
+    ? 'Sync is not set up · Click to set up'
+    : [label, status === 'error' ? state?.message : '', last, busy ? '' : 'Click to sync now'].filter(Boolean).join(' · ')
+
+  const syncNow = () => {
+    if (busy || !setUp) return
+    setRunning(true)
+    void window.slate.sync.now().finally(() => setRunning(false))
+  }
+
   return (
     <div className="sync-status-wrap" ref={ref}>
       <button
         type="button"
-        className={`activity-button sync-status sync-${status}`}
+        className={`sync-status sync-${setUp ? status : 'disabled'}`}
         data-testid="sync-status"
         data-state={status}
-        aria-label={`${label}. ${last}`}
-        title={`${label}\n${last}`}
+        aria-label={tooltip}
+        title={tooltip}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => (setUp ? syncNow() : setSettingsOpen(true))}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setOpen((o) => !o)
+        }}
+      >
+        <CloudIcon status={status} setUp={setUp} />
+        {age && (
+          <span className="sync-age" data-testid="sync-age">
+            {age}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className="sync-chevron"
+        data-testid="sync-menu"
+        aria-label="Sync details"
+        aria-expanded={open}
+        onMouseDown={(e) => e.preventDefault()}
         onClick={() => setOpen((o) => !o)}
       >
-        <CloudIcon status={status} />
+        ▾
       </button>
       {open && (
         <div className="sync-popover" data-testid="sync-popover" role="dialog" aria-label="Sync">
@@ -116,7 +154,7 @@ export function SyncStatus() {
           {state?.account && <div className="sync-popover-detail">{state.account}</div>}
           {state?.remote && <div className="sync-popover-detail">{state.remote}</div>}
           <div className="sync-popover-actions">
-            <button type="button" data-testid="sync-now" disabled={!state?.enabled} onClick={() => void window.slate.sync.now()}>
+            <button type="button" data-testid="sync-now" disabled={!setUp || busy} onClick={syncNow}>
               Sync now
             </button>
             <button type="button" data-testid="sync-toggle" onClick={() => void window.slate.sync.setEnabled(!state?.enabled)}>

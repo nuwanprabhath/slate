@@ -1,11 +1,15 @@
-.sync-status-wrap { position: relative; }
+.sync-status-wrap { position: relative; display: flex; align-items: center; margin-left: auto; flex-shrink: 0; }
+.toolbar button.sync-status { display: flex; align-items: center; gap: 6px; padding: 0 6px; }
+.sync-age { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.toolbar button.sync-chevron { min-width: 16px; padding: 0; color: var(--muted); font-size: 10px; }
+@media (max-width: 700px) { .sync-age { display: none; } }
 .sync-status.sync-signed-out, .sync-status.sync-disabled { opacity: 0.55; }
 .sync-status.sync-error { color: var(--danger); }
 .sync-arrows { transform-origin: 10px 11.5px; animation: sync-spin 1.2s linear infinite; }
 @keyframes sync-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .sync-arrows { animation: none; } }
 
-.sync-popover { position: absolute; left: 44px; bottom: 0; z-index: 50; width: 220px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); color: var(--text); font-size: 12px; }
+.sync-popover { position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50; width: 220px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); color: var(--text); font-size: 12px; }
 .sync-popover-status { font-weight: 600; margin-bottom: 4px; }
 .sync-popover-detail { color: var(--muted); margin-bottom: 2px; overflow-wrap: anywhere; }
 .sync-popover-actions { display: flex; gap: 6px; margin-top: 8px; }

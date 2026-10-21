@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useSyncExternalStore, type ReactNode } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import { activeEditor } from '@slate/editor'
+import { SyncStatus } from './sync/SyncStatus'
 
 const FONTS = [
   { label: 'Default font', value: '' },
@@ -104,6 +105,7 @@ export function Toolbar() {
         <input data-testid="tb-highlight" type="color" disabled={!editor} defaultValue="#f2c12e" onChange={(e) => run((c) => c.toggleHighlight({ color: e.target.value }))()} />
       </label>
       {button('clear', '⌫', 'Clear formatting', false, run((c) => c.unsetAllMarks().clearNodes()))}
+      <SyncStatus />
     </div>
   )
 }
