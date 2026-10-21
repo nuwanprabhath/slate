@@ -10,8 +10,8 @@ import { dirname, join } from 'node:path'
 /** Returns a problem string, or null when shown red on base (or the check does not apply). */
 export function testsFailOnBase({ root, base, changed, git }) {
   if (!base) return null
-  const src = changed.filter((f) => /^packages\/(core|editor)\/src\//.test(f) && !f.endsWith('.css'))
-  const tests = changed.filter((f) => /^packages\/(core|editor)\/test\/.*\.test\.tsx?$/.test(f))
+  const src = changed.filter((f) => /^packages\/(core|editor|mcp)\/src\//.test(f) && !f.endsWith('.css'))
+  const tests = changed.filter((f) => /^packages\/(core|editor|mcp)\/test\/.*\.test\.tsx?$/.test(f))
   if (src.length === 0 || tests.length === 0) return null
   if (git(['log', '--format=%(trailers:key=No-Red-Test-Reason,valueonly)', `${base}..HEAD`]).trim() !== '') return null
 
