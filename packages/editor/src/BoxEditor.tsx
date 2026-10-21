@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { loroSyncPluginKey } from 'loro-prosemirror'
 import type { BoxState } from '@slate/core'
 import { activeEditor } from './activeEditor'
+import { currentTheme, onThemeChange } from './colorContrast'
 import { cleanPastedHtml, makeClipboardSerializer, serializeSliceAsText } from './clipboard'
 import { buildExtensions, schema } from './extensions'
 import { copySelectedImage, imageFilesFrom, insertImages } from './images'
@@ -22,6 +23,8 @@ interface Props {
 
 export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
   const services = useEditorServices()
+  // Mark colours are adapted to the theme when rendered, so a theme switch rebuilds the editor.
+  const theme = useSyncExternalStore(onThemeChange, currentTheme)
   const editor = useEditor(
     {
       extensions: [
@@ -67,7 +70,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         if (e.isEmpty) session.page.deleteBox(box.id)
       },
     },
-    [box.contentId, services.markdownShortcuts],
+    [box.contentId, services.markdownShortcuts, theme],
   )
   useEffect(
     () => () => {

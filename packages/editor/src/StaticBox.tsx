@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import { LoroMap, type ContainerID, type LoroDoc } from 'loro-crdt'
+import { onThemeChange } from './colorContrast'
 import { schema } from './extensions'
 import { renderStaticHtml } from './staticRender'
 
@@ -19,8 +20,13 @@ export function StaticBox({ doc, contentId, onActivate }: Props) {
       el.replaceChildren(...(fragment ? [fragment] : []))
     }
     render()
+    const offTheme = onThemeChange(render)
     const container = doc.getContainerById(contentId)
-    return container instanceof LoroMap ? container.subscribe(render) : undefined
+    const offDoc = container instanceof LoroMap ? container.subscribe(render) : undefined
+    return () => {
+      offTheme()
+      offDoc?.()
+    }
   }, [doc, contentId])
   return (
     <div

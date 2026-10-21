@@ -177,10 +177,15 @@ function query(): MediaQueryList | null {
 
 let theme: Theme = query()?.matches ? LIGHT_THEME : DARK_THEME
 const listeners = new Set<() => void>()
-query()?.addEventListener?.('change', (e) => {
-  theme = e.matches ? LIGHT_THEME : DARK_THEME
+query()?.addEventListener?.('change', (e) => setTheme(!e.matches))
+
+/** Follows the system theme; exported so tests can pick one. */
+export function setTheme(dark: boolean): void {
+  const next = dark ? DARK_THEME : LIGHT_THEME
+  if (next === theme) return
+  theme = next
   for (const l of listeners) l()
-})
+}
 
 export function currentTheme(): Theme {
   return theme
