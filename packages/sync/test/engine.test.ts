@@ -164,4 +164,30 @@ describe('SyncEngine', () => {
     }
     expect(await a.engine.syncOnce()).toMatchObject({ status: 'error', message: 'Graph 500' })
   })
+
+  it('flushes a drive that batches writes after the push and at the end', async () => {
+    const remote = memoryDrive()
+    const calls: string[] = []
+    const batching = {
+      upload: async (path: string, bytes: Uint8Array) => (calls.push('upload'), remote.upload(path, bytes)),
+      download: (path: string) => remote.download(path),
+      remove: (path: string) => remote.remove(path),
+      delta: async (cursor: string | null) => (calls.push('delta'), remote.delta(cursor)),
+      flush: async () => void calls.push('flush')
+    }
+    const local = memoryLocal()
+    const engine = new SyncEngine({ local, remote: batching, deviceId: 'A', deviceName: 'A' })
+    editPage(local, PAGE, (p) => addTextBox(p, 'batched'))
+    expect((await engine.syncOnce()).status).toBe('idle-synced')
+    expect(calls.filter((c) => c !== 'upload')).toEqual(['flush', 'delta', 'flush'])
+  })
+
+  it('reports a failed flush like any drive failure', async () => {
+    const remote = memoryDrive()
+    const local = memoryLocal()
+    const drive = { ...remote, flush: () => Promise.reject(Object.assign(new Error('denied'), { status: 401 })) }
+    const engine = new SyncEngine({ local, remote: drive, deviceId: 'A', deviceName: 'A' })
+    editPage(local, PAGE, (p) => addTextBox(p, 'x'))
+    expect(await engine.syncOnce()).toMatchObject({ status: 'signed-out' })
+  })
 })

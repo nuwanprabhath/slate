@@ -89,7 +89,9 @@ export class SyncEngine {
       for (const docId of await this.local.docIds()) pushedAt.set(docId, await this.pushDoc(docId, counts))
       await this.pushBlobs()
       await this.writeDevice()
+      await this.remote.flush?.()
       await this.pull(counts, pushedAt)
+      await this.remote.flush?.()
       return { status: 'idle-synced', ...counts, at: Date.now() }
     } catch (err) {
       return { status: statusOf(err), message: err instanceof Error ? err.message : String(err), ...counts, at: Date.now() }

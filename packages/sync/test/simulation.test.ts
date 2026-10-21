@@ -1,6 +1,12 @@
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PageDoc } from '@slate/core'
 import { SyncEngine } from '../src/engine'
+import { GitDrive } from '../src/gitDrive'
+import { nodeGitRunner } from '../src/gitRunner'
 import { OfflineError, type RemoteDrive } from '../src/types'
 import { memoryDrive } from './memoryDrive'
 import { addTextBox, appendText, editPage, memoryLocal, type MemoryLocal } from './memoryLocal'
@@ -27,7 +33,8 @@ function connection(shared: RemoteDrive): RemoteDrive & { offline: boolean } {
     upload: (path: string, bytes: Uint8Array) => guard(() => shared.upload(path, bytes)),
     download: (path: string) => guard(() => shared.download(path)),
     remove: (path: string) => guard(() => shared.remove(path)),
-    delta: (cursor: string | null) => guard(() => shared.delta(cursor))
+    delta: (cursor: string | null) => guard(() => shared.delta(cursor)),
+    flush: () => guard(async () => shared.flush?.())
   }
   return conn
 }
@@ -39,14 +46,21 @@ interface Device {
   engine: SyncEngine
 }
 
-async function simulate(seed: number, steps: number): Promise<Device[]> {
+/** Each device's own view of the shared remote. */
+type Drives = (deviceId: string) => RemoteDrive
+
+function sharedMemory(): Drives {
+  const shared = memoryDrive()
+  return () => shared
+}
+
+async function simulate(seed: number, steps: number, drives: Drives = sharedMemory()): Promise<Device[]> {
   const rand = mulberry32(seed)
   const pick = <T>(xs: T[]): T => xs[Math.floor(rand() * xs.length)]!
-  const shared = memoryDrive()
   let nextPeer = BigInt(seed) * 1000n + 1n
   const devices: Device[] = ['d1', 'd2', 'd3'].map((id) => {
     const local = memoryLocal()
-    const remote = connection(shared)
+    const remote = connection(drives(id))
     // A small threshold so compaction happens many times within a run.
     return { id, local, remote, engine: new SyncEngine({ local, remote, deviceId: id, deviceName: id, compactAfter: 4 }) }
   })
@@ -102,16 +116,33 @@ async function simulate(seed: number, steps: number): Promise<Device[]> {
   return devices
 }
 
+function expectConverged([a, b, c]: Device[]): void {
+  for (const docId of [PAGE, NOTEBOOK]) {
+    const expected = a!.local.doc(docId).toJSON()
+    expect(b!.local.doc(docId).toJSON()).toEqual(expected)
+    expect(c!.local.doc(docId).toJSON()).toEqual(expected)
+  }
+  expect(new PageDoc(a!.local.doc(PAGE)).listBoxes().length).toBeGreaterThan(0)
+}
+
 describe('three-device simulation', () => {
   for (const seed of [1, 2, 3, 4, 5]) {
     it(`converges for seed ${seed}`, async () => {
-      const [a, b, c] = await simulate(seed, 200)
-      for (const docId of [PAGE, NOTEBOOK]) {
-        const expected = a!.local.doc(docId).toJSON()
-        expect(b!.local.doc(docId).toJSON()).toEqual(expected)
-        expect(c!.local.doc(docId).toJSON()).toEqual(expected)
-      }
-      expect(new PageDoc(a!.local.doc(PAGE)).listBoxes().length).toBeGreaterThan(0)
+      expectConverged(await simulate(seed, 200))
     })
   }
+
+  it('converges over git clones of one bare repo', { timeout: 120_000 }, async () => {
+    const root = mkdtempSync(join(tmpdir(), 'slate-sim-'))
+    try {
+      const bare = join(root, 'remote.git')
+      execFileSync('git', ['init', '--bare', '--initial-branch=main', bare])
+      const run = nodeGitRunner()
+      const drives: Drives = (id) =>
+        new GitDrive({ run, dir: join(root, id), remoteUrl: `file://${bare}`, branch: 'main', authEnv: async () => ({}), author: { name: id, email: `${id}@test.local` } })
+      expectConverged(await simulate(1, 200, drives))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
