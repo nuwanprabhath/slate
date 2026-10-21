@@ -26,8 +26,49 @@ function simplifyTags(root: Element): void {
   for (const icon of Array.from(root.querySelectorAll('.note-tag-icon'))) icon.remove()
 }
 
+// OneNote stores some links as Word-style field codes; one2html leaves them in the text as
+// U+FDDF `HYPERLINK "url"` followed by the display text (to the end of the run).
+const FIELD_LINK = /﷟HYPERLINK\s+"([^"]*)"/
+
+function linkFieldCodes(root: Element): void {
+  const doc = root.ownerDocument
+  const walker: Text[] = []
+  const collect = (node: Node) => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3) walker.push(child as Text)
+      else collect(child)
+    }
+  }
+  collect(root)
+  for (const text of walker) {
+    const value = text.data
+    const m = FIELD_LINK.exec(value)
+    if (!m) continue
+    const before = value.slice(0, m.index)
+    // The display text runs to the next field code or the end of this text node.
+    const rest = value.slice(m.index + m[0].length)
+    const next = rest.search(/﷟/)
+    const display = (next < 0 ? rest : rest.slice(0, next)) || m[1]!
+    const after = next < 0 ? '' : rest.slice(next)
+    const a = doc.createElement('a')
+    a.setAttribute('href', m[1]!)
+    a.textContent = display
+    const parts: Node[] = []
+    if (before) parts.push(doc.createTextNode(before))
+    parts.push(a)
+    if (after) parts.push(doc.createTextNode(after))
+    text.replaceWith(...parts)
+    // A second field code in the same run is now in `after`, a fresh text node: scan again.
+    if (after) {
+      linkFieldCodes(root)
+      return
+    }
+  }
+}
+
 /** Keeps the content, drops what only styled one2html's own page. */
 function clean(root: Element): void {
+  linkFieldCodes(root)
   simplifyTags(root)
   for (const el of Array.from(root.querySelectorAll('script, style, svg'))) el.remove()
   for (const el of Array.from(root.querySelectorAll('div.outline-element'))) unwrap(el)

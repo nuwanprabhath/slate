@@ -59,6 +59,33 @@ describe('normalizeOne2HtmlPage', () => {
   })
 })
 
+describe('OneNote hyperlink field codes', () => {
+  const pageWith = (inner: string) =>
+    `<html><head><title>T</title></head><body><div class="container-outline" style="left: 48px; position: absolute; top: 24px; max-width: 600px;"><div class="outline-element"><span>${inner}</span></div></div></body></html>`
+
+  it('turns a field-code hyperlink left in the text into a real link', () => {
+    const md = textOf(mapOneNotePage(normalizeOne2HtmlPage(pageWith('rather than MCP﷟HYPERLINK "https://github.com/obra/Superpowers"Claude superpowers'))).boxes)
+    expect(md).not.toContain('HYPERLINK')
+    expect(md).not.toContain('﷟')
+    expect(md).toContain('"text":"rather than MCP"')
+    expect(md).toContain('{"type":"text","text":"Claude superpowers","marks":[{"type":"link","attrs":{"href":"https://github.com/obra/Superpowers"}}]}')
+  })
+
+  it('converts every field code on the page, in separate and in the same text runs', () => {
+    const inner = 'a ﷟HYPERLINK "https://one.dev"One</span><span> b ﷟HYPERLINK "https://two.dev"Two﷟HYPERLINK "https://three.dev"Three'
+    const md = textOf(mapOneNotePage(normalizeOne2HtmlPage(pageWith(inner))).boxes)
+    expect(md).not.toContain('HYPERLINK')
+    for (const [text, href] of [['One', 'https://one.dev'], ['Two', 'https://two.dev'], ['Three', 'https://three.dev']]) {
+      expect(md).toContain(`{"type":"text","text":"${text}","marks":[{"type":"link","attrs":{"href":"${href}"}}]}`)
+    }
+  })
+
+  it('handles a field code whose display text is empty by showing the URL', () => {
+    const md = textOf(mapOneNotePage(normalizeOne2HtmlPage(pageWith('see ﷟HYPERLINK "https://x.dev/a"'))).boxes)
+    expect(md).toContain('{"type":"text","text":"https://x.dev/a","marks":[{"type":"link","attrs":{"href":"https://x.dev/a"}}]}')
+  })
+})
+
 describe('parseOne2HtmlSection', () => {
   it('lists pages in nav order with decoded files', () => {
     expect(parseOne2HtmlSection(index)).toEqual([{ title: 'Test Page', file: 'New Section 1/Test Page.html', level: 0 }])
