@@ -8,5 +8,6 @@ export const CH = {
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   clipboardText: 'clipboard:text',
+  auditList: 'audit:list',
   menu: 'menu:command',
 } as const

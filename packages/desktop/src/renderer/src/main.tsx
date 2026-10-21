@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import './ai.css'
 import './app.css'
 import './sidebar.css'
 import './toolbar.css'

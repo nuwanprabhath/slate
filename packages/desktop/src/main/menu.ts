@@ -38,6 +38,7 @@ export function buildMenu(store: DocStore): void {
           checked: readSettings(store).markdownShortcuts,
           click: (item) => send({ cmd: 'settings-changed', settings: writeSettings(store, { markdownShortcuts: item.checked }) }),
         },
+        { id: 'ai-activity', label: 'AI Activity…', click: () => send({ cmd: 'show-ai-activity' }) },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },

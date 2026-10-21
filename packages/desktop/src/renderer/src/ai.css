@@ -1,0 +1,12 @@
+.ai-badge { margin-left: auto; padding: 0 5px; border-radius: 3px; font-size: 10px; font-weight: 700; line-height: 16px; color: var(--accent); border: 1px solid var(--accent); flex: none; }
+.notebook-current .ai-badge { margin-left: 6px; }
+.ai-activity-backdrop { position: fixed; inset: 0; z-index: 30; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; }
+.ai-activity { width: min(820px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+.ai-activity header { display: flex; align-items: center; justify-content: space-between; }
+.ai-activity h2 { margin: 0; font-size: 16px; }
+.ai-activity header button { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
+.ai-activity table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+.ai-activity th, .ai-activity td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.ai-activity td.target { font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.ai-activity tr.refused td { color: var(--danger); }
+.ai-activity .empty { color: var(--muted); }

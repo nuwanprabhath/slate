@@ -3,6 +3,7 @@ import type { NotebookDoc, TreeItem } from '@slate/core'
 import { cls } from '../treeUtils'
 import { ContextMenu, type MenuState } from './ContextMenu'
 import { applyDrop, DRAG_MIME, dropZone, type DropZone, type NodeId } from './dnd'
+import { accessItems, accessTitle } from './accessMenu'
 import { InlineRename } from './InlineRename'
 
 interface Props {
@@ -28,6 +29,7 @@ export function PageList({ nb, section, selectedPageId, onSelect, onDeleted }: P
         { label: 'Rename', onSelect: () => setRenaming(page.id) },
         { label: 'Make subpage', onSelect: () => nb.setLevel(page.id, page.level + 1) },
         { label: 'Promote subpage', onSelect: () => nb.setLevel(page.id, page.level - 1) },
+        ...accessItems(nb, page.id),
         { label: 'Delete', confirm: true, onSelect: () => onDeleted(nb.delete(page.id)) },
       ],
     })
@@ -71,6 +73,11 @@ export function PageList({ nb, section, selectedPageId, onSelect, onDeleted }: P
                 />
               ) : (
                 <span className="label">{page.title || 'Untitled page'}</span>
+              )}
+              {page.access && (
+                <span className="ai-badge" data-testid="ai-badge" title={accessTitle(page.access)}>
+                  AI
+                </span>
               )}
             </div>
           </li>
