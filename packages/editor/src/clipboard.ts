@@ -33,10 +33,15 @@ export function cleanPastedHtml(html: string): string {
   return doc.body.innerHTML
 }
 
-/** Copied HTML keeps colour only; fonts and sizes would fight the destination app's styling. */
+/**
+ * Copied HTML keeps colour only; fonts and sizes would fight the destination app's styling. The
+ * colour is the stored one (data-color), not the one adapted for Slate's dark theme: the
+ * destination draws on its own background.
+ */
 export function stripCopiedStyles(root: ParentNode): void {
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
-    const color = el.style.color
+    const stored = el.getAttribute('data-color')
+    const color = stored && el.style.color && el.style.color !== 'inherit' ? stored : el.style.color
     el.removeAttribute('style')
     el.removeAttribute('class')
     for (const attr of Array.from(el.attributes)) if (attr.name.startsWith('data-')) el.removeAttribute(attr.name)

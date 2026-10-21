@@ -28,6 +28,13 @@ describe('stripCopiedStyles', () => {
     stripCopiedStyles(root)
     expect(root.innerHTML).toBe('<p><span style="color: red;">t</span></p>')
   })
+
+  it('copies the stored colour, not the one adapted for the dark theme', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<p><span data-color="rgb(0,0,0)" style="color: rgb(230, 230, 230)">t</span><mark data-color="#ffff00" style="background-color: #555500; color: inherit">h</mark></p>'
+    stripCopiedStyles(root)
+    expect(root.innerHTML).toBe('<p><span style="color: rgb(0, 0, 0);">t</span><mark style="color: inherit;">h</mark></p>')
+  })
 })
 
 describe('clipboard serializers', () => {
