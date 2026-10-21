@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PageDoc } from '@slate/core'
 import { writeContent } from '../src/content'
 import { PageSession, pageDocId, type DocPersistence } from '../src/PageSession'
 
@@ -124,6 +125,18 @@ describe('PageSession', () => {
     const session = await PageSession.open('p5', memoryPersistence())
     const id = session.createBoxWithContent(5, 5, [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }])
     expect(session.page.contentMap(id)!.size).toBeGreaterThan(0)
+    session.close()
+  })
+
+  it('imports updates written by another process (an agent) and shows the new box', async () => {
+    const persistence = memoryPersistence()
+    const session = await PageSession.open('p9', persistence)
+    const other = PageDoc.fromUpdates(persistence.data.get(pageDocId('p9')) ?? [])
+    const from = other.doc.oplogVersion()
+    other.addBox({ x: 40, y: 400, width: 300 })
+    session.importExternal([other.doc.export({ mode: 'update', from })])
+    await tick()
+    expect(session.getBoxes()).toHaveLength(1)
     session.close()
   })
 })

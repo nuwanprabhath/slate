@@ -92,6 +92,11 @@ export class PageSession {
     if (moved.size > 0) this.page.moveBoxes(moved)
   }
 
+  /** Updates another process wrote; they arrive as `import` events like any remote change. */
+  importExternal(updates: Uint8Array[]): void {
+    if (updates.length > 0) this.doc.importBatch(updates)
+  }
+
   undo(): boolean {
     return this.undoManager.undo()
   }

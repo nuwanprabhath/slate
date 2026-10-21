@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { MenuCommand, SlateApi } from '../shared/api'
+import type { ExternalBatch, MenuCommand, SlateApi } from '../shared/api'
 import { CH } from '../shared/ipc'
 
 const api: SlateApi = {
@@ -24,6 +24,11 @@ const api: SlateApi = {
     const listener = (_e: IpcRendererEvent, command: MenuCommand) => handler(command)
     ipcRenderer.on(CH.menu, listener)
     return () => ipcRenderer.removeListener(CH.menu, listener)
+  },
+  onExternalUpdates(handler) {
+    const listener = (_e: IpcRendererEvent, batches: ExternalBatch[]) => handler(batches)
+    ipcRenderer.on(CH.externalUpdates, listener)
+    return () => ipcRenderer.removeListener(CH.externalUpdates, listener)
   },
 }
 
