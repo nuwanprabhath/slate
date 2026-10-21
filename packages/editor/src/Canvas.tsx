@@ -1,12 +1,37 @@
-import { useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { useEffect, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import type { PMJSON } from '@slate/core'
 import { Box } from './Box'
+import { imageFilesFrom } from './images'
 import type { PageSession } from './PageSession'
+import { useEditorServices } from './services'
 import './canvas.css'
 
 export function Canvas({ session }: { session: PageSession }) {
   const boxes = useSyncExternalStore(session.subscribe, session.getBoxes)
   const [focusId, setFocusId] = useState<string | null>(null)
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
+  const services = useEditorServices()
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest('.slate-box, input, textarea, [contenteditable="true"]')) return
+      const top = (scrollRoot?.scrollTop ?? 0) + 40
+      const files = imageFilesFrom(e.clipboardData)
+      const text = e.clipboardData?.getData('text/plain') ?? ''
+      if (files.length === 0 && text.trim() === '') return
+      e.preventDefault()
+      void (async () => {
+        const blocks: PMJSON[] =
+          files.length > 0
+            ? await Promise.all(files.map(async (f) => ({ type: 'image', attrs: { src: await services.putBlob(new Uint8Array(await f.arrayBuffer()), f.type) } })))
+            : text.replace(/\r\n?/g, '\n').split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] }))
+        session.createBoxWithContent(40, top, blocks)
+      })()
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [session, services, scrollRoot])
 
   const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget || e.button !== 0) return
