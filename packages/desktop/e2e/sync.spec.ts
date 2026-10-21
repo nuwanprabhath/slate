@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { startFakeDrive, type FakeDrive } from '../../sync/test/fakeDrive'
-import { expect, launchApp, test } from './fixtures'
+import { createBoxAt,expect, launchApp, test } from './fixtures'
 
 const LINE_END = process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End'
 
@@ -48,7 +48,7 @@ test.describe.serial('OneDrive sync between two devices', () => {
   })
 
   test('an edit on A appears live on B', async () => {
-    await a.getByTestId('canvas').click({ position: { x: 200, y: 150 } })
+    await createBoxAt(a, 200, 150)
     // Wait for the NEW (empty) box to own focus before typing.
     await expect(a.locator('[data-testid="box-editor"]:focus')).toHaveText('')
     await a.keyboard.type('hello from A')

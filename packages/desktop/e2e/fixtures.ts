@@ -18,6 +18,11 @@ export async function launchApp(userData: string, env: Record<string, string> = 
   return { app, page }
 }
 
+/** Double-click on empty canvas makes a box there and focuses it (a single click only places a caret). */
+export async function createBoxAt(page: Page, x: number, y: number): Promise<void> {
+  await page.getByTestId('canvas').dblclick({ position: { x, y } })
+}
+
 export const test = base.extend<{ userData: string; app: ElectronApplication; page: Page }>({
   userData: async ({}, use) => {
     await use(mkdtempSync(join(tmpdir(), 'slate-e2e-')))

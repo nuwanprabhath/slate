@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { expect, launchApp, test } from './fixtures'
+import { createBoxAt,expect, launchApp, test } from './fixtures'
 
 const root = mkdtempSync(join(tmpdir(), 'slate-e2e-git-'))
 const bare = join(root, 'notes.git')
@@ -87,7 +87,7 @@ test.describe.serial('git sync between two devices', () => {
 
   test('an edit on A appears on B', async () => {
     test.setTimeout(60_000)
-    await a.getByTestId('canvas').click({ position: { x: 200, y: 150 } })
+    await createBoxAt(a, 200, 150)
     await expect(a.locator('[data-testid="box-editor"]:focus')).toHaveText('')
     await a.keyboard.type('hello over git')
 

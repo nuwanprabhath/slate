@@ -100,8 +100,8 @@ export class PageDoc {
     this.doc.commit({ origin: 'sys:layout' })
   }
 
-  deleteBox(id: string): void {
+  deleteBox(id: string, origin?: string): void {
     this.boxes.delete(id)
-    this.doc.commit()
+    this.doc.commit(origin === undefined ? undefined : { origin })
   }
 }

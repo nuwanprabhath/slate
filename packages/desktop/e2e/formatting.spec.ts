@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, MOD, test } from './fixtures'
+import { createBoxAt,expect, MOD, test } from './fixtures'
 
 const focusedEditor = (page: Page) => page.locator('[data-testid="box-editor"]:focus')
 
@@ -14,7 +14,7 @@ async function newLineAfterHeading(page: Page) {
 }
 
 async function typeInNewBox(page: Page, text: string, x = 120, y = 120) {
-  await page.getByTestId('canvas').click({ position: { x, y } })
+  await createBoxAt(page, x, y)
   await expect(focusedEditor(page)).toHaveText('')
   await page.keyboard.type(text)
 }

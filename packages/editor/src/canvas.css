@@ -1,5 +1,8 @@
 .slate-scroll { flex: 1; overflow: auto; position: relative; }
-.slate-canvas { position: relative; width: 100%; cursor: text; }
+.slate-canvas { position: relative; width: 100%; cursor: text; outline: none; }
+/* Same line height as a box's first line, so the box that typing creates starts where the caret was. */
+.slate-pending-caret { position: absolute; width: 1.5px; height: 1.45em; background: currentColor; pointer-events: none; animation: slate-caret-blink 1s steps(1) infinite; }
+@keyframes slate-caret-blink { 50% { opacity: 0; } }
 .slate-box { position: absolute; border: 1px solid transparent; border-radius: 4px; cursor: auto; }
 .slate-box:hover, .slate-box:focus-within { border-color: var(--border); }
 .slate-box-bar { position: absolute; top: -14px; left: -1px; right: -1px; height: 14px; display: flex; gap: 2px; opacity: 0; }

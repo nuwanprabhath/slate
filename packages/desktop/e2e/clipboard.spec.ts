@@ -1,11 +1,11 @@
 import type { ElectronApplication, Page } from '@playwright/test'
-import { expect, MOD, test } from './fixtures'
+import { createBoxAt,expect, MOD, test } from './fixtures'
 
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
 async function newBox(page: Page, x = 120, y = 120) {
-  await page.getByTestId('canvas').click({ position: { x, y } })
+  await createBoxAt(page, x, y)
   // Wait for the NEW (empty) box to own focus: DOM order is by random box id, so .last() may be an old box.
   await expect(page.locator('[data-testid="box-editor"]:focus')).toHaveText('')
 }
