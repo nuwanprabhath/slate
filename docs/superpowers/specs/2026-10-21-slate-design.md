@@ -65,7 +65,7 @@ Rejected alternatives: Tauri 2 (WebKitGTK on Linux has known rendering, scrollin
 ### Data model
 - Hierarchy: `Notebook → SectionGroup (optional, nested) → Section → Page → Box`. Sections and pages have an order and a colour; pages have a subpage level (0–2), as in OneNote.
 - **Notebook tree document** (one Loro doc per notebook): names, colours, order, nesting, and AI permissions (`{nodeId: "read" | "readwrite"}`; anything not listed is denied).
-- **Page document** (one Loro doc per page): `title`, `boxes: Map<boxId, {x, y, width, private, content}>`. Height is computed from content, never stored.
+- **Page document** (one Loro doc per page): `boxes: Map<boxId, {x, y, width, private, content}>`. Height is computed from content, never stored. The page title lives on the page's node in the notebook tree document, so the sidebar can list pages without loading every page document.
 - **Box content:** a ProseMirror-compatible rich-text tree.
   - Nodes: paragraph, heading (1–3), bulletList, orderedList (with `start`), listItem, codeBlock (with `language`), table/row/cell, image (blob hash), hardBreak.
   - Marks: bold, italic, underline, strike, code, link, textColor, highlight, fontFamily, fontSize.
