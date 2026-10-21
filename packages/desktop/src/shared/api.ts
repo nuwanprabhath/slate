@@ -156,6 +156,19 @@ export interface SlateApi {
     onStatus(handler: (state: SyncState) => void): () => void
     onNotice(handler: (message: string) => void): () => void
   }
+  update: {
+    state(): Promise<UpdateState>
+    check(): Promise<void>
+    download(): Promise<void>
+    install(): Promise<void>
+    openInstaller(): Promise<void>
+    showInFolder(): Promise<void>
+    copyCommand(): Promise<void>
+    copyReleaseUrl(): Promise<void>
+    skip(): Promise<void>
+    dismiss(): Promise<void>
+    onState(handler: (state: UpdateState) => void): () => void
+  }
   onMenu(handler: (command: MenuCommand) => void): () => void
   /** Updates another process (an agent via slate-mcp) wrote to the database. */
   onExternalUpdates(handler: (batches: ExternalBatch[]) => void): () => void

@@ -1,0 +1,5 @@
+.update-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 12px; background: var(--panel-2); border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; }
+.update-banner-text { margin-right: auto; font-weight: 600; }
+.update-banner button { padding: 3px 8px; background: var(--hover); color: var(--text); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font: inherit; }
+.update-banner button.update-banner-link { background: none; border: none; color: var(--muted); text-decoration: underline; }
+.update-banner button.update-banner-close { background: none; border: none; color: var(--muted); font-size: 15px; line-height: 1; }

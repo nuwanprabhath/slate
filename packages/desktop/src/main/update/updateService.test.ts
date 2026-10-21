@@ -10,7 +10,7 @@ const found = (version: string) => ({
   ],
 })
 
-function stubBackend(version = '0.2.0'): UpdateBackend & { [K in keyof UpdateBackend]: ReturnType<typeof vi.fn> } {
+function stubBackend(version = '0.2.0') {
   return {
     check: vi.fn().mockResolvedValue(found(version)),
     downloadAuto: vi.fn().mockResolvedValue(undefined),
@@ -29,7 +29,7 @@ function setup(opts: { kind?: UpdateState['kind']; prefs?: UpdatePrefs; backend?
   const states: UpdateState[] = []
   const log = vi.fn()
   const service = new UpdateService({
-    backend,
+    backend: backend as unknown as UpdateBackend,
     kind: opts.kind ?? 'deb',
     arch: opts.kind === 'dmg' ? 'arm64' : 'x64',
     currentVersion: '0.1.0',

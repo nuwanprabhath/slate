@@ -18,6 +18,7 @@ import { SectionList } from './sidebar/SectionList'
 import { providerName, SyncStatus, syncStateText, useSyncState } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
+import { UpdateBanner } from './update/UpdateBanner'
 
 export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void, onShowImport: () => void, onShowConnectAgents: () => void, onShowBackupImport: () => void): void {
   useEffect(
@@ -242,6 +243,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
       <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} bottom={<SyncStatus />} />
       {layout.panelOpen && activeTool.panel()}
       <main className="app-main">
+        <UpdateBanner />
         <Toolbar />
         {page?.pageId ? <PageView key={page.pageId} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}
       </main>

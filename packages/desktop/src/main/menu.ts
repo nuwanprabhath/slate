@@ -9,11 +9,30 @@ function send(command: MenuCommand): void {
   win?.webContents.send(CH.menu, command)
 }
 
-/** onCheckForUpdates is given only when auto-update is enabled; without it the menu item is hidden. */
-export function buildMenu(store: DocStore, onCheckForUpdates?: () => void): void {
+/** "Check for Updates…" sits in the app menu on macOS and in Help elsewhere. */
+export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void {
   const isMac = process.platform === 'darwin'
+  const checkUpdates: MenuItemConstructorOptions = { id: 'check-updates', label: 'Check for Updates…', click: onCheckForUpdates }
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(isMac
+      ? [
+          {
+            role: 'appMenu' as const,
+            submenu: [
+              { role: 'about' as const },
+              checkUpdates,
+              { type: 'separator' as const },
+              { role: 'services' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const },
+            ],
+          },
+        ]
+      : []),
     {
       label: 'File',
       submenu: [
@@ -62,7 +81,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates?: () => void): void
       role: 'help',
       submenu: [
         { id: 'connect-agents', label: 'Connect AI agents…', click: () => send({ cmd: 'show-connect-agents' }) },
-        { id: 'check-updates', label: 'Check for Updates…', visible: onCheckForUpdates !== undefined, click: () => onCheckForUpdates?.() },
+        ...(isMac ? [] : [checkUpdates]),
       ],
     },
   ]
