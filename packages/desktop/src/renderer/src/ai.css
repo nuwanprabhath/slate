@@ -10,3 +10,4 @@
 .ai-activity td.target { font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 .ai-activity tr.refused td { color: var(--danger); }
 .ai-activity .empty { color: var(--muted); }
+.connect-command { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; padding: 10px 12px; margin: 12px 0 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }

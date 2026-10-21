@@ -1,0 +1,8 @@
+#!/bin/sh
+# Slate's MCP server for AI agents (packaged app). Register: claude mcp add slate -- "<this file>"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+case "$(uname)" in
+  Darwin) EXE="$HERE/../../MacOS/Slate"; ASAR="$HERE/../app.asar" ;;
+  *) EXE="$HERE/../../slate"; ASAR="$HERE/../app.asar" ;;
+esac
+ELECTRON_RUN_AS_NODE=1 exec "$EXE" "$ASAR/out/main/mcp.js" "$@"
