@@ -6,7 +6,8 @@ import { expect, launchApp, test } from './fixtures'
 
 async function newBox(page: Page, x: number, y: number, text: string) {
   await page.getByTestId('canvas').click({ position: { x, y } })
-  await expect(page.getByTestId('box-editor').last()).toBeFocused()
+  // Wait for the NEW (empty) box to own focus: DOM order is by random box id, so .last() may be an old box.
+  await expect(page.locator('[data-testid="box-editor"]:focus')).toHaveText('')
   await page.keyboard.type(text)
 }
 

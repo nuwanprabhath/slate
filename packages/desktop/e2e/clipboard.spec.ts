@@ -6,7 +6,8 @@ const PNG =
 
 async function newBox(page: Page, x = 120, y = 120) {
   await page.getByTestId('canvas').click({ position: { x, y } })
-  await expect(page.getByTestId('box-editor').last()).toBeFocused()
+  // Wait for the NEW (empty) box to own focus: DOM order is by random box id, so .last() may be an old box.
+  await expect(page.locator('[data-testid="box-editor"]:focus')).toHaveText('')
 }
 const copy = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.copy())
 const paste = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.paste())
