@@ -73,6 +73,18 @@ test('the packaged app opens its database and keeps text across a relaunch', asy
   }
 })
 
+test('without SLATE_UPDATE_URL at build time there is no update config and no update menu item', async () => {
+  expect(existsSync(join(built!.resources, 'update.json'))).toBe(false)
+  const app = await launch(mkdtempSync(join(tmpdir(), 'slate-packaged-')))
+  try {
+    await app.firstWindow()
+    const visible = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('check-updates')!.visible)
+    expect(visible).toBe(false)
+  } finally {
+    await app.close().catch(() => undefined)
+  }
+})
+
 test('the packaged slate-mcp launcher answers listTools with five tools', async () => {
   const launcher = join(built!.resources, 'bin', process.platform === 'win32' ? 'slate-mcp.cmd' : 'slate-mcp')
   expect(existsSync(launcher)).toBe(true)

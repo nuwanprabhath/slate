@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CH } from '../shared/ipc'
@@ -7,6 +8,7 @@ import { createExternalWatch } from './externalWatch'
 import { registerIpc, registerOneNoteIpc, registerSyncIpc } from './ipc'
 import { buildMenu } from './menu'
 import { launcherInfo } from './mcpLauncher'
+import { startUpdates, updateConfig } from './updates'
 import { createAuthService, type AuthService } from './onenote/auth'
 import { ImportService } from './onenote/importService'
 import { readSettings, writeSettings } from './settings'
@@ -106,7 +108,12 @@ void app.whenReady().then(() => {
   })
   registerSyncIpc(sync)
   sync.start()
-  buildMenu(store)
+  // Off unless the build set SLATE_UPDATE_URL (see electron-builder.cjs); never in dev or e2e runs.
+  const updates = startUpdates(app.isPackaged && !isE2E ? updateConfig(process.resourcesPath) : null, {
+    updater: autoUpdater,
+    log: (m) => console.error(m),
+  })
+  buildMenu(store, updates.enabled ? updates.checkNow : undefined)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -116,6 +123,7 @@ void app.whenReady().then(() => {
   )
   app.on('will-quit', () => {
     watch.stop()
+    updates.stop()
     sync?.close()
     importer.close()
     store.close()

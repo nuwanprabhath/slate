@@ -9,7 +9,8 @@ function send(command: MenuCommand): void {
   win?.webContents.send(CH.menu, command)
 }
 
-export function buildMenu(store: DocStore): void {
+/** onCheckForUpdates is given only when auto-update is enabled; without it the menu item is hidden. */
+export function buildMenu(store: DocStore, onCheckForUpdates?: () => void): void {
   const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
@@ -58,7 +59,10 @@ export function buildMenu(store: DocStore): void {
     { role: 'windowMenu' },
     {
       role: 'help',
-      submenu: [{ id: 'connect-agents', label: 'Connect AI agents…', click: () => send({ cmd: 'show-connect-agents' }) }],
+      submenu: [
+        { id: 'connect-agents', label: 'Connect AI agents…', click: () => send({ cmd: 'show-connect-agents' }) },
+        { id: 'check-updates', label: 'Check for Updates…', visible: onCheckForUpdates !== undefined, click: () => onCheckForUpdates?.() },
+      ],
     },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))

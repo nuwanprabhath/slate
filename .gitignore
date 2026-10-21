@@ -8,3 +8,4 @@ playwright-report/
 .worktrees/
 .agent-reports/
 release/
+.generated/
