@@ -76,4 +76,34 @@ describe('DocStore', () => {
     expect(store.getSetting('settings')).toEqual({ markdownShortcuts: true })
     store.close()
   })
+
+  it('records and lists audit rows newest first', () => {
+    const store = new DocStore(tempDb())
+    store.appendAudit({ tool: 'read_page', target: 'p1', outcome: 'ok' })
+    store.appendAudit({ tool: 'search', target: 'q', outcome: 'denied' })
+    const rows = store.listAudit()
+    expect(rows.map((r) => r.tool)).toEqual(['search', 'read_page'])
+    expect(rows[0].ts).toBeGreaterThan(0)
+    store.close()
+  })
+
+  it('sees updates written by another connection to the same file', () => {
+    const file = tempDb()
+    const app = new DocStore(file)
+    const cli = new DocStore(file, { compact: false })
+    const since = app.maxUpdateId()
+    const before = app.dataVersion()
+    cli.append('page:x', new Uint8Array([7]))
+    expect(app.dataVersion()).not.toBe(before)
+    expect(app.updatesSince(since).map((u) => [u.docId, Array.from(u.data)])).toEqual([['page:x', [7]]])
+    app.close()
+    cli.close()
+  })
+
+  it('never compacts when compact is false', () => {
+    const store = new DocStore(tempDb(), { compact: false })
+    for (let i = 0; i < 520; i++) store.append('page:n', new Uint8Array([i % 256]))
+    expect(store.load('page:n')).toHaveLength(520)
+    store.close()
+  })
 })

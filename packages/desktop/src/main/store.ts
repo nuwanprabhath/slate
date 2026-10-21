@@ -3,20 +3,53 @@ import { LoroDoc } from 'loro-crdt'
 
 const COMPACT_THRESHOLD = 500
 
+export interface AuditRow {
+  id: number
+  ts: number
+  tool: string
+  target: string
+  outcome: string
+}
+
 /** Local document store: Loro snapshots + append-only update rows, WAL-journaled. */
 export class DocStore {
   private db: Database.Database
 
-  constructor(file: string) {
+  /** `compact: false` is for the MCP CLI: only the app compacts, so the two never race on it. */
+  constructor(file: string, private readonly options: { compact?: boolean } = {}) {
     this.db = new Database(file)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('synchronous = NORMAL')
+    this.db.pragma('busy_timeout = 3000')
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS snapshots (doc_id TEXT PRIMARY KEY, data BLOB NOT NULL);
       CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, data BLOB NOT NULL);
       CREATE INDEX IF NOT EXISTS updates_doc ON updates (doc_id, id);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, target TEXT NOT NULL, outcome TEXT NOT NULL);
     `)
+  }
+
+  appendAudit(entry: { tool: string; target: string; outcome: string }): void {
+    this.db.prepare('INSERT INTO audit (ts, tool, target, outcome) VALUES (?, ?, ?, ?)').run(Date.now(), entry.tool, entry.target, entry.outcome)
+  }
+
+  listAudit(limit = 200): AuditRow[] {
+    return this.db.prepare('SELECT id, ts, tool, target, outcome FROM audit ORDER BY id DESC LIMIT ?').all(limit) as AuditRow[]
+  }
+
+  updatesSince(id: number): Array<{ id: number; docId: string; data: Uint8Array }> {
+    const rows = this.db.prepare('SELECT id, doc_id, data FROM updates WHERE id > ? ORDER BY id').all(id) as Array<{ id: number; doc_id: string; data: Buffer }>
+    return rows.map((r) => ({ id: r.id, docId: r.doc_id, data: new Uint8Array(r.data) }))
+  }
+
+  maxUpdateId(): number {
+    return (this.db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM updates').get() as { m: number }).m
+  }
+
+  /** Changes whenever ANOTHER connection commits to this database file. */
+  dataVersion(): number {
+    return this.db.pragma('data_version', { simple: true }) as number
   }
 
   list(prefix: string): string[] {
@@ -39,7 +72,7 @@ export class DocStore {
   append(docId: string, update: Uint8Array): void {
     this.db.prepare('INSERT INTO updates (doc_id, data) VALUES (?, ?)').run(docId, Buffer.from(update))
     const { n } = this.db.prepare('SELECT COUNT(*) AS n FROM updates WHERE doc_id = ?').get(docId) as { n: number }
-    if (n >= COMPACT_THRESHOLD) this.compact(docId)
+    if (n >= COMPACT_THRESHOLD && this.options.compact !== false) this.compact(docId)
   }
 
   compact(docId: string): void {

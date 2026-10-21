@@ -1,5 +1,13 @@
-import { LoroDoc, type LoroTreeNode, type TreeID } from 'loro-crdt'
+import { LoroDoc, type LoroMap, type LoroTreeNode, type TreeID } from 'loro-crdt'
 import { newId } from './ids'
+
+export type Access = 'read' | 'readwrite'
+/** Key for a grant that covers the whole notebook. */
+export const NOTEBOOK_SCOPE = 'notebook'
+
+function readAccess(value: unknown): Access | null {
+  return value === 'read' || value === 'readwrite' ? value : null
+}
 
 export type NodeKind = 'sectionGroup' | 'section' | 'page'
 
@@ -12,6 +20,8 @@ export interface TreeItem {
   level: number
   /** Id of the page's own Loro document. Null for sections and groups. */
   pageId: string | null
+  /** The explicit AI access grant on this node, not the inherited one. */
+  access: Access | null
   children: TreeItem[]
 }
 
@@ -23,7 +33,7 @@ const ALLOWED_PARENTS: Record<NodeKind, ReadonlyArray<NodeKind | 'root'>> = {
   page: ['section'],
 }
 
-function toItem(n: LoroTreeNode): TreeItem {
+function toItem(n: LoroTreeNode, access: LoroMap): TreeItem {
   const d = n.data
   return {
     id: n.id,
@@ -32,7 +42,8 @@ function toItem(n: LoroTreeNode): TreeItem {
     color: (d.get('color') as string | undefined) ?? null,
     level: Number(d.get('level') ?? 0),
     pageId: (d.get('pageId') as string | undefined) ?? null,
-    children: (n.children() ?? []).map(toItem),
+    access: readAccess(access.get(n.id)),
+    children: (n.children() ?? []).map((c) => toItem(c, access)),
   }
 }
 
@@ -74,12 +85,12 @@ export class NotebookDoc {
   }
 
   items(): TreeItem[] {
-    return this.tree.roots().map(toItem)
+    return this.tree.roots().map((r) => toItem(r, this.accessMap))
   }
 
   get(id: TreeID): TreeItem | undefined {
     const n = this.node(id)
-    return n ? toItem(n) : undefined
+    return n ? toItem(n, this.accessMap) : undefined
   }
 
   addSectionGroup(title: string, parent?: TreeID): TreeID {
@@ -141,6 +152,43 @@ export class NotebookDoc {
 
   allPageIds(): string[] {
     return this.items().flatMap(collectPageIds)
+  }
+
+  private get accessMap(): LoroMap {
+    return this.doc.getMap('access')
+  }
+
+  accessOf(target: TreeID | typeof NOTEBOOK_SCOPE): Access | null {
+    return readAccess(this.accessMap.get(target))
+  }
+
+  setAccess(target: TreeID | typeof NOTEBOOK_SCOPE, access: Access | null): void {
+    if (access) this.accessMap.set(target, access)
+    else this.accessMap.delete(target)
+    this.doc.commit()
+  }
+
+  /** Deny by default: the nearest explicit grant on the node, its ancestors, then the notebook. */
+  effectiveAccess(id: TreeID): Access | null {
+    const start = this.node(id)
+    if (!start) return null
+    for (let n: LoroTreeNode | undefined = start; n; n = n.parent()) {
+      const access = this.accessOf(n.id)
+      if (access) return access
+    }
+    return this.accessOf(NOTEBOOK_SCOPE)
+  }
+
+  findPage(pageId: string): TreeItem | undefined {
+    const walk = (items: TreeItem[]): TreeItem | undefined => {
+      for (const item of items) {
+        if (item.pageId === pageId) return item
+        const found = walk(item.children)
+        if (found) return found
+      }
+      return undefined
+    }
+    return walk(this.items())
   }
 
   private node(id: TreeID): LoroTreeNode | undefined {

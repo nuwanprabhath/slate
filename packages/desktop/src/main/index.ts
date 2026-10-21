@@ -4,9 +4,13 @@ import { pathToFileURL } from 'node:url'
 import { BLOB_SCHEME, BlobStore } from './blobs'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
+import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { DocStore } from './store'
 
-if (process.env.SLATE_USER_DATA) app.setPath('userData', process.env.SLATE_USER_DATA)
+app.setName(APP_NAME)
+const userData = defaultUserDataDir()
+if (!process.env.SLATE_USER_DATA) migrateLegacyUserData(userData)
+app.setPath('userData', userData)
 const isE2E = process.env.SLATE_E2E === '1'
 
 protocol.registerSchemesAsPrivileged([{ scheme: BLOB_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
