@@ -1,0 +1,30 @@
+.slate-scroll { flex: 1; overflow: auto; position: relative; }
+.slate-canvas { position: relative; width: 100%; cursor: text; }
+.slate-box { position: absolute; border: 1px solid transparent; border-radius: 4px; cursor: auto; }
+.slate-box:hover, .slate-box:focus-within { border-color: var(--border); }
+.slate-box-bar { position: absolute; top: -14px; left: -1px; right: -1px; height: 14px; display: flex; gap: 2px; opacity: 0; }
+.slate-box:hover .slate-box-bar, .slate-box:focus-within .slate-box-bar { opacity: 1; }
+.slate-box-handle { flex: 1; cursor: move; background: var(--panel-2); border-radius: 4px 4px 0 0; }
+.slate-box-resize { position: absolute; top: 0; right: -5px; width: 9px; height: 100%; cursor: ew-resize; }
+.slate-box-content { padding: 6px 8px; outline: none; min-height: 1.6em; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.slate-box-content p { margin: 0; }
+.slate-box-content h1, .slate-box-content h2, .slate-box-content h3 { margin: 0.2em 0; line-height: 1.25; }
+.slate-box-content h1 { font-size: 1.6em; }
+.slate-box-content h2 { font-size: 1.35em; }
+.slate-box-content h3 { font-size: 1.15em; }
+.slate-box-content ul, .slate-box-content ol { margin: 0; padding-left: 1.6em; }
+.slate-box-content blockquote { margin: 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--muted); }
+.slate-box-content code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Ubuntu Mono', monospace; font-size: 0.92em; background: var(--panel-2); padding: 0 3px; border-radius: 3px; }
+.slate-box-content pre { margin: 4px 0; padding: 8px 10px; border-radius: 4px; background: var(--panel); white-space: pre; overflow-x: auto; }
+.slate-box-content pre code { background: none; padding: 0; font-size: 13px; }
+.slate-box-content table { border-collapse: collapse; margin: 4px 0; }
+.slate-box-content td, .slate-box-content th { border: 1px solid var(--border); padding: 4px 6px; min-width: 60px; vertical-align: top; }
+.slate-box-content th { background: var(--panel); text-align: left; }
+.slate-box-content img { max-width: 100%; display: block; }
+.slate-box-content img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.slate-box-content .selectedCell { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #c792ea; }
+.hljs-string, .hljs-attr { color: #c3e88d; }
+.hljs-number, .hljs-literal { color: #f78c6c; }
+.hljs-comment { color: #7f848e; font-style: italic; }
+.hljs-title, .hljs-function { color: #82aaff; }

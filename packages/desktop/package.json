@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@slate/core": "*",
+    "@slate/editor": "*",
     "better-sqlite3": "^13.0.3",
     "loro-crdt": "^1.16.4",
     "react": "^19.3.1",
