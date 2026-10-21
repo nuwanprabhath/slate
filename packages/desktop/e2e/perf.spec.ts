@@ -29,10 +29,12 @@ test('a 200-box page opens in under 100 ms and typing stays under 16 ms per key'
       { capture: true },
     )
   })
-  await page.keyboard.type('the quick brown fox jumps over the lazy dog 0123456789', { delay: 30 })
+  // Enough keys that p95 is not decided by one GC pause or paint frame (with 54 keys it was the
+  // third-slowest sample, and runs swung 8-18 ms around a 5 ms median).
+  await page.keyboard.type('the quick brown fox jumps over the lazy dog 0123456789 '.repeat(5), { delay: 30 })
   const times = await page.evaluate(() => (window as unknown as TestWindow).__keyTimes)
   const sorted = [...times].sort((a, b) => a - b)
   const p95 = sorted[Math.floor(sorted.length * 0.95)]
-  console.log(`keystroke p95: ${p95.toFixed(1)} ms over ${times.length} keys`)
+  console.log(`keystroke p50 ${sorted[Math.floor(sorted.length * 0.5)].toFixed(1)} ms, p95 ${p95.toFixed(1)} ms, max ${sorted[sorted.length - 1].toFixed(1)} ms over ${times.length} keys`)
   expect(p95).toBeLessThan(16)
 })
