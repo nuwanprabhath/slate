@@ -23,6 +23,7 @@ build plan: `docs/superpowers/plans/2026-10-21-phase-1-local-editor.md`.
 | Unit tests (core + editor) | `npm test` (one file: `npx vitest run packages/core/test/x.test.ts`) |
 | Main-process tests (Electron's Node ABI) | `npm run test:main` |
 | E2E (builds first; window stays hidden) | `npm run e2e` (one spec: `npm run e2e -- canvas.spec.ts`) |
+| MCP server for agents | `bin/slate-mcp` (build first); register with `claude mcp add slate -- $PWD/bin/slate-mcp` |
 
 ## Never
 
