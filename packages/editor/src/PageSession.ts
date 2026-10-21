@@ -1,6 +1,8 @@
 import { UndoManager, type LoroDoc } from 'loro-crdt'
 import { PageDoc, computePush, settleOverlaps, type BoxState, type PMJSON } from '@slate/core'
 import { writeContent } from './content'
+import { schema } from './extensions'
+import { findInPage, type FindMatch, type FindOptions } from './find'
 
 export interface DocPersistence {
   load(docId: string): Promise<Uint8Array[]>
@@ -58,6 +60,16 @@ export class PageSession {
     return () => {
       this.listeners.delete(listener)
     }
+  }
+
+  /** Matches in every box, read from the doc model (static boxes have no editor to search). */
+  find(query: string, opts: FindOptions): FindMatch[] {
+    return findInPage(this.page, schema, query, opts)
+  }
+
+  /** Any change to the page, text inside boxes included. */
+  subscribeContent(listener: () => void): () => void {
+    return this.doc.subscribe(listener)
   }
 
   createBox(x: number, y: number, width = DEFAULT_BOX_WIDTH): string {

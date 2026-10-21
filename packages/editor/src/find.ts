@@ -134,7 +134,9 @@ export function findHighlightPlugin(boxId: string): Plugin<DecorationSet> {
     key,
     state: {
       init: (_, state) => build(boxId, state.doc),
-      apply: (tr, old) => (tr.getMeta(key) ? build(boxId, tr.doc) : tr.docChanged ? old.map(tr.mapping, tr.doc) : old),
+      // An editor starts empty and loro-prosemirror fills it, so an empty set rebuilds on the first content.
+      apply: (tr, old) =>
+        tr.getMeta(key) || (tr.docChanged && old === DecorationSet.empty) ? build(boxId, tr.doc) : tr.docChanged ? old.map(tr.mapping, tr.doc) : old,
     },
     props: { decorations: (state) => key.getState(state) },
     view: (view) => ({ destroy: findStore.subscribe(() => view.dispatch(view.state.tr.setMeta(key, true).setMeta('addToHistory', false))) }),

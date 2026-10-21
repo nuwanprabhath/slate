@@ -1,0 +1,99 @@
+.page-view {
+  position: relative;
+}
+
+.find-bar {
+  position: absolute;
+  top: 8px;
+  right: 20px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.find-input {
+  display: flex;
+  align-items: center;
+  width: 260px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.find-input:focus-within {
+  border-color: var(--accent);
+}
+
+.find-input.has-error {
+  border-color: var(--danger);
+}
+
+.find-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.find-toggle,
+.find-button {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.find-toggle {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.find-toggle:hover,
+.find-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.find-toggle[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.find-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.find-count {
+  min-width: 70px;
+  padding: 0 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.slate-find-match {
+  background: rgba(234, 92, 0, 0.33);
+  border-radius: 2px;
+}
+
+.slate-find-current {
+  background: rgba(255, 166, 0, 0.75);
+  outline: 1px solid rgba(255, 166, 0, 0.9);
+}

@@ -111,7 +111,7 @@ describe('findInPage', () => {
     const page = new PageDoc()
     const add = (x: number, y: number, s: string) => {
       const id = page.addBox({ x, y, width: 100 })
-      writeContent(page.contentMap(id)!, [p(t(s))], page.doc)
+      writeContent(page.contentMap(id)!, [{ type: 'paragraph', content: [{ type: 'text', text: s }] }], page.doc)
       page.doc.commit()
       return id
     }
@@ -140,5 +140,13 @@ describe('findHighlightPlugin', () => {
     findStore.setMatches([], -1)
     state = state.apply(state.tr.setMeta(findHighlightPlugin.key, true))
     expect(decos()).toHaveLength(0)
+  })
+
+  it('picks up its matches once an editor that started empty is filled', () => {
+    findStore.setMatches([{ boxId: 'b2', from: 1, to: 4 }], 0)
+    let state = EditorState.create({ schema, plugins: [findHighlightPlugin('b2')] })
+    state = state.apply(state.tr.replaceWith(0, state.doc.content.size, doc([p(t('foo'))]).content))
+    expect(findHighlightPlugin.decorations(state).find()).toHaveLength(1)
+    findStore.setMatches([], -1)
   })
 })

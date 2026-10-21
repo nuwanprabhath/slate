@@ -3,6 +3,7 @@ import type { NotebookDoc, TreeItem } from '@slate/core'
 import { Canvas, PageSession } from '@slate/editor'
 import type { ConflictRecord } from '@slate/sync'
 import { currentSession } from './currentSession'
+import { FindBar } from './find/FindBar'
 import { ConflictResolver } from './sync/ConflictResolver'
 
 /** Read by the e2e test hooks; cheap enough to keep in production builds. */
@@ -83,7 +84,8 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
         }}
       />
       {session && <Canvas session={session} conflicts={conflictBoxes} onConflictClick={openConflict} />}
-      {resolving && <ConflictResolver conflict={resolving} onClose={closeResolver} />}
+      {session && <FindBar session={session} />}
+      {resolving &&<ConflictResolver conflict={resolving} onClose={closeResolver} />}
     </div>
   )
 }

@@ -1,6 +1,7 @@
-import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import type { BoxState } from '@slate/core'
 import { BoxEditor } from './BoxEditor'
+import { findStore } from './find'
 import type { PageSession } from './PageSession'
 import { StaticBox } from './StaticBox'
 
@@ -23,6 +24,8 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
   const [gesture, setGesture] = useState<Gesture | null>(null)
+  // Static boxes have no decorations, so a box with find matches is a live editor while they show.
+  const findHit = useSyncExternalStore(findStore.subscribe, () => findStore.hasMatches(box.id))
 
   useEffect(() => {
     const io = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { root: scrollRoot, rootMargin: '600px 0px' })
@@ -98,7 +101,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
           </svg>
         </button>
       </div>
-      {visible || autoFocus ? (
+      {visible || autoFocus || findHit ? (
         <BoxEditor box={box} session={session} autoFocus={autoFocus} onFocus={onFocus} />
       ) : (
         <StaticBox doc={session.doc} contentId={box.contentId} onActivate={onFocus} />
