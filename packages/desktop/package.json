@@ -1,0 +1,19 @@
+{
+  "name": "@slate/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "test": "cross-env ELECTRON_RUN_AS_NODE=1 electron ../../node_modules/vitest/vitest.mjs run --config vitest.main.config.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "loro-crdt": "^1.16.4"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "cross-env": "^10.1.0",
+    "electron": "^45.0.0"
+  }
+}
