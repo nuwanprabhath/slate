@@ -117,7 +117,7 @@ export function appendToPage(src: DocSource, pageId: string, markdown: string): 
     const from = page.doc.oplogVersion()
     const { x, y } = placeBelow(page)
     const boxId = page.addBox({ x, y, width: 480 })
-    writeContent(page.contentMap(boxId)!, markdownToBlocks(markdown))
+    writeContent(page.contentMap(boxId)!, markdownToBlocks(markdown), page.doc)
     page.doc.commit()
     await src.save(`page:${pageId}`, page.doc.export({ mode: 'update', from }))
     return { boxId }
@@ -136,7 +136,7 @@ export function createPage(src: DocSource, notebookId: string, sectionId: string
     const page = new PageDoc()
     if (markdown && markdown.trim() !== '') {
       const boxId = page.addBox({ x: 40, y: 40, width: 480 })
-      writeContent(page.contentMap(boxId)!, markdownToBlocks(markdown))
+      writeContent(page.contentMap(boxId)!, markdownToBlocks(markdown), page.doc)
       page.doc.commit()
     }
     await src.save(`page:${pageId}`, page.doc.export({ mode: 'snapshot' }))

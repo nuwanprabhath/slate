@@ -45,3 +45,20 @@ describe('renderStaticHtml', () => {
     expect(renderStaticHtml(schema, doc, doc.getMap('empty').id, document)).toBeNull()
   })
 })
+
+describe('writeContent marks in the editor schema', () => {
+  it('produces marks loro-prosemirror reads as ProseMirror marks', () => {
+    const doc = new LoroDoc()
+    const root = doc.getMap('content')
+    writeContent(
+      root,
+      [{ type: 'paragraph', content: [{ type: 'text', text: 'B', marks: [{ type: 'bold' }] }, { type: 'text', text: 'L', marks: [{ type: 'link', attrs: { href: 'https://x.dev' } }] }] }],
+      doc,
+    )
+    doc.commit()
+    const node = createNodeFromLoroObj(schema, root as unknown as LoroNode, new Map())
+    const para = node.child(0)
+    expect(para.child(0).marks.map((m) => m.type.name)).toEqual(['bold'])
+    expect(para.child(1).marks[0].attrs.href).toBe('https://x.dev')
+  })
+})
