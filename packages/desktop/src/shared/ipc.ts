@@ -27,4 +27,5 @@ export const CH = {
   syncResolve: 'sync:resolve',
   syncStatusEvent: 'sync:status-event',
   syncNotice: 'sync:notice',
+  mcpLauncher: 'mcp:launcher',
 } as const

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CH } from '../shared/ipc'
@@ -6,6 +6,7 @@ import { BLOB_SCHEME, BlobStore } from './blobs'
 import { createExternalWatch } from './externalWatch'
 import { registerIpc, registerOneNoteIpc, registerSyncIpc } from './ipc'
 import { buildMenu } from './menu'
+import { launcherInfo } from './mcpLauncher'
 import { createAuthService, type AuthService } from './onenote/auth'
 import { ImportService } from './onenote/importService'
 import { readSettings, writeSettings } from './settings'
@@ -62,6 +63,10 @@ void app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString())
   })
   registerIpc(store, blobs, () => sync?.edited())
+  // out/main sits four levels under the repo root when running from a checkout.
+  ipcMain.handle(CH.mcpLauncher, () =>
+    launcherInfo({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, repoRoot: join(__dirname, '../../../..'), platform: process.platform }),
+  )
   const makeAuth = () =>
     createAuthService({
       clientId: process.env.SLATE_MS_CLIENT_ID ?? readSettings(store).msClientId ?? null,

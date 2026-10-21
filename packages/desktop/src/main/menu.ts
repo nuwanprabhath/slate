@@ -56,6 +56,10 @@ export function buildMenu(store: DocStore): void {
       ],
     },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [{ id: 'connect-agents', label: 'Connect AI agents…', click: () => send({ cmd: 'show-connect-agents' }) }],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

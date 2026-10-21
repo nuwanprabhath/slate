@@ -7,6 +7,7 @@ import { AiActivity } from './AiActivity'
 import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
 import { Splitter } from './Splitter'
 import { currentSession } from './currentSession'
+import { ConnectAgents } from './ConnectAgents'
 import { ImportDialog } from './import/ImportDialog'
 import { Library } from './library'
 import { PageView } from './PageView'
@@ -18,7 +19,7 @@ import { SyncStatus } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 
-export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void, onShowImport: () => void): void {
+export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActivity: () => void, onShowImport: () => void, onShowConnectAgents: () => void): void {
   useEffect(
     () =>
       window.slate.onMenu((command) => {
@@ -49,9 +50,12 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
           case 'show-import':
             onShowImport()
             break
+          case 'show-connect-agents':
+            onShowConnectAgents()
+            break
         }
       }),
-    [setSettings, onShowAiActivity, onShowImport],
+    [setSettings, onShowAiActivity, onShowImport, onShowConnectAgents],
   )
 }
 
@@ -79,7 +83,10 @@ export function App() {
   const [importOpen, setImportOpen] = useState(false)
   const showImport = useCallback(() => setImportOpen(true), [])
   const closeImport = useCallback(() => setImportOpen(false), [])
-  useMenuCommands(setSettings, showAiActivity, showImport)
+  const [connectOpen, setConnectOpen] = useState(false)
+  const showConnectAgents = useCallback(() => setConnectOpen(true), [])
+  const closeConnectAgents = useCallback(() => setConnectOpen(false), [])
+  useMenuCommands(setSettings, showAiActivity, showImport, showConnectAgents)
   const services = useServices(settings)
   if (!library) return <div className="app-loading">Loading…</div>
   return (
@@ -87,6 +94,7 @@ export function App() {
       <Workspace library={library} onShowImport={showImport} />
       {aiActivity && <AiActivity onClose={() => setAiActivity(false)} />}
       {importOpen && <ImportDialog onClose={closeImport} />}
+      {connectOpen && <ConnectAgents onClose={closeConnectAgents} />}
       <Notices />
     </EditorServicesContext.Provider>
   )

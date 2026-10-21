@@ -1,8 +1,9 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { connectMcp } from '../e2e/mcpClient'
 
 const desktop = join(__dirname, '..')
 const release = join(desktop, 'release')
@@ -69,5 +70,22 @@ test('the packaged app opens its database and keeps text across a relaunch', asy
     await expect(page.getByTestId('box-editor')).toHaveText('packaged hello')
   } finally {
     await app.close().catch(() => undefined)
+  }
+})
+
+test('the packaged slate-mcp launcher answers listTools with five tools', async () => {
+  const launcher = join(built!.resources, 'bin', process.platform === 'win32' ? 'slate-mcp.cmd' : 'slate-mcp')
+  expect(existsSync(launcher)).toBe(true)
+  if (process.platform !== 'win32') expect(statSync(launcher).mode & 0o777).toBe(0o755)
+  const userData = mkdtempSync(join(tmpdir(), 'slate-packaged-'))
+  const app = await launch(userData) // creates the database the server opens
+  await app.firstWindow()
+  await app.close()
+  const mcp = await connectMcp(userData, launcher)
+  try {
+    const { tools } = await mcp.client.listTools()
+    expect(tools.map((t) => t.name).sort()).toEqual(['append_to_page', 'create_page', 'list_tree', 'read_page', 'search'])
+  } finally {
+    await mcp.close()
   }
 })

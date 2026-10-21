@@ -12,6 +12,9 @@ files:
   - package.json
 asarUnpack:
   - "**/*.node"
+extraResources:
+  - from: launchers
+    to: bin
 mac:
   category: public.app-category.productivity
   target:

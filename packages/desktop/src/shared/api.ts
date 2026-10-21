@@ -36,6 +36,7 @@ export type MenuCommand =
   | { cmd: 'settings-changed'; settings: Settings }
   | { cmd: 'show-ai-activity' }
   | { cmd: 'show-import' }
+  | { cmd: 'show-connect-agents' }
 
 export interface SlateApi {
   isE2E: boolean
@@ -54,6 +55,7 @@ export interface SlateApi {
     set(patch: Partial<Settings>): Promise<Settings>
   }
   audit: { list(limit?: number): Promise<AuditEntryRow[]> }
+  mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }
   clipboardText(): Promise<string>
   onenote: {
     status(): Promise<OneNoteStatus>
