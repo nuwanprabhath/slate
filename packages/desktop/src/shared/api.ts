@@ -66,6 +66,28 @@ export interface SyncState extends SyncReport {
   lastSyncedAt?: number
 }
 
+/**
+ * How this installation takes an update. `auto`: electron-updater installs it (AppImage).
+ * `dmg`: an unsigned mac build downloads the dmg and opens it. `deb`: downloads the .deb and offers
+ * the apt command. `manual`: only the release page (dev runs, other platforms).
+ */
+export type InstallKind = 'auto' | 'dmg' | 'deb' | 'manual'
+
+export interface UpdateState {
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+  kind: InstallKind
+  version?: string
+  releaseUrl?: string
+  /** 0–100 while downloading. */
+  progress?: number
+  /** The downloaded installer. */
+  file?: string
+  /** The shell command that installs `file`, for dmg and deb. */
+  command?: string
+  /** Whether the banner shows: an update is available or downloaded, and not skipped or dismissed. */
+  visible: boolean
+}
+
 export interface AuditEntryRow {
   id: number
   ts: number
