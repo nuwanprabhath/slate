@@ -5,8 +5,8 @@
     </filter>
   </defs>
   <rect x="100" y="100" width="824" height="824" rx="181" ry="181" fill="#fff" filter="url(#shadow)"/>
-  <g fill="none" stroke="#1c1f24" stroke-width="52" stroke-linecap="butt" stroke-linejoin="miter">
-    <polyline points="527,210 302,417 543,613"/>
-    <polyline points="472,380 732,591 494,801"/>
+  <g fill="none" stroke="#1c1f24" stroke-width="58" stroke-linecap="butt" stroke-linejoin="round">
+    <polyline points="528,222 281,438 570,627"/>
+    <polyline points="471,388 743,586 487,794"/>
   </g>
 </svg>

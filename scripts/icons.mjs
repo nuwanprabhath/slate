@@ -28,6 +28,8 @@ try {
   mkdirSync(join(build, 'icons'), { recursive: true })
   for (const s of [16, 32, 48, 64, 128, 256, 512, 1024]) png(s, join(build, 'icons', `${s}x${s}.png`))
   copyFileSync(join(build, 'icons/1024x1024.png'), join(build, 'icon.png'))
+  // Runtime window/Dock icon, loaded by src/main/index.ts.
+  copyFileSync(join(build, 'icons/512x512.png'), join(build, '../resources/icon.png'))
 
   const iconset = join(tmp, 'icon.iconset')
   mkdirSync(iconset)
