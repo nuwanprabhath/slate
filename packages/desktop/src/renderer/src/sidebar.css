@@ -27,7 +27,8 @@
 .color-bar { width: 6px; height: 22px; border-radius: 3px; flex: none; }
 .chevron { width: 12px; color: var(--muted); flex: none; }
 .inline-rename { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 3px; padding: 2px 4px; }
-.sidebar-actions { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
-.sidebar-actions button { background: none; border: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 4px 0; }
+/* Stacked, so a column of short names stays narrow: the footer needs only its widest button. */
+.sidebar-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; border-top: 1px solid var(--border); }
+.sidebar-actions button { white-space: nowrap; background: none; border: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 4px 0; }
 .sidebar-actions button.secondary { color: var(--muted); font-weight: 400; }
 .page-title { margin: 18px 24px 8px; padding: 2px 0; font: inherit; font-size: 24px; font-weight: 600; color: var(--text); background: none; border: none; border-bottom: 1px solid var(--border); outline: none; max-width: 640px; flex: none; }

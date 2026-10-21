@@ -40,24 +40,53 @@ test('Mod+\\ toggles the panel while typing without inserting a backslash', asyn
   await expect(page.getByTestId('library-panel')).toHaveCount(1)
 })
 
-test('splitters resize, clamp, reset and respond to the keyboard', async ({ page }) => {
-  expect(await width(page, 'sections-column')).toBeCloseTo(260, 0)
+async function renameFirstSection(page: Page, title: string) {
+  await page.getByTestId('section-item').first().dblclick()
+  await page.getByTestId('inline-rename').fill(title)
+  await page.keyboard.press('Enter')
+}
+
+test('columns fit their longest name and grow when it does', async ({ page }) => {
+  await renameFirstSection(page, 'A')
+  await page.getByTestId('add-section').click()
+  await page.getByTestId('inline-rename').fill('B')
+  await page.keyboard.press('Enter')
+  await expect.poll(() => width(page, 'sections-column')).toBeLessThan(160)
+  const narrow = await width(page, 'sections-column')
+
+  await renameFirstSection(page, 'A section with a really long name!!')
+  await expect.poll(() => width(page, 'sections-column')).toBeGreaterThan(narrow + 100)
+  // The footer still shows both buttons whole.
+  await expect(page.getByTestId('add-group')).toBeInViewport({ ratio: 1 })
+})
+
+test('splitters resize, clamp, keep the manual width and double-click back to auto', async ({ page }) => {
+  await renameFirstSection(page, 'A')
+  await expect.poll(() => width(page, 'sections-column')).toBeLessThan(160)
+  const auto = await width(page, 'sections-column')
+
   await drag(page, 'splitter-sections', 100)
-  expect(Math.abs((await width(page, 'sections-column')) - 360)).toBeLessThanOrEqual(4)
+  expect(Math.abs((await width(page, 'sections-column')) - (auto + 100))).toBeLessThanOrEqual(4)
+  const manual = await width(page, 'sections-column')
+  await page.getByTestId('add-page').click()
+  await page.getByTestId('section-item').first().click()
+  expect(await width(page, 'sections-column')).toBeCloseTo(manual, 0)
+
   await drag(page, 'splitter-sections', -600)
-  expect(await width(page, 'sections-column')).toBeCloseTo(140, 0)
+  expect(await width(page, 'sections-column')).toBeCloseTo(100, 0)
   await page.getByTestId('splitter-sections').dblclick()
-  expect(await width(page, 'sections-column')).toBeCloseTo(260, 0)
+  expect(await width(page, 'sections-column')).toBeCloseTo(auto, 0)
 
   await page.getByTestId('splitter-pages').focus()
+  const pages = await width(page, 'pages-column')
   await page.keyboard.press('ArrowRight')
-  expect(await width(page, 'pages-column')).toBeCloseTo(276, 0)
-  await expect(page.getByTestId('splitter-pages')).toHaveAttribute('aria-valuenow', '276')
+  expect(Math.abs((await width(page, 'pages-column')) - (pages + 16))).toBeLessThanOrEqual(2)
 })
 
 test('hidden panel and column widths survive a relaunch', async () => {
   const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
   const first = await launchApp(userData)
+  const auto = await width(first.page, 'sections-column')
   await drag(first.page, 'splitter-sections', 60)
   await first.page.getByTestId('activity-library').click()
   await first.app.close()
@@ -66,6 +95,6 @@ test('hidden panel and column widths survive a relaunch', async () => {
   await expect(second.page.getByTestId('activity-bar')).toBeVisible()
   await expect(second.page.getByTestId('library-panel')).toHaveCount(0)
   await second.page.getByTestId('activity-library').click()
-  expect(Math.abs((await width(second.page, 'sections-column')) - 320)).toBeLessThanOrEqual(4)
+  expect(Math.abs((await width(second.page, 'sections-column')) - (auto + 60))).toBeLessThanOrEqual(4)
   await second.app.close()
 })

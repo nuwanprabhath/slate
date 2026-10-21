@@ -5,7 +5,7 @@ import { ActivityBar } from './activity/ActivityBar'
 import { createTools } from './activity/tools'
 import { AiActivity } from './AiActivity'
 import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
-import { Splitter } from './Splitter'
+import { Column, Splitter } from './Splitter'
 import { currentSession } from './currentSession'
 import { ConnectAgents } from './ConnectAgents'
 import { ImportDialog } from './import/ImportDialog'
@@ -212,7 +212,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
         onImport={onShowImport}
       />
       <div className="sidebar-cols">
-        <div className="column" data-testid="sections-column" style={{ width: layout.sectionsWidth }}>
+        <Column testId="sections-column" width={layout.sectionsWidth}>
           <SectionList
             nb={entry.doc}
             items={items}
@@ -220,9 +220,9 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
             onSelect={(id) => setSelection({ notebookId: entry.id, sectionId: id, pageId: null })}
             onDeleted={removeDocs}
           />
-        </div>
-        <Splitter testId="splitter-sections" label="Resize sections" width={layout.sectionsWidth} onChange={(w) => setLayout((l) => ({ ...l, sectionsWidth: clampWidth(w) }))} />
-        <div className="column" data-testid="pages-column" style={{ width: layout.pagesWidth }}>
+        </Column>
+        <Splitter testId="splitter-sections" label="Resize sections" width={layout.sectionsWidth} onChange={(w) => setLayout((l) => ({ ...l, sectionsWidth: w === null ? null : clampWidth(w) }))} />
+        <Column testId="pages-column" width={layout.pagesWidth}>
           <PageList
             nb={entry.doc}
             section={section}
@@ -230,8 +230,8 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
             onSelect={(id) => setSelection({ notebookId: entry.id, sectionId: section?.id ?? null, pageId: id })}
             onDeleted={removeDocs}
           />
-        </div>
-        <Splitter testId="splitter-pages" label="Resize pages" width={layout.pagesWidth} onChange={(w) => setLayout((l) => ({ ...l, pagesWidth: clampWidth(w) }))} />
+        </Column>
+        <Splitter testId="splitter-pages" label="Resize pages" width={layout.pagesWidth} onChange={(w) => setLayout((l) => ({ ...l, pagesWidth: w === null ? null : clampWidth(w) }))} />
       </div>
     </aside>
   ))
