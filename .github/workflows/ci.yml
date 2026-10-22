@@ -45,6 +45,8 @@ jobs:
           SLATE_PERF_FACTOR: 1.5
           # perf-diagnose.spec.ts prints where typing time goes on this runner.
           SLATE_PERF_TRACE: 1
+          # xvfb is a virtual display nobody sees, so the window can be shown there (see src/main/index.ts).
+          SLATE_E2E_SHOW: 1
       # Playwright hides the app's own output, so a launch that hangs shows only timeouts. Start it
       # once by hand and print what Electron and the main process said.
       - name: App startup log

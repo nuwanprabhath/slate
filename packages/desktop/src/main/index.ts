@@ -45,8 +45,10 @@ function createWindow(): BrowserWindow {
       backgroundThrottling: !isE2E,
     },
   })
-  // E2E runs keep the window hidden so tests never pop windows onto the user's screen.
-  if (!isE2E) win.once('ready-to-show', () => win.show())
+  // E2E runs keep the window hidden so tests never pop windows onto the user's screen. CI shows it
+  // on its virtual display (SLATE_E2E_SHOW): on X11 a window never shown gets almost no frames, and
+  // typing there waited on them (500 ms a key, with the renderer idle).
+  if (!isE2E || process.env.SLATE_E2E_SHOW === '1') win.once('ready-to-show', () => win.show())
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
   return win
