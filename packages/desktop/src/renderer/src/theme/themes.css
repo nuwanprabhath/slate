@@ -51,3 +51,5 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
 .theme-error { margin: 0; color: var(--danger); }
 .theme-note { margin: 0; color: var(--muted); font-size: 12px; }
 .theme-fonts { display: flex; flex-direction: column; gap: 8px; }
+/* Labels share one width so the two font boxes line up. */
+.theme-fonts .settings-inline > :first-child { min-width: 80px; }
