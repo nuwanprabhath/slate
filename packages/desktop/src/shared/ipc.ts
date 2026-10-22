@@ -48,4 +48,13 @@ export const CH = {
   updateSkip: 'update:skip',
   updateDismiss: 'update:dismiss',
   updateStateEvent: 'update:state-event',
+  themesInitial: 'themes:initial',
+  themesList: 'themes:list',
+  themesSave: 'themes:save',
+  themesRename: 'themes:rename',
+  themesRemove: 'themes:remove',
+  themesChanged: 'themes:changed',
+  themesClaude: 'themes:claude-available',
+  themesGenerate: 'themes:generate',
+  themesCancel: 'themes:cancel',
 } as const

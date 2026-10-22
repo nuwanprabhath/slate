@@ -1,6 +1,7 @@
 import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { MenuCommand } from '../shared/api'
 import { CH } from '../shared/ipc'
+import { DEFAULT_THEME_ID } from '../shared/theme/builtins'
 import { onSettingsWritten, readSettings, writeSettings } from './settings'
 import type { DocStore } from './store'
 
@@ -79,6 +80,8 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
           click: (item) => void writeSettings(store, { autoBullets: item.checked }),
         },
         { id: 'ai-activity', label: 'AI Activity…', click: () => send({ cmd: 'show-ai-activity' }) },
+        // The way back from a theme that makes the window hard to use.
+        { id: 'reset-theme', label: 'Reset Theme', accelerator: 'CmdOrCtrl+Alt+Shift+T', click: () => void writeSettings(store, { themeId: DEFAULT_THEME_ID, followSystem: false }) },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },

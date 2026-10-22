@@ -1,5 +1,23 @@
 import type { ImportProgress, OneNoteNotebook } from '@slate/importer'
 import type { ConflictRecord, SyncReport } from '@slate/sync'
+import type { MotionSetting } from './theme/motion'
+import type { SavedTheme, ThemeGenerateResult } from './theme/resolve'
+import type { ThemeSpec } from './theme/spec'
+
+/** Themes: the user's saved ones live in main, validated on load and save (main/theme/themeStore.ts). */
+export interface ThemesApi {
+  /** Read synchronously at preload, so the first paint already has the theme. */
+  initial: { saved: SavedTheme[]; safeMode: boolean; gpuCompositing: boolean; systemDark: boolean }
+  list(): Promise<SavedTheme[]>
+  save(spec: unknown, prompt?: string | null): Promise<SavedTheme>
+  rename(id: string, name: string): Promise<SavedTheme>
+  remove(id: string): Promise<void>
+  onChange(handler: (saved: SavedTheme[]) => void): () => void
+  /** Whether the user's `claude` CLI was found on the login shell's PATH. */
+  claudeAvailable(): Promise<boolean>
+  generate(request: string, current: ThemeSpec | null): Promise<ThemeGenerateResult>
+  cancelGenerate(): Promise<void>
+}
 
 export interface Settings {
   /** When true, typing "1. ", "- ", "# " or "```" turns into lists/headings/code. Off by default. */
@@ -14,6 +32,12 @@ export interface Settings {
   git: GitSettings | null
   /** This install's id in the sync folder, created once. */
   deviceId: string | null
+  /** The active theme: a `builtin:*` id or a saved theme's id (`themes`). */
+  themeId: string
+  /** Animations: `auto` follows the OS reduced-motion setting and the GPU. */
+  motion: MotionSetting
+  /** Light or Dark by the OS, whatever `themeId` says. */
+  followSystem: boolean
 }
 
 export type SyncProvider = 'onedrive' | 'git'
@@ -128,6 +152,7 @@ export interface SlateApi {
     /** The full settings after any window (or the menu, or sync) wrote them. */
     onChange(handler: (settings: Settings) => void): () => void
   }
+  themes: ThemesApi
   audit: { list(limit?: number): Promise<AuditEntryRow[]> }
   mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }
   clipboardText(): Promise<string>

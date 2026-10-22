@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { ExternalBatch, MenuCommand, Settings, SlateApi, SyncState, UpdateState } from '../shared/api'
 import type { ImportProgress } from '@slate/importer'
 import { CH } from '../shared/ipc'
+import type { SavedTheme } from '../shared/theme/resolve'
 
 const api: SlateApi = {
   isE2E: process.env.SLATE_E2E === '1',
@@ -23,6 +24,21 @@ const api: SlateApi = {
       ipcRenderer.on(CH.settingsChanged, listener)
       return () => ipcRenderer.removeListener(CH.settingsChanged, listener)
     },
+  },
+  themes: {
+    initial: ipcRenderer.sendSync(CH.themesInitial),
+    list: () => ipcRenderer.invoke(CH.themesList),
+    save: (spec, prompt) => ipcRenderer.invoke(CH.themesSave, spec, prompt ?? null),
+    rename: (id, name) => ipcRenderer.invoke(CH.themesRename, id, name),
+    remove: (id) => ipcRenderer.invoke(CH.themesRemove, id),
+    onChange(handler) {
+      const listener = (_e: IpcRendererEvent, saved: SavedTheme[]) => handler(saved)
+      ipcRenderer.on(CH.themesChanged, listener)
+      return () => ipcRenderer.removeListener(CH.themesChanged, listener)
+    },
+    claudeAvailable: () => ipcRenderer.invoke(CH.themesClaude),
+    generate: (request, current) => ipcRenderer.invoke(CH.themesGenerate, request, current),
+    cancelGenerate: () => ipcRenderer.invoke(CH.themesCancel),
   },
   audit: { list: (limit) => ipcRenderer.invoke(CH.auditList, limit) },
   mcp: { launcherInfo: () => ipcRenderer.invoke(CH.mcpLauncher) },

@@ -23,4 +23,10 @@ describe('settings schema', () => {
     expect(sanitizePatch({ git: { remoteUrl: 'x', branch: 'main', auth: 'magic' } })).toEqual({})
     expect(sanitizePatch({ syncProvider: null })).toEqual({ syncProvider: null })
   })
+
+  it('has the appearance settings: Dark, automatic animations, not following the system', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ themeId: 'builtin:dark', motion: 'auto', followSystem: false })
+    expect(sanitizePatch({ themeId: 'user:abc', motion: 'reduced', followSystem: true })).toEqual({ themeId: 'user:abc', motion: 'reduced', followSystem: true })
+    expect(sanitizePatch({ themeId: 'x'.repeat(200), motion: 'fast', followSystem: 'yes' })).toEqual({})
+  })
 })
