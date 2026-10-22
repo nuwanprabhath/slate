@@ -8,8 +8,9 @@
 .theme-effects { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
 
 /* Surfaces */
-.slate-scroll { background-color: var(--page); }
-html:not([data-texture='none']) .slate-scroll { background-image: var(--texture-image, none); }
+/* On the page view, not the scroller, so the paper and texture run behind the title too. */
+.page-view { background-color: var(--page); }
+html:not([data-texture='none']) .page-view { background-image: var(--texture-image, none); }
 .slate-box { background-color: var(--box-bg); }
 .slate-box:hover, .slate-box:focus-within { border-color: var(--box-border); }
 .slate-box-content a { color: var(--link); }

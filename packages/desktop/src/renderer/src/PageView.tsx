@@ -39,6 +39,9 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
     }
   }, [pageId])
 
+  // What Escape restores: the title as it was when the field took focus.
+  const titleOnFocus = useRef('')
+
   // Time from page selection to the canvas being committed to the DOM (static boxes rendered).
   useLayoutEffect(() => {
     if (session) pageOpenTiming.lastMs = performance.now() - pageOpenTiming.startedAt
@@ -78,6 +81,15 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
         placeholder="Untitled page"
         spellCheck={false}
         value={title}
+        onFocus={() => (titleOnFocus.current = title)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setTitle(titleOnFocus.current)
+            nb.setTitle(item.id, titleOnFocus.current)
+          } else if (e.key !== 'Enter') return
+          e.preventDefault()
+          e.currentTarget.blur()
+        }}
         onChange={(e) => {
           setTitle(e.target.value)
           nb.setTitle(item.id, e.target.value)

@@ -46,9 +46,10 @@ const AdaptiveHighlight = Highlight.extend({
         renderHTML: (attrs) => {
           const color = attrs.color as string | null
           if (!color) return {}
+          const bg = readableHighlight(color, currentTheme().text)
           return {
             'data-color': color,
-            style: `background-color: ${readableHighlight(color, currentTheme().text)}; color: inherit`,
+            style: bg ? `background-color: ${bg}; color: inherit` : 'background-color: transparent; color: inherit',
           }
         },
       },

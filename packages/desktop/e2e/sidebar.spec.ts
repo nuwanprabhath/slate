@@ -30,6 +30,32 @@ test('sections and pages can be created, renamed and switched', async ({ page })
   await expect(page.getByTestId('box')).toContainText('on second page')
 })
 
+test('the page title edits in place with no underline, and Escape reverts', async ({ page }) => {
+  const title = page.getByTestId('page-title')
+  const style = await title.evaluate((el) => {
+    const s = getComputedStyle(el)
+    return { border: s.borderBottomWidth, deco: s.textDecorationLine }
+  })
+  expect(style.border).toBe('0px')
+  expect(style.deco).toBe('none')
+
+  await title.click()
+  await expect(title).toBeFocused()
+  await title.press('ControlOrMeta+a')
+  await page.keyboard.type('Renamed')
+  await expect(page.getByTestId('page-item')).toHaveText(['Renamed'])
+  await page.keyboard.press('Escape')
+  await expect(title).not.toBeFocused()
+  await expect(page.getByTestId('page-item')).toHaveText(['Untitled page'])
+
+  await title.click()
+  await title.press('ControlOrMeta+a')
+  await page.keyboard.type('Kept')
+  await page.keyboard.press('Enter')
+  await expect(title).not.toBeFocused()
+  await expect(page.getByTestId('page-item')).toHaveText(['Kept'])
+})
+
 test('pages reorder by drag and delete with a confirming second click', async ({ page }) => {
   await page.getByTestId('add-page').click()
   await page.getByTestId('page-title').fill('B')
