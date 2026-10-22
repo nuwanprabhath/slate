@@ -13,5 +13,14 @@ export function readSettings(store: DocStore): Settings {
 export function writeSettings(store: DocStore, patch: Partial<Settings>): Settings {
   const next = { ...readSettings(store), ...patch }
   store.setSetting('settings', next)
+  for (const listener of listeners) listener(next)
   return next
+}
+
+const listeners = new Set<(settings: Settings) => void>()
+
+/** For main-process services that act on a setting as it changes; returns the unsubscribe. */
+export function onSettingsWritten(listener: (settings: Settings) => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
 }

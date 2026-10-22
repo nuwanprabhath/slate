@@ -1,4 +1,5 @@
 import type { InstallKind, UpdateState } from '../../shared/api'
+import { capabilityReason } from './capability'
 import { installCommand, pickInstaller, type UpdateFile } from './pickInstaller'
 import { isNewer, releaseUrl } from './versions'
 
@@ -39,12 +40,20 @@ export interface UpdateServiceDeps {
   savePrefs(prefs: UpdatePrefs): void
   log(message: unknown): void
   emit(state: UpdateState): void
+  /** Read at each use, so a change in Settings takes effect without a restart. */
+  settings?(): UpdateSettings
   firstCheckMs?: number
-  everyMs?: number
+}
+
+export interface UpdateSettings {
+  automaticChecks: boolean
+  intervalHours: number
 }
 
 const FIRST_CHECK_MS = 10_000
-const CHECK_EVERY_MS = 6 * 3600_000
+const DEFAULT_SETTINGS: UpdateSettings = { automaticChecks: true, intervalHours: 6 }
+const MIN_INTERVAL_HOURS = 1
+const MAX_INTERVAL_HOURS = 24 * 7
 
 /** Never throws and never opens a dialog: failures go to the log and to `lastError`. */
 export class UpdateService {
@@ -52,36 +61,65 @@ export class UpdateService {
   private found: FoundUpdate | null = null
   /** A manual check shows the update even when it was skipped or dismissed. */
   private forced = false
-  private first: ReturnType<typeof setTimeout> | undefined
-  private every: ReturnType<typeof setInterval> | undefined
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private started = false
 
   constructor(private readonly deps: UpdateServiceDeps) {
     this.s = { phase: 'idle', kind: deps.kind }
   }
 
+  /** Arms the schedule to match the settings; with automatic checks off nothing is scheduled. */
   start(): void {
-    this.first = setTimeout(() => {
-      void this.check()
-      this.every = setInterval(() => void this.check(), this.deps.everyMs ?? CHECK_EVERY_MS)
-    }, this.deps.firstCheckMs ?? FIRST_CHECK_MS)
+    this.started = true
+    clearTimeout(this.timer)
+    if (!this.settings().automaticChecks) return
+    this.timer = setTimeout(() => void this.runScheduled(), this.deps.firstCheckMs ?? FIRST_CHECK_MS)
   }
 
   stop(): void {
-    clearTimeout(this.first)
-    clearInterval(this.every)
+    this.started = false
+    clearTimeout(this.timer)
+    this.timer = undefined
+  }
+
+  /** Called when Settings change: re-arms the schedule, but only where updates were started (not in a dev run). */
+  settingsChanged(): void {
+    if (this.started) this.start()
+  }
+
+  private settings(): UpdateSettings {
+    return this.deps.settings?.() ?? DEFAULT_SETTINGS
+  }
+
+  // Re-armed after each check rather than on an interval, so a slow check cannot queue up behind itself.
+  private async runScheduled(): Promise<void> {
+    await this.check()
+    const { automaticChecks, intervalHours } = this.settings()
+    if (!automaticChecks) return
+    const hours = Math.min(Math.max(intervalHours, MIN_INTERVAL_HOURS), MAX_INTERVAL_HOURS)
+    this.timer = setTimeout(() => void this.runScheduled(), hours * 3600_000)
   }
 
   state(): UpdateState {
     const prefs = this.deps.loadPrefs()
     const shown = this.s.phase === 'available' || this.s.phase === 'downloading' || this.s.phase === 'downloaded'
     const hidden = !this.forced && (prefs.skipped === this.s.version || prefs.dismissed === this.s.version)
-    return { ...this.s, visible: shown && !hidden }
+    return {
+      ...this.s,
+      visible: shown && !hidden,
+      currentVersion: this.deps.currentVersion,
+      lastCheckedAt: prefs.lastCheckedAt,
+      skippedVersion: prefs.skipped,
+      reason: capabilityReason(this.deps.kind),
+      error: this.s.phase === 'error' ? prefs.lastError : undefined,
+    }
   }
 
-  async check(opts: { manual?: boolean } = {}): Promise<void> {
-    if (this.s.phase === 'checking' || this.s.phase === 'downloading') return
+  /** Resolves with the state the check ended in, so a manual check can report its own outcome. */
+  async check(opts: { manual?: boolean } = {}): Promise<UpdateState> {
+    if (this.s.phase === 'checking' || this.s.phase === 'downloading') return this.state()
     // A finished download stays put: checking again would only offer the same file.
-    if (this.s.phase === 'downloaded' && !opts.manual) return
+    if (this.s.phase === 'downloaded' && !opts.manual) return this.state()
     if (opts.manual) this.forced = true
     this.set({ phase: 'checking', kind: this.deps.kind })
     try {
@@ -98,6 +136,7 @@ export class UpdateService {
     } catch (e) {
       this.fail('update check failed', e)
     }
+    return this.state()
   }
 
   async download(): Promise<void> {
@@ -151,6 +190,11 @@ export class UpdateService {
     if (!this.s.version) return
     this.forced = false
     this.savePrefs({ skipped: this.s.version })
+    this.emit()
+  }
+
+  unskip(): void {
+    this.savePrefs({ skipped: undefined })
     this.emit()
   }
 

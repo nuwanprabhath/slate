@@ -1,11 +1,25 @@
+import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { promisify } from 'node:util'
 import { clipboard, net, shell } from 'electron'
 import { autoUpdater, type AppUpdater } from 'electron-updater'
 import type { UpdateBackend } from './updateService'
 import { assetUrl } from './versions'
+
+type RunFn = (file: string, args: string[]) => Promise<unknown>
+const execFileAsync = promisify(execFile)
+
+/**
+ * Sets `com.apple.quarantine` on a verified download so Gatekeeper still evaluates the dmg; a file
+ * written from a stream carries no quarantine flag. Best-effort and macOS-only.
+ */
+export async function setQuarantine(path: string, run: RunFn = execFileAsync): Promise<void> {
+  const hexTime = Math.floor(Date.now() / 1000).toString(16)
+  await run('xattr', ['-w', 'com.apple.quarantine', `0081;${hexTime};Slate;`, path])
+}
 
 /** Reads the GitHub feed (latest-mac.yml / latest-linux.yml) through electron-updater. */
 export function electronBackend(opts: { downloadsDir: string; log: (message: unknown) => void }): UpdateBackend {
@@ -59,6 +73,7 @@ export function electronBackend(opts: { downloadsDir: string; log: (message: unk
         await new Promise<void>((resolve, reject) => out.end((e?: Error | null) => (e ? reject(e) : resolve())))
         if (hash.digest('base64') !== file.sha512) throw new Error(`sha512 mismatch for ${name}`)
         await rename(partial, target)
+        if (process.platform === 'darwin') await setQuarantine(target).catch((e: unknown) => opts.log(e))
         return target
       } catch (e) {
         out.destroy()

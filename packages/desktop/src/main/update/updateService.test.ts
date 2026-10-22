@@ -23,7 +23,8 @@ function stubBackend(version = '0.2.0') {
   }
 }
 
-function setup(opts: { kind?: UpdateState['kind']; prefs?: UpdatePrefs; backend?: ReturnType<typeof stubBackend> } = {}) {
+function setup(opts: { kind?: UpdateState['kind']; prefs?: UpdatePrefs; backend?: ReturnType<typeof stubBackend>; settings?: { automaticChecks: boolean; intervalHours: number } } = {}) {
+  const settings = { ...(opts.settings ?? { automaticChecks: true, intervalHours: 6 }) }
   const backend = opts.backend ?? stubBackend()
   let prefs: UpdatePrefs = opts.prefs ?? {}
   const states: UpdateState[] = []
@@ -39,8 +40,9 @@ function setup(opts: { kind?: UpdateState['kind']; prefs?: UpdatePrefs; backend?
     },
     log,
     emit: (s) => states.push(s),
+    settings: () => settings,
   })
-  return { service, backend, states, log, prefs: () => prefs }
+  return { settings, service, backend, states, log, prefs: () => prefs }
 }
 
 describe('UpdateService', () => {
@@ -162,7 +164,7 @@ describe('UpdateService', () => {
     const backend = stubBackend()
     backend.check.mockRejectedValue(new Error('offline'))
     const { service, log, prefs } = setup({ backend })
-    await expect(service.check({ manual: true })).resolves.toBeUndefined()
+    await expect(service.check({ manual: true })).resolves.toMatchObject({ phase: 'error', visible: false })
     expect(service.state()).toMatchObject({ phase: 'error', visible: false })
     expect(prefs().lastError).toContain('offline')
     expect(String(log.mock.calls[0][0])).toContain('offline')
@@ -188,5 +190,66 @@ describe('UpdateService', () => {
     expect(backend.downloadFile).not.toHaveBeenCalled()
     expect(backend.installAuto).not.toHaveBeenCalled()
     expect(backend.copy).not.toHaveBeenCalled()
+  })
+
+  it('waits the configured interval between scheduled checks', async () => {
+    const { service, backend } = setup({ settings: { automaticChecks: true, intervalHours: 1 } })
+    service.start()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(backend.check).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(3600_000)
+    expect(backend.check).toHaveBeenCalledTimes(2)
+    service.stop()
+  })
+
+  it('schedules nothing while automatic checks are off, yet a manual check still runs', async () => {
+    const { service, backend } = setup({ settings: { automaticChecks: false, intervalHours: 6 } })
+    service.start()
+    await vi.advanceTimersByTimeAsync(48 * 3600_000)
+    expect(backend.check).not.toHaveBeenCalled()
+    const state = await service.check({ manual: true })
+    expect(backend.check).toHaveBeenCalledTimes(1)
+    expect(state.phase).toBe('available')
+  })
+
+  it('settingsChanged starts and stops the schedule', async () => {
+    const { service, backend, settings } = setup({ settings: { automaticChecks: false, intervalHours: 6 } })
+    service.start()
+    settings.automaticChecks = true
+    service.settingsChanged()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(backend.check).toHaveBeenCalledTimes(1)
+    settings.automaticChecks = false
+    service.settingsChanged()
+    await vi.advanceTimersByTimeAsync(24 * 3600_000)
+    expect(backend.check).toHaveBeenCalledTimes(1)
+  })
+
+  it('unskip brings a skipped version back and clears the pref', async () => {
+    const { service, prefs } = setup({ prefs: { skipped: '0.2.0' } })
+    await service.check()
+    expect(service.state().visible).toBe(false)
+    expect(service.state().skippedVersion).toBe('0.2.0')
+    service.unskip()
+    expect(prefs().skipped).toBeUndefined()
+    expect(service.state().visible).toBe(true)
+    expect(service.state().skippedVersion).toBeUndefined()
+  })
+
+  it('a manual check resolves with its own result, carrying version, time and reason', async () => {
+    const { service } = setup()
+    const state = await service.check({ manual: true })
+    expect(state).toMatchObject({ phase: 'available', version: '0.2.0', currentVersion: '0.1.0' })
+    expect(state.lastCheckedAt).toBeTypeOf('number')
+    expect(state.reason).toMatch(/apt/)
+  })
+
+  it('a failed manual check resolves with the error message', async () => {
+    const backend = stubBackend()
+    backend.check.mockRejectedValue(new Error('offline'))
+    const { service } = setup({ backend })
+    const state = await service.check({ manual: true })
+    expect(state.phase).toBe('error')
+    expect(state.error).toMatch(/offline/)
   })
 })

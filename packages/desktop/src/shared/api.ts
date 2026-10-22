@@ -12,6 +12,10 @@ export interface Settings {
   git: GitSettings | null
   /** This install's id in the sync folder, created once. */
   deviceId: string | null
+  /** Whether Slate asks GitHub for a newer release on its own; a manual check always works. */
+  updateAutomaticChecks: boolean
+  /** Hours between automatic checks. */
+  updateCheckIntervalHours: number
 }
 
 export type SyncProvider = 'onedrive' | 'git'
@@ -28,7 +32,7 @@ export interface GitSettings {
   auth: GitAuthMode
 }
 
-export const DEFAULT_SETTINGS: Settings = { markdownShortcuts: false, msClientId: null, syncProvider: null, git: null, deviceId: null }
+export const DEFAULT_SETTINGS: Settings = { markdownShortcuts: false, msClientId: null, syncProvider: null, git: null, deviceId: null, updateAutomaticChecks: true, updateCheckIntervalHours: 6 }
 
 /** What the sync settings overlay saves. A token is stored encrypted, never in the settings. */
 export interface SyncConfig {
@@ -86,6 +90,14 @@ export interface UpdateState {
   command?: string
   /** Whether the banner shows: an update is available or downloaded, and not skipped or dismissed. */
   visible: boolean
+  currentVersion?: string
+  lastCheckedAt?: number
+  /** The version the user chose to skip, shown in Settings with a way to stop skipping. */
+  skippedVersion?: string
+  /** What this build can do about an update, in a sentence; absent where electron-updater installs it. */
+  reason?: string
+  /** The last check or download failure. */
+  error?: string
 }
 
 export interface AuditEntryRow {
@@ -106,6 +118,7 @@ export type MenuCommand =
   | { cmd: 'show-import-backup' }
   | { cmd: 'show-connect-agents' }
   | { cmd: 'find' }
+  | { cmd: 'show-settings'; section?: string }
 
 export interface SlateApi {
   isE2E: boolean
@@ -159,7 +172,8 @@ export interface SlateApi {
   }
   update: {
     state(): Promise<UpdateState>
-    check(): Promise<void>
+    /** Resolves with the state this check ended in, so the caller can say what it found. */
+    check(): Promise<UpdateState>
     download(): Promise<void>
     install(): Promise<void>
     openInstaller(): Promise<void>
@@ -167,6 +181,7 @@ export interface SlateApi {
     copyCommand(): Promise<void>
     copyReleaseUrl(): Promise<void>
     skip(): Promise<void>
+    unskip(): Promise<void>
     dismiss(): Promise<void>
     onState(handler: (state: UpdateState) => void): () => void
   }

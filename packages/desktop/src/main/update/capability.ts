@@ -21,3 +21,17 @@ export function detectInstallKind(e: InstallEnv): InstallKind {
   }
   return 'manual'
 }
+
+/** Said in Settings next to the version; an auto install needs no explanation. */
+export function capabilityReason(kind: InstallKind): string | undefined {
+  switch (kind) {
+    case 'auto':
+      return undefined
+    case 'dmg':
+      return "This build can't install updates itself; Slate downloads the installer and opens it."
+    case 'deb':
+      return "This build can't install updates itself; Slate downloads the .deb and gives you the sudo apt install command."
+    case 'manual':
+      return "This build can't install updates itself; Slate opens the release page."
+  }
+}
