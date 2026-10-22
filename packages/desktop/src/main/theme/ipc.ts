@@ -25,7 +25,8 @@ export function registerThemeIpc(db: DocStore, isE2E: boolean): ThemeStore {
   const generator = new ThemeGenerator({ runner: fake ? fakeThemeRunner() : new ClaudeOneShot() })
   // Sync, once per window at preload, so the first paint already has the theme (no flash of Dark).
   ipcMain.on(CH.themesInitial, (e) => {
-    const initial: ThemesApi['initial'] = { saved: store.list(), safeMode: safeTheme, gpuCompositing: gpuCompositing(), systemDark: nativeTheme.shouldUseDarkColors }
+    const { themeId, followSystem, motion } = readSettings(db)
+    const initial: ThemesApi['initial'] = { settings: { themeId, followSystem, motion }, saved: store.list(), safeMode: safeTheme, gpuCompositing: gpuCompositing(), systemDark: nativeTheme.shouldUseDarkColors }
     e.returnValue = initial
   })
   ipcMain.handle(CH.themesList, () => store.list())

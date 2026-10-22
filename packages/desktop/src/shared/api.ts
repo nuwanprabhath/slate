@@ -7,7 +7,13 @@ import type { ThemeSpec } from './theme/spec'
 /** Themes: the user's saved ones live in main, validated on load and save (main/theme/themeStore.ts). */
 export interface ThemesApi {
   /** Read synchronously at preload, so the first paint already has the theme. */
-  initial: { saved: SavedTheme[]; safeMode: boolean; gpuCompositing: boolean; systemDark: boolean }
+  initial: {
+    settings: Pick<Settings, 'themeId' | 'followSystem' | 'motion'>
+    saved: SavedTheme[]
+    safeMode: boolean
+    gpuCompositing: boolean
+    systemDark: boolean
+  }
   list(): Promise<SavedTheme[]>
   save(spec: unknown, prompt?: string | null): Promise<SavedTheme>
   rename(id: string, name: string): Promise<SavedTheme>

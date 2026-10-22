@@ -89,11 +89,11 @@
 }
 
 .slate-find-match {
-  background: rgba(234, 92, 0, 0.33);
+  background: var(--find-match);
   border-radius: 2px;
 }
 
 .slate-find-current {
-  background: rgba(255, 166, 0, 0.75);
-  outline: 1px solid rgba(255, 166, 0, 0.9);
+  background: var(--find-current);
+  outline: 1px solid var(--find-current);
 }

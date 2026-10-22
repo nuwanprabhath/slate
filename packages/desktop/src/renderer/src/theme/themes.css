@@ -1,0 +1,53 @@
+/*
+ * What a theme's attributes mean (applyTheme sets them; the theme itself only picks from fixed
+ * values). Nothing here repaints per frame: the texture is a still tile, glass is plain translucent
+ * colour over the effects canvas (no backdrop-filter: it re-runs on every change underneath).
+ */
+
+/* Behind everything but the window colour: a negative z-index paints over body's background, under the UI. */
+.theme-effects { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+
+/* Surfaces */
+.slate-scroll { background-color: var(--page); }
+html:not([data-texture='none']) .slate-scroll { background-image: var(--texture-image, none); }
+.slate-box { background-color: var(--box-bg); }
+.slate-box:hover, .slate-box:focus-within { border-color: var(--box-border); }
+.slate-box-content a { color: var(--link); }
+::selection { background: var(--selection); }
+
+/* Scrollbars follow the theme. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border: 2px solid transparent; border-radius: 6px; background-clip: padding-box; }
+
+/* Body fonts: system stacks only, no web fonts. */
+html[data-font='serif'] .slate-box-content { font-family: Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, Cambria, serif; }
+html[data-font='humanist'] .slate-box-content { font-family: Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', sans-serif; }
+html[data-font='mono'] .slate-box-content { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Ubuntu Mono', monospace; }
+
+/* Glass: a faint rim on the panes, so translucent chrome still reads as an edge. */
+html[data-material='glass'] :is(.sidebar, .toolbar, .activity-bar) { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0 0 1px rgb(255 255 255 / 0.04); }
+
+/* Animations: Off (or automatic with the OS asking for less motion, or no GPU). */
+html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-motion='reduced'] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+/* Appearance section */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.theme-card-wrap { position: relative; }
+.theme-card { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 8px; text-align: left; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font: inherit; }
+.theme-card[data-active='true'] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-swatches { display: flex; height: 22px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+.theme-swatch { flex: 1; }
+.theme-card-name { font-weight: 600; }
+.theme-card-effects { color: var(--muted); font-size: 11px; }
+.theme-card-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; }
+.theme-card-actions button { padding: 1px 5px; font-size: 11px; background: var(--popover); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+.theme-describe { display: flex; flex-direction: column; gap: 6px; }
+.theme-describe textarea { font: inherit; padding: 6px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; resize: vertical; }
+.theme-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.theme-error { margin: 0; color: var(--danger); }
+.theme-note { margin: 0; color: var(--muted); font-size: 12px; }

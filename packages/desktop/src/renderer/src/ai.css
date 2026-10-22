@@ -1,6 +1,6 @@
 .ai-badge { margin-left: auto; padding: 0 5px; border-radius: 3px; font-size: 10px; font-weight: 700; line-height: 16px; color: var(--accent); border: 1px solid var(--accent); flex: none; }
 .notebook-current .ai-badge { margin-left: 6px; }
-.ai-activity-backdrop { position: fixed; inset: 0; z-index: 30; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; }
+.ai-activity-backdrop { position: fixed; inset: 0; z-index: 30; background: var(--overlay); display: grid; place-items: center; }
 .ai-activity { width: min(820px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
 .ai-activity header { display: flex; align-items: center; justify-content: space-between; }
 .ai-activity h2 { margin: 0; font-size: 16px; }

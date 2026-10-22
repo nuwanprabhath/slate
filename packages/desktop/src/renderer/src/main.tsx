@@ -7,11 +7,16 @@ import './app.css'
 import './sidebar.css'
 import './toolbar.css'
 import { installTestHooks } from './testHooks'
+import { ThemeLayer } from './theme/ThemeLayer'
+import { startTheme } from './theme/themeState'
 
 if (window.slate.isE2E) installTestHooks()
+// Before the first render, so the first paint already has the theme.
+startTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <ThemeLayer />
     <App />
   </StrictMode>,
 )
