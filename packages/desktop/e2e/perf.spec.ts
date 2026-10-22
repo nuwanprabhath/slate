@@ -24,11 +24,17 @@ test('a 200-box page opens in under 100 ms and typing stays under 16 ms per key'
   await page.evaluate(() => {
     const w = window as unknown as TestWindow
     w.__keyTimes = []
+    // A MessageChannel task runs as soon as the main thread is free after the key. setTimeout is
+    // clamped to about 1 s in a window that was never shown (Linux e2e under xvfb), which measured
+    // the clamp, not the editor: p50 489 ms there against 7 ms on a laptop.
+    const channel = new MessageChannel()
+    const starts: number[] = []
+    channel.port1.onmessage = () => w.__keyTimes.push(performance.now() - starts.shift()!)
     window.addEventListener(
       'keydown',
       () => {
-        const t0 = performance.now()
-        setTimeout(() => w.__keyTimes.push(performance.now() - t0), 0)
+        starts.push(performance.now())
+        channel.port2.postMessage(null)
       },
       { capture: true },
     )
