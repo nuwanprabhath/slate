@@ -11,10 +11,19 @@ interface BarState {
   opts: FindOptions
   /** Bumped on every open, so a second Cmd+F refocuses and selects the input. */
   openCount: number
+  /** The match to make current once that page's matches are in (from a Find in Notes result). */
+  target: FindTarget | null
+}
+
+export interface FindTarget {
+  pageId: string
+  boxId: string
+  /** The match's index within its box. */
+  occurrence: number
 }
 
 // Module state, so the query and options outlive the PageView (switching pages) for the session.
-let state: BarState = { open: false, query: '', opts: { matchCase: false, wholeWord: false, regex: false }, openCount: 0 }
+let state: BarState = { open: false, query: '', opts: { matchCase: false, wholeWord: false, regex: false }, openCount: 0, target: null }
 let returnFocus: HTMLElement | null = null
 const listeners = new Set<() => void>()
 const update = (patch: Partial<BarState>) => {
@@ -37,6 +46,11 @@ export const findBar = {
     const selected = sel && !sel.isCollapsed && sel.anchorNode?.parentElement?.closest('.slate-box') ? sel.toString() : ''
     update({ open: true, openCount: state.openCount + 1, ...(selected && !selected.includes('\n') ? { query: selected } : {}) })
   },
+  /** Opens pre-filled, e.g. from a search result; `target` picks the current match on its page. */
+  openWith(query: string, opts: FindOptions, target: FindTarget | null = null): void {
+    returnFocus = null
+    update({ open: true, query, opts, target, openCount: state.openCount + 1 })
+  },
   close(): void {
     update({ open: false })
     if (returnFocus?.isConnected) returnFocus.focus()
@@ -46,7 +60,8 @@ export const findBar = {
 
 const isMod = (e: KeyboardEvent | ReactKeyboardEvent) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey)
 
-const TOGGLES: Array<{ key: keyof FindOptions; code: string; label: string; title: string }> = [
+/** The input's option toggles, shared with the Search view's input. */
+export const TOGGLES: Array<{ key: keyof FindOptions; code: string; label: string; title: string }> = [
   { key: 'matchCase', code: 'KeyC', label: 'Aa', title: 'Match Case (Alt+C)' },
   { key: 'wholeWord', code: 'KeyW', label: 'ab', title: 'Match Whole Word (Alt+W)' },
   { key: 'regex', code: 'KeyR', label: '.*', title: 'Use Regular Expression (Alt+R)' },
@@ -72,9 +87,17 @@ export function FindBar({ session }: { session: PageSession }) {
       clearTimeout(timer)
       off()
     }
-  }, [session, open, query, opts])
+  }, [session, open, query, opts, openCount])
 
   useEffect(() => setCurrent(0), [query, opts])
+  // After the reset above, so a target from Find in Notes wins over match 0.
+  useEffect(() => {
+    const target = findBar.get().target
+    if (!target || target.pageId !== session.pageId || matches.length === 0) return
+    const inBox = matches.flatMap((m, i) => (m.boxId === target.boxId ? [i] : []))
+    if (inBox.length > 0) setCurrent(inBox[Math.min(target.occurrence, inBox.length - 1)])
+    update({ target: null })
+  }, [session, matches])
   const index = matches.length === 0 ? -1 : Math.min(current, matches.length - 1)
 
   useEffect(() => {

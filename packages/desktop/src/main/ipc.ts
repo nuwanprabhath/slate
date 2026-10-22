@@ -1,23 +1,27 @@
 import { BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, shell, type OpenDialogOptions } from 'electron'
 import { CH } from '../shared/ipc'
-import type { BackupPick, GitAuthMode, GitSettings, Settings, SyncConfig } from '../shared/api'
+import type { BackupPick, GitAuthMode, GitSettings, SearchQuery, Settings, SyncConfig } from '../shared/api'
 import { configureLogging } from './log/configure'
 import { scanBackup } from './onenote/backup'
 import type { BlobStore } from './blobs'
 import type { AuthService } from './onenote/auth'
 import type { ImportService } from './onenote/importService'
 import { onSettingsWritten, readSettings, writeSettings } from './settings'
+import type { SearchIndex } from './search/searchIndex'
 import type { DocStore } from './store'
 import type { SyncService } from './sync/syncService'
 
-export function registerIpc(store: DocStore, blobs: BlobStore, onAppend: () => void = () => {}): void {
+export function registerIpc(store: DocStore, blobs: BlobStore, onAppend: (docId: string) => void = () => {}, onRemove: (docId: string) => void = () => {}): void {
   ipcMain.handle(CH.docsList, (_e, prefix: string) => store.list(prefix))
   ipcMain.handle(CH.docsLoad, (_e, docId: string) => store.load(docId))
   ipcMain.handle(CH.docsAppend, (_e, docId: string, update: Uint8Array) => {
     store.append(docId, update)
-    onAppend()
+    onAppend(docId)
   })
-  ipcMain.handle(CH.docsRemove, (_e, docId: string) => store.remove(docId))
+  ipcMain.handle(CH.docsRemove, (_e, docId: string) => {
+    store.remove(docId)
+    onRemove(docId)
+  })
   ipcMain.handle(CH.blobsPut, (_e, bytes: Uint8Array, mime: string) => blobs.put(bytes, mime))
   ipcMain.handle(CH.blobsCopyImage, async (_e, url: string) => {
     const file = blobs.pathForUrl(url)
@@ -36,6 +40,10 @@ export function registerIpc(store: DocStore, blobs: BlobStore, onAppend: () => v
   ipcMain.handle(CH.openExternal, (_e, url: string) => {
     if (/^(?:https?:\/\/|mailto:)/i.test(url)) return shell.openExternal(url)
   })
+}
+
+export function registerSearchIpc(index: SearchIndex): void {
+  ipcMain.handle(CH.searchQuery, (_e, query: SearchQuery) => index.query(query))
 }
 
 export function registerSyncIpc(sync: SyncService): void {

@@ -56,4 +56,5 @@ export const CH = {
   updateUnskip: 'update:unskip',
   updateDismiss: 'update:dismiss',
   updateStateEvent: 'update:state-event',
+  searchQuery: 'search:query',
 } as const

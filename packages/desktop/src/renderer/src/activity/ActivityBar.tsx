@@ -26,7 +26,7 @@ export function ActivityBar({ tools, activeId, panelOpen, onSelect, bottom }: Pr
             data-testid={`activity-${tool.id}`}
             aria-pressed={pressed}
             aria-label={tool.label}
-            title={`${tool.label} (${isMac ? '⌘\\' : 'Ctrl+\\'})`}
+            title={`${tool.label} (${tool.shortcut ?? (isMac ? '⌘\\' : 'Ctrl+\\')})`}
             onClick={() => onSelect(tool.id)}
           >
             {tool.icon}

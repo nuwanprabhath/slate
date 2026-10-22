@@ -20,6 +20,8 @@ export interface Settings {
   updateAutomaticChecks: boolean
   /** Hours between automatic checks. */
   updateCheckIntervalHours: number
+  /** Activity-bar plugins' own settings, keyed `plugins.<pluginId>.<key>`. */
+  plugins: Record<string, unknown>
 }
 
 export type SyncProvider = 'onedrive' | 'git'
@@ -139,6 +141,43 @@ export type MenuCommand =
   | { cmd: 'find' }
   | { cmd: 'show-settings'; section?: string }
   | { cmd: 'link' }
+  | { cmd: 'find-in-notes' }
+
+export type SearchScope = { kind: 'all' } | { kind: 'notebook'; id: string } | { kind: 'section'; id: string }
+
+export interface SearchQuery {
+  text: string
+  matchCase: boolean
+  wholeWord: boolean
+  regex: boolean
+  scope: SearchScope
+}
+
+export interface SearchMatch {
+  boxId: string
+  snippet: string
+  /** `[from, to)` in `snippet`. */
+  ranges: Array<[number, number]>
+  /** Which match this is within its box, in the in-page find bar's order. */
+  occurrence: number
+}
+
+export interface SearchPageResult {
+  pageId: string
+  pageTitle: string
+  sectionId: string
+  sectionName: string
+  notebookId: string
+  notebookName: string
+  matches: SearchMatch[]
+}
+
+export interface SearchResults {
+  pages: SearchPageResult[]
+  total: number
+  /** More matches exist than the cap returned. */
+  truncated: boolean
+}
 
 export interface SlateApi {
   isE2E: boolean
@@ -220,6 +259,7 @@ export interface SlateApi {
     dismiss(): Promise<void>
     onState(handler: (state: UpdateState) => void): () => void
   }
+  search: { query(query: SearchQuery): Promise<SearchResults> }
   onMenu(handler: (command: MenuCommand) => void): () => void
   /** Updates another process (an agent via slate-mcp) wrote to the database. */
   onExternalUpdates(handler: (batches: ExternalBatch[]) => void): () => void

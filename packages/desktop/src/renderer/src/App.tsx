@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { activeEditor, EditorServicesContext, openLinkPopover, pastePlainOrLink, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
 import { ActivityBar } from './activity/ActivityBar'
-import { createTools } from './activity/tools'
+import { toolsFromViews } from './activity/tools'
+import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
 import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
 import { Column, Splitter } from './Splitter'
@@ -245,7 +246,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [togglePanel])
 
-  const tools = createTools(() => (
+  const libraryPanel = () => (
     <aside className="sidebar" data-testid="library-panel">
       <NotebookPicker
         library={library}
@@ -276,7 +277,9 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
         <Splitter testId="splitter-pages" label="Resize pages" width={layout.pagesWidth} onChange={(w) => setLayout((l) => ({ ...l, pagesWidth: w === null ? null : clampWidth(w) }))} />
       </div>
     </aside>
-  ))
+  )
+  const showView = useCallback((id: string) => setLayout((l) => ({ ...l, activeTool: id, panelOpen: true })), [])
+  const tools = toolsFromViews(usePlugins({ library, notebookId: entry.id, setSelection, libraryPanel }, showView))
   const activeTool = tools.find((t) => t.id === layout.activeTool) ?? tools[0]
 
   return (

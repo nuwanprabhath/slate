@@ -94,6 +94,7 @@ const api: SlateApi = {
       return () => ipcRenderer.removeListener(CH.updateStateEvent, listener)
     },
   },
+  search: { query: (query) => ipcRenderer.invoke(CH.searchQuery, query) },
   onMenu(handler) {
     const listener = (_e: IpcRendererEvent, command: MenuCommand) => handler(command)
     ipcRenderer.on(CH.menu, listener)

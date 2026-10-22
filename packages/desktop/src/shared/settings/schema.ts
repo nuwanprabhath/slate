@@ -34,6 +34,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   git: { default: null, sanitize: gitSettings },
   deviceId: { default: null, sanitize: stringOrNull },
   debugLog: { default: false, sanitize: bool },
+  plugins: { default: {}, sanitize: (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined) },
   updateAutomaticChecks: { default: true, sanitize: bool },
   updateCheckIntervalHours: { default: 6, sanitize: (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(168, Math.max(1, Math.round(v))) : undefined) },
 }

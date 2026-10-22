@@ -60,6 +60,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
         { type: 'separator' },
         { label: 'Insert Link…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, click: () => send({ cmd: 'link' }) },
         { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => send({ cmd: 'find' }) },
+        { id: 'find-in-notes', label: 'Find in Notes…', accelerator: 'CmdOrCtrl+Shift+F', click: () => send({ cmd: 'find-in-notes' }) },
       ],
     },
     {
