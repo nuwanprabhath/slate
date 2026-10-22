@@ -13,7 +13,7 @@ type Listener = () => void
 const listeners = new Set<Listener>()
 
 const initial = window.slate.themes.initial
-let settings: Pick<Settings, 'themeId' | 'followSystem'> = initial.settings
+let settings: Pick<Settings, 'themeId' | 'followSystem' | 'fontOverrides'> = initial.settings
 let saved: SavedTheme[] = initial.saved
 let systemDark = initial.systemDark
 let preview: ThemeSpec | null = null
@@ -26,7 +26,8 @@ let active = activeTheme()
 
 function refresh(): void {
   active = activeTheme()
-  applyTheme(preview ?? active.spec)
+  // A preview is shown in its own fonts: the overrides belong to the saved theme.
+  applyTheme(preview ?? active.spec, preview === null ? settings.fontOverrides[active.id] : undefined)
   listeners.forEach((l) => l())
 }
 
@@ -52,7 +53,8 @@ export function startTheme(): void {
   started = true
   refresh()
   window.slate.settings.onChange((s) => {
-    if (s.themeId === settings.themeId && s.followSystem === settings.followSystem) return
+    const same = s.themeId === settings.themeId && s.followSystem === settings.followSystem
+    if (same && JSON.stringify(s.fontOverrides) === JSON.stringify(settings.fontOverrides)) return
     settings = s
     refresh()
   })

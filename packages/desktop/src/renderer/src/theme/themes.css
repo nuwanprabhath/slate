@@ -21,10 +21,8 @@ html:not([data-texture='none']) .page-view { background-image: var(--texture-ima
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border: 2px solid transparent; border-radius: 6px; background-clip: padding-box; }
 
-/* Body fonts: system stacks only, no web fonts. */
-html[data-font='serif'] .slate-box-content { font-family: Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, Cambria, serif; }
-html[data-font='humanist'] .slate-box-content { font-family: Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', sans-serif; }
-html[data-font='mono'] .slate-box-content { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Ubuntu Mono', monospace; }
+/* Note text: the theme's font or the user's override (shared/theme/fonts.ts). A run with its own font mark keeps it. */
+.slate-box-content { font-family: var(--font-note); }
 
 /* Glass: a faint rim on the panes, so translucent chrome still reads as an edge. */
 html[data-material='glass'] :is(.sidebar, .toolbar, .activity-bar) { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0 0 1px rgb(255 255 255 / 0.04); }
@@ -52,3 +50,4 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
 .theme-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .theme-error { margin: 0; color: var(--danger); }
 .theme-note { margin: 0; color: var(--muted); font-size: 12px; }
+.theme-fonts { display: flex; flex-direction: column; gap: 8px; }

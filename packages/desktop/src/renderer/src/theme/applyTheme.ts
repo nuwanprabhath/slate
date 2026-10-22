@@ -1,6 +1,7 @@
 import { setThemeColors } from '@slate/editor'
 import { composite, parseColor, toHex8 } from '../../../shared/theme/color'
 import { ALL_THEME_VARS, themeToCssVars } from '../../../shared/theme/cssVars'
+import { resolveFonts, type FontOverride } from '../../../shared/theme/fonts'
 import { DEFAULT_PALETTE, type PaletteToken, type ThemeSpec } from '../../../shared/theme/spec'
 import { drawTexture, TEXTURE_TILE } from '../../../shared/theme/textures'
 
@@ -42,9 +43,9 @@ function textureTile(spec: ThemeSpec, ink: string): string | null {
  * The whole mechanism is `style.setProperty` for allowlisted custom properties (cssVars.ts) plus
  * `data-material`, `data-texture` and `data-font`, whose meaning lives in themes.css. No
  * stylesheet is injected and nothing the theme wrote is parsed as CSS. The one `url()` is the
- * texture tile Slate drew itself.
+ * texture tile Slate drew itself; the fonts are stacks from fonts.ts or a validated, quoted name.
  */
-export function applyTheme(spec: ThemeSpec): void {
+export function applyTheme(spec: ThemeSpec, fonts?: FontOverride): void {
   const root = document.documentElement
   for (const name of ALL_THEME_VARS) root.style.removeProperty(name)
   for (const [name, value] of Object.entries(themeToCssVars(spec))) root.style.setProperty(name, value)
@@ -56,6 +57,9 @@ export function applyTheme(spec: ThemeSpec): void {
   root.dataset.material = spec.material
   root.dataset.texture = spec.texture
   root.dataset.font = spec.font
+  const { note, ui } = resolveFonts(spec, fonts)
+  root.style.setProperty('--font-note', note)
+  root.style.setProperty('--font-ui', ui)
   // Light or dark scrollbars, form controls and caret to match the page.
   const light = (0.2126 * page.r + 0.7152 * page.g + 0.0722 * page.b) / 255 > 0.5
   root.style.colorScheme = light ? 'light' : 'dark'

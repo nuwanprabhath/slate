@@ -29,4 +29,19 @@ describe('settings schema', () => {
     expect(sanitizePatch({ themeId: 'user:abc', motion: 'reduced', followSystem: true })).toEqual({ themeId: 'user:abc', motion: 'reduced', followSystem: true })
     expect(sanitizePatch({ themeId: 'x'.repeat(200), motion: 'fast', followSystem: 'yes' })).toEqual({})
   })
+
+  it('keeps font overrides per theme, dropping bad names and capping lengths', () => {
+    expect(DEFAULT_SETTINGS.fontOverrides).toEqual({})
+    const patch = sanitizePatch({
+      fontOverrides: {
+        'builtin:paper': { note: 'Georgia', ui: 'Inter' },
+        'builtin:dark': { note: 'x;}body{color:red', ui: 'A'.repeat(200) },
+        'builtin:nord': 'Georgia',
+        ['k'.repeat(200)]: { note: 'Georgia' },
+      },
+    })
+    expect(patch.fontOverrides).toEqual({ 'builtin:paper': { note: 'Georgia', ui: 'Inter' } })
+    expect(sanitizePatch({ fontOverrides: ['Georgia'] }).fontOverrides).toBeUndefined()
+    expect(sanitizePatch({ fontOverrides: null }).fontOverrides).toBeUndefined()
+  })
 })

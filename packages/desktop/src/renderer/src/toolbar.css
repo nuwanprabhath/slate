@@ -3,7 +3,9 @@
 .toolbar button:hover:not(:disabled) { background: var(--hover); }
 .toolbar button.active { background: var(--selected); border-color: var(--border); }
 .toolbar button:disabled, .toolbar select:disabled { opacity: 0.4; cursor: default; }
-.toolbar select { height: 28px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; margin: 0 2px; }
+/* Colours, chevron and padding come from controls.css; the widths keep text clear of the chevron. */
+.toolbar select { height: 28px; min-width: 76px; margin: 0 2px; }
+.toolbar select[data-testid='tb-font'] { min-width: 128px; }
 .toolbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 6px; }
 .toolbar .split, .toolbar .split-menu { position: relative; display: inline-flex; align-items: center; }
 .toolbar .chevron { min-width: 14px; width: 14px; padding: 0; }

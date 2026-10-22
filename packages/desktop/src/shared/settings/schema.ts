@@ -6,6 +6,7 @@
  */
 import type { GitAuthMode, GitSettings, Settings, SyncProvider } from '../api'
 import { DEFAULT_THEME_ID } from '../theme/builtins'
+import { sanitizeFontOverrides } from '../theme/fonts'
 import type { MotionSetting } from '../theme/motion'
 
 export interface SettingDef<T> {
@@ -44,6 +45,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   motion: { default: 'auto', sanitize: (v) => (MOTIONS.some((m) => m === v) ? (v as MotionSetting) : undefined) },
   followSystem: { default: false, sanitize: bool },
   systemTitleBar: { default: false, sanitize: bool },
+  fontOverrides: { default: {}, sanitize: sanitizeFontOverrides },
 }
 
 const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>

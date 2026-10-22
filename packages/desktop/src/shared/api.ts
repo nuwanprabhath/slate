@@ -1,5 +1,6 @@
 import type { ImportProgress, OneNoteNotebook } from '@slate/importer'
 import type { ConflictRecord, SyncReport } from '@slate/sync'
+import type { FontOverride } from './theme/fonts'
 import type { MotionSetting } from './theme/motion'
 import type { SavedTheme, ThemeGenerateResult } from './theme/resolve'
 import type { ThemeSpec } from './theme/spec'
@@ -9,7 +10,7 @@ import type { AppMenuNode, ChromeColors, WindowChrome } from './windowChrome/chr
 export interface ThemesApi {
   /** Read synchronously at preload, so the first paint already has the theme. */
   initial: {
-    settings: Pick<Settings, 'themeId' | 'followSystem' | 'motion'>
+    settings: Pick<Settings, 'themeId' | 'followSystem' | 'motion' | 'fontOverrides'>
     saved: SavedTheme[]
     safeMode: boolean
     gpuCompositing: boolean
@@ -55,6 +56,8 @@ export interface Settings {
   followSystem: boolean
   /** The OS title bar instead of Slate's themed one. Read when a window opens, so it needs a restart. */
   systemTitleBar: boolean
+  /** Note and UI fonts the user picked, per theme id; a theme without an entry uses its own. */
+  fontOverrides: Record<string, FontOverride>
 }
 
 export type SyncProvider = 'onedrive' | 'git'

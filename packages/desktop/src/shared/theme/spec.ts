@@ -5,7 +5,7 @@
  * gives is checked by `validateTheme` (validate.ts) before anything uses it. The lists are also
  * what the theme generator is told it may choose from (prompt.ts builds its schema from them). A
  * new effect kind needs a draw function in `effects/index.ts` and a note in `prompt.ts`; a new
- * font a stack in `renderer/src/theme/themes.css` and a note in `prompt.ts`. Both notes are
+ * font a stack in `fonts.ts` and a note in `prompt.ts`. Both notes are
  * exhaustive `Record`s, so a missing one is a compile error.
  */
 
@@ -14,7 +14,7 @@ export const PALETTE_TOKENS = [
   'bg', 'page', 'panel', 'panel-2', 'toolbar-bg', 'sidebar-bg', 'popover', 'overlay',
   'box-bg', 'box-border', 'border',
   'text', 'muted', 'accent', 'accent-contrast', 'link', 'selection',
-  'hover', 'selected', 'danger', 'warning',
+  'hover', 'selected', 'danger', 'warning', 'control-bg',
   'find-match', 'find-current', 'scrollbar-thumb',
   'code-keyword', 'code-string', 'code-number', 'code-comment', 'code-title',
 ] as const
@@ -87,6 +87,7 @@ export const DEFAULT_PALETTE: Record<PaletteToken, string> = {
   'selected': '#3d3d3d',
   'danger': '#e45b5b',
   'warning': '#c9a227',
+  'control-bg': '#2d2d2d',
   'find-match': 'rgba(234, 92, 0, 0.33)',
   'find-current': 'rgba(255, 166, 0, 0.75)',
   'scrollbar-thumb': 'rgba(128, 128, 128, 0.4)',
