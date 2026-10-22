@@ -96,7 +96,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
           onClick={() => session.page.updateBox(box.id, { private: !box.private })}
         >
           {/* Open: the shackle is lifted and swung right, so the gap reads as unlocked at a glance. */}
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true">
             <rect x="2" y="6.5" width="8" height="6" rx="1" fill="currentColor" />
             <path
               d={box.private ? 'M3.75 6.5V4.5a2.25 2.25 0 0 1 4.5 0v2' : 'M8.25 4V2.75a2.25 2.25 0 0 1 4.5 0V5'}
