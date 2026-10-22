@@ -7,6 +7,9 @@ export const FAKE_VERSION = '9.9.9'
 /** E2E launches out/main/index.js directly, where app.getVersion() reports Electron's own version. */
 export const FAKE_CURRENT_VERSION = '0.1.0'
 
+/** Long enough for an e2e test to see the progress display. */
+const pause = () => new Promise<void>((r) => setTimeout(r, 600))
+
 /** SLATE_FAKE_UPDATE picks the install kind e2e tests exercise; any other value means deb. */
 export function fakeInstallKind(value: string): InstallKind {
   return value === 'dmg' || value === 'auto' || value === 'manual' ? value : 'deb'
@@ -17,11 +20,17 @@ export function fakeBackend(opts: { downloadsDir: string; copy: (text: string) =
   const files = ['mac-arm64.dmg', 'mac-x64.dmg', 'linux-amd64.deb', 'linux-arm64.deb'].map((s) => ({ url: `Slate-${FAKE_VERSION}-${s}`, sha512: 'fake', size: 0 }))
   return {
     check: async () => ({ version: FAKE_VERSION, files }),
-    downloadAuto: async (onProgress) => onProgress(100),
+    downloadAuto: async (onProgress) => {
+      onProgress(50)
+      await pause()
+      onProgress(100)
+    },
     installAuto: () => {},
     async downloadFile(file, _version, onProgress) {
       const path = join(opts.downloadsDir, file.url)
       writeFileSync(path, '')
+      onProgress(50)
+      await pause()
       onProgress(100)
       return path
     },
