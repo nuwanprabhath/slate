@@ -1,6 +1,7 @@
 import { compileQuery, contentToJSON, matchAll, NotebookDoc, PageDoc, type PMJSON, type TreeItem } from '@slate/core'
 import type { SearchMatch, SearchPageResult, SearchQuery, SearchResults } from '../../shared/api'
 import type { DocStore, SearchRow } from '../store'
+import { snippetAround } from './snippet'
 
 /** Bump when the rows' shape or text extraction changes: the next start rebuilds the index. */
 export const SEARCH_INDEX_VERSION = '1'
@@ -114,11 +115,9 @@ export class SearchIndex {
         const key = `${row.pageId}\n${row.boxId}`
         const occurrence = occurrences.get(key) ?? 0
         occurrences.set(key, occurrence + 1)
-        const start = Math.max(0, from - CONTEXT)
-        const end = Math.min(row.text.length, to + CONTEXT)
-        const snippet = row.text.slice(start, end).replace(/[￼\n]/g, ' ')
+        const { snippet, range } = snippetAround(row.text, from, to, CONTEXT)
         const list = byPage.get(row.pageId) ?? []
-        list.push({ boxId: row.boxId, snippet, ranges: [[from - start, to - start]], occurrence })
+        list.push({ boxId: row.boxId, snippet, ranges: [range], occurrence })
         byPage.set(row.pageId, list)
         total++
       }
