@@ -10,10 +10,10 @@ async function openWithShortcut(page: Page) {
   await expect(page.getByTestId('settings-dialog')).toBeVisible()
 }
 
-test('Cmd/Ctrl+, opens Settings with Autocorrect, Sync and General; Escape closes it', async ({ page }) => {
+test('Cmd/Ctrl+, opens Settings with Autocorrect, Sync, General and Diagnostics; Escape closes it', async ({ page }) => {
   await expect(page.getByTestId('canvas')).toBeVisible()
   await openWithShortcut(page)
-  await expect(page.locator('.settings-nav-item')).toHaveText(['Autocorrect', 'Sync', 'General'])
+  await expect(page.locator('.settings-nav-item')).toHaveText(['Autocorrect', 'Sync', 'General', 'Diagnostics'])
   await expect(page.getByTestId('settings-heading')).toHaveText('Autocorrect')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('settings-dialog')).toHaveCount(0)
@@ -32,7 +32,7 @@ test('typing in the search filters the sections', async ({ page }) => {
   await expect(page.locator('.settings-nav-item')).toHaveText(['Sync'])
   await expect(page.getByTestId('settings-heading')).toHaveText('Sync')
   await page.getByTestId('settings-search').fill('')
-  await expect(page.locator('.settings-nav-item')).toHaveCount(3)
+  await expect(page.locator('.settings-nav-item')).toHaveCount(4)
 })
 
 test('show-settings with a section opens that section', async ({ app, page }) => {
