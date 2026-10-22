@@ -40,10 +40,14 @@ export function registerThemeIpc(db: DocStore, isE2E: boolean): ThemeStore {
   return store
 }
 
+export function activeThemeSpec(db: DocStore, store: ThemeStore): ThemeSpec {
+  const s = readSettings(db)
+  return resolveTheme({ themeId: s.themeId, saved: store.list(), followSystem: s.followSystem, systemDark: nativeTheme.shouldUseDarkColors, safe: safeTheme }).spec
+}
+
 /** The active theme's window colour, for the BrowserWindow's `backgroundColor` before the page paints. */
 export function windowBackground(db: DocStore, store: ThemeStore): string {
-  const s = readSettings(db)
-  const { spec } = resolveTheme({ themeId: s.themeId, saved: store.list(), followSystem: s.followSystem, systemDark: nativeTheme.shouldUseDarkColors, safe: safeTheme })
+  const spec = activeThemeSpec(db, store)
   const bg = spec.palette.bg ?? builtinTheme('builtin:dark')!.spec.palette.bg ?? DEFAULT_PALETTE.bg
   // Electron wants #rrggbb or #aarrggbb; the window colour is always opaque.
   return bg.slice(0, 7)

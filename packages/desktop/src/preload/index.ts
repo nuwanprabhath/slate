@@ -111,6 +111,14 @@ const api: SlateApi = {
     },
   },
   search: { query: (query) => ipcRenderer.invoke(CH.searchQuery, query) },
+  chrome: {
+    kind: ipcRenderer.sendSync(CH.chromeKind),
+    platform: process.platform,
+    setColors: (colors) => ipcRenderer.send(CH.chromeSetColors, colors),
+    toggleMaximize: () => ipcRenderer.send(CH.chromeToggleMaximize),
+    menu: () => ipcRenderer.invoke(CH.chromeMenu),
+    invokeMenu: (path) => ipcRenderer.send(CH.chromeInvokeMenu, path),
+  },
   onMenu(handler) {
     const listener = (_e: IpcRendererEvent, command: MenuCommand) => handler(command)
     ipcRenderer.on(CH.menu, listener)

@@ -66,4 +66,9 @@ export const CH = {
   themesClaude: 'themes:claude-available',
   themesGenerate: 'themes:generate',
   themesCancel: 'themes:cancel',
+  chromeKind: 'chrome:kind',
+  chromeSetColors: 'chrome:set-colors',
+  chromeToggleMaximize: 'chrome:toggle-maximize',
+  chromeMenu: 'chrome:menu',
+  chromeInvokeMenu: 'chrome:invoke-menu',
 } as const
