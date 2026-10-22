@@ -3,6 +3,7 @@ import type { ConflictRecord, SyncReport } from '@slate/sync'
 import type { MotionSetting } from './theme/motion'
 import type { SavedTheme, ThemeGenerateResult } from './theme/resolve'
 import type { ThemeSpec } from './theme/spec'
+import type { AppMenuNode, ChromeColors, WindowChrome } from './windowChrome/chrome'
 
 /** Themes: the user's saved ones live in main, validated on load and save (main/theme/themeStore.ts). */
 export interface ThemesApi {
@@ -52,6 +53,8 @@ export interface Settings {
   motion: MotionSetting
   /** Light or Dark by the OS, whatever `themeId` says. */
   followSystem: boolean
+  /** The OS title bar instead of Slate's themed one. Read when a window opens, so it needs a restart. */
+  systemTitleBar: boolean
 }
 
 export type SyncProvider = 'onedrive' | 'git'
@@ -291,6 +294,16 @@ export interface SlateApi {
     onState(handler: (state: UpdateState) => void): () => void
   }
   search: { query(query: SearchQuery): Promise<SearchResults> }
+  /** The themed title bar (renderer/src/titleBar/). */
+  chrome: {
+    /** Which bar this window was opened with, read once at preload. */
+    kind: WindowChrome
+    platform: string
+    setColors(colors: ChromeColors): void
+    toggleMaximize(): void
+    menu(): Promise<AppMenuNode[]>
+    invokeMenu(path: number[]): void
+  }
   onMenu(handler: (command: MenuCommand) => void): () => void
   /** Updates another process (an agent via slate-mcp) wrote to the database. */
   onExternalUpdates(handler: (batches: ExternalBatch[]) => void): () => void

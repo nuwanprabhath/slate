@@ -43,6 +43,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   themeId: { default: DEFAULT_THEME_ID, sanitize: (v) => (typeof v === 'string' && v.length > 0 && v.length <= 100 ? v : undefined) },
   motion: { default: 'auto', sanitize: (v) => (MOTIONS.some((m) => m === v) ? (v as MotionSetting) : undefined) },
   followSystem: { default: false, sanitize: bool },
+  systemTitleBar: { default: false, sanitize: bool },
 }
 
 const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>
