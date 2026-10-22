@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { clampPane, clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, paneWidth, PANE_MIN, saveLayout, scaleColumns } from './layout'
+import { clampPane, clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, loadLibraryBox, paneWidth, PANE_MIN, saveLayout, saveLibraryBox, scaleColumns } from './layout'
 
 describe('fitWidth', () => {
   it('is the widest name plus its chrome', () => {
@@ -37,6 +37,14 @@ describe('layout storage', () => {
     }
   })
   afterEach(() => delete g.localStorage)
+
+  it('remembers the Library panel geometry, so Search opens at the same width after a restart', () => {
+    expect(loadLibraryBox()).toEqual({ total: 300, sections: 0, pages: 0 })
+    saveLibraryBox({ total: 412, sections: 150, pages: 260 })
+    expect(loadLibraryBox()).toEqual({ total: 412, sections: 150, pages: 260 })
+    store.set('slate:library-box', '{"total":"x"}')
+    expect(loadLibraryBox().total).toBe(300)
+  })
 
   it('defaults to auto widths', () => {
     expect(loadLayout()).toMatchObject({ sectionsWidth: null, pagesWidth: null })

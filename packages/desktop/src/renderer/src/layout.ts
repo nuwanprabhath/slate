@@ -82,3 +82,32 @@ export function saveLayout(layout: Layout): void {
     // Storage unavailable: the layout just won't be remembered.
   }
 }
+
+export interface LibraryBox {
+  total: number
+  sections: number
+  pages: number
+}
+
+const BOX_KEY = 'slate:library-box'
+
+/** The Library panel's last measured widths; 300 px total until it has been shown once. */
+export function loadLibraryBox(): LibraryBox {
+  try {
+    const b = JSON.parse(localStorage.getItem(BOX_KEY) ?? 'null') as Partial<LibraryBox> | null
+    if (b && [b.total, b.sections, b.pages].every((n) => typeof n === 'number' && Number.isFinite(n)) && b.total! > 0) {
+      return { total: b.total!, sections: b.sections!, pages: b.pages! }
+    }
+  } catch {
+    // Storage unavailable: fall back to the default below.
+  }
+  return { total: 300, sections: 0, pages: 0 }
+}
+
+export function saveLibraryBox(box: LibraryBox): void {
+  try {
+    localStorage.setItem(BOX_KEY, JSON.stringify(box))
+  } catch {
+    // Not remembered; the first switch after a restart may shift once.
+  }
+}

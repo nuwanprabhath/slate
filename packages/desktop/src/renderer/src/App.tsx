@@ -5,7 +5,7 @@ import { ActivityBar } from './activity/ActivityBar'
 import { toolsFromViews } from './activity/tools'
 import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
-import { clampPane, clampWidth, loadLayout, paneWidth, saveLayout, scaleColumns, type Layout } from './layout'
+import { clampPane, clampWidth, loadLayout, loadLibraryBox, paneWidth, saveLayout, saveLibraryBox, scaleColumns, type Layout } from './layout'
 import { Column, Splitter } from './Splitter'
 import { currentSession } from './currentSession'
 import { ConnectAgents } from './ConnectAgents'
@@ -248,7 +248,8 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
 
   // Last measured Library geometry: the Search view takes its total width, and a manual Search
   // width is scaled back onto the two columns (see scaleColumns).
-  const libraryBox = useRef({ total: 300, sections: 0, pages: 0 })
+  // Remembered across restarts, so an app that starts in the Search view already knows the width.
+  const libraryBox = useRef(loadLibraryBox())
   useLayoutEffect(() => {
     if (!layout.panelOpen || layout.activeTool !== 'library') return
     const aside = document.querySelector<HTMLElement>('[data-testid="library-panel"]')
@@ -256,6 +257,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
     const measure = () => {
       const width = (id: string) => aside.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().width ?? 0
       libraryBox.current = { total: aside.getBoundingClientRect().width, sections: width('sections-column'), pages: width('pages-column') }
+      saveLibraryBox(libraryBox.current)
     }
     measure()
     const observer = new ResizeObserver(measure)
