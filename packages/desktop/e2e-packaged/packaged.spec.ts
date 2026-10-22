@@ -56,7 +56,7 @@ test('the packaged app opens its database and keeps text across a relaunch', asy
     let page = await app.firstWindow()
     await expect(page).toHaveTitle('Slate')
     await expect(page.getByTestId('notebook-picker')).toContainText('My Notebook')
-    await page.getByTestId('canvas').click({ position: { x: 200, y: 150 } })
+    await page.getByTestId('canvas').dblclick({ position: { x: 200, y: 150 } })
     await expect(page.locator('[data-testid="box-editor"]:focus')).toHaveText('')
     await page.keyboard.type('packaged hello')
     await expect(page.getByTestId('box-editor')).toHaveText('packaged hello')

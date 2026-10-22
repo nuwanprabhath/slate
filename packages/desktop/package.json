@@ -5,7 +5,12 @@
   "private": true,
   "productName": "Slate",
   "description": "Fast, developer-friendly free-form notes",
-  "author": "Nuwan Munasinghe",
+  "author": "Nuwan Munasinghe <nuwanprabhath@gmail.com>",
+  "homepage": "https://github.com/nuwanprabhath/slate",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nuwanprabhath/slate.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

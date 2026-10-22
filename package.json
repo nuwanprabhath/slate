@@ -2,6 +2,12 @@
   "name": "slate",
   "version": "0.1.0",
   "license": "MIT",
+  "author": "Nuwan Munasinghe <nuwanprabhath@gmail.com>",
+  "homepage": "https://github.com/nuwanprabhath/slate",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nuwanprabhath/slate.git"
+  },
   "private": true,
   "workspaces": [
     "packages/*"
