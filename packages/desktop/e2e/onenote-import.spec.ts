@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { startFakeGraph, type FakeGraph } from '../../importer/test/fakeGraph'
-import { expect, launchApp, test } from './fixtures'
+import { expect, launchApp, test, clickMenu } from './fixtures'
 
 const RELEASES =
   '<html><head><title>Releases</title></head><body data-absolute-enabled="true" style="font-family:Calibri;font-size:11pt">' +
@@ -57,7 +57,7 @@ test.afterAll(async () => {
 })
 
 async function importTern(): Promise<void> {
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('import-onenote')!.click())
+  await clickMenu(app, 'import-onenote')
   const dialog = win.getByTestId('import-dialog')
   await expect(dialog).toBeVisible()
   const tern = dialog.getByRole('treeitem', { name: 'TERN' })
@@ -71,7 +71,7 @@ async function importTern(): Promise<void> {
 }
 
 test('imports a OneNote section with its group, page order, levels, positions and images', async () => {
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('import-onenote')!.click())
+  await clickMenu(app, 'import-onenote')
   await win.getByTestId('import-sign-in').click()
   await win.getByTestId('import-close').click()
   await expect(win.getByTestId('import-dialog')).toHaveCount(0)

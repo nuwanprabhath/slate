@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFakeConverter } from '../../importer/test/fakeOne2html'
-import { expect, launchApp, test } from './fixtures'
+import { expect, launchApp, test, clickMenu } from './fixtures'
 
 const FIXTURE = join(__dirname, '../../importer/test/fixtures/one/New Section 1.one')
 const COLORS_OUTPUT = join(__dirname, '../../importer/test/fixtures/one2html-colors')
@@ -17,7 +17,7 @@ test('imported black text is readable on the dark theme and red stays red', asyn
   const { app, page } = await launchApp(userData, { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
     await page.emulateMedia({ colorScheme: 'dark' })
-    await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('import-onenote-backup')!.click())
+    await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     await expect(dialog.getByTestId('backup-picker')).toBeVisible()
     await dialog.getByTestId('import-start').click()

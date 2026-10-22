@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFakeConverter } from '../../importer/test/fakeOne2html'
-import { expect, launchApp, test } from './fixtures'
+import { expect, launchApp, test, clickMenu } from './fixtures'
 
 const FIXTURE = join(__dirname, '../../importer/test/fixtures/one/New Section 1.one')
 const CLI = join(__dirname, '..', 'out', 'main', 'import-cli.js')
@@ -32,7 +32,7 @@ test('imports a OneNote backup folder through File → Import from OneNote backu
   try {
     expect(existsSync(join(userData, 'slate.lock'))).toBe(true)
 
-    await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('import-onenote-backup')!.click())
+    await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     const picker = dialog.getByTestId('backup-picker')
     await expect(picker).toBeVisible()

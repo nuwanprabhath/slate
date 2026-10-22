@@ -1,7 +1,7 @@
-import { expect, test } from './fixtures'
+import { expect, test, clickMenu } from './fixtures'
 
 test('Help → Connect AI agents shows the claude mcp add command', async ({ app, page }) => {
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('connect-agents')!.click())
+  await clickMenu(app, 'connect-agents')
   const dialog = page.getByTestId('connect-agents')
   await expect(dialog).toBeVisible()
   const command = page.getByTestId('connect-agents-command')

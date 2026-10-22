@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createBoxAt,MOD, expect, launchApp, test } from './fixtures'
+import { createBoxAt,MOD, expect, launchApp, test, clickMenu } from './fixtures'
 import { connectMcp, textOf } from './mcpClient'
 
 test('an agent reads shared notes without private boxes, writes live into the open app, and is audited', async () => {
@@ -46,7 +46,7 @@ test('an agent reads shared notes without private boxes, writes live into the op
   await expect(page.getByTestId('page-item').filter({ hasText: 'Agent runbook' })).toBeVisible({ timeout: 5000 })
   await close()
 
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('ai-activity')!.click())
+  await clickMenu(app, 'ai-activity')
   const rows = page.getByTestId('ai-activity-row')
   await expect(rows.filter({ hasText: 'append_to_page' })).toHaveCount(1)
   await expect(rows.filter({ hasText: 'read_page' })).toHaveCount(1)

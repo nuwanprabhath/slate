@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFakeConverter } from '../../importer/test/fakeOne2html'
-import { expect, launchApp, test } from './fixtures'
+import { expect, launchApp, test, clickMenu } from './fixtures'
 
 const FIXTURE = join(__dirname, '../../importer/test/fixtures/one/New Section 1.one')
 const OVERLAP_OUTPUT = join(__dirname, '../../importer/test/fixtures/one2html-overlap')
@@ -16,7 +16,7 @@ test('an imported page whose boxes overlap once rendered is settled apart', asyn
   const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
   const { app, page } = await launchApp(userData, { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
-    await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('import-onenote-backup')!.click())
+    await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     await expect(dialog.getByTestId('backup-picker')).toBeVisible()
     await dialog.getByTestId('import-start').click()

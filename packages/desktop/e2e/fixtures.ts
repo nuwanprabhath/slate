@@ -18,6 +18,17 @@ export async function launchApp(userData: string, env: Record<string, string> = 
   return { app, page }
 }
 
+/**
+ * Clicks a native menu item in a fresh main-process task. Playwright evaluates main-process code
+ * through the inspector, which can run it in the middle of another JS call (one was mid-query in
+ * DocStore.list), so a click that touches the database must not run inside the evaluate itself.
+ */
+export async function clickMenu(app: ElectronApplication, id: string): Promise<void> {
+  await app.evaluate(({ Menu }, itemId) => {
+    setImmediate(() => Menu.getApplicationMenu()!.getMenuItemById(itemId)!.click())
+  }, id)
+}
+
 /** Double-click on empty canvas makes a box there and focuses it (a single click only places a caret). */
 export async function createBoxAt(page: Page, x: number, y: number): Promise<void> {
   await page.getByTestId('canvas').dblclick({ position: { x, y } })

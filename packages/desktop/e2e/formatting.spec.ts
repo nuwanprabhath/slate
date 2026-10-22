@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { createBoxAt,expect, MOD, test } from './fixtures'
+import { createBoxAt,expect, MOD, test, clickMenu } from './fixtures'
 
 const focusedEditor = (page: Page) => page.locator('[data-testid="box-editor"]:focus')
 
@@ -45,7 +45,8 @@ test('typing markdown-like text does not auto-format by default', async ({ page 
 })
 
 test('Markdown Shortcuts setting turns on input rules', async ({ app, page }) => {
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('markdown-shortcuts')!.click())
+  await clickMenu(app, 'markdown-shortcuts')
+  await expect.poll(() => page.evaluate(() => window.slate.settings.get().then((s) => s.markdownShortcuts))).toBe(true)
   await typeInNewBox(page, '1. now a list', 120, 300)
   await expect(focusedEditor(page).locator('ol > li')).toHaveText('now a list')
 })

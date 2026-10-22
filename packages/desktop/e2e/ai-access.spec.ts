@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, launchApp, test } from './fixtures'
+import { expect, launchApp, test, clickMenu } from './fixtures'
 
 test('a section can be shared with AI, shows a badge, and stays shared after restart', async () => {
   const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
@@ -27,7 +27,7 @@ test('the notebook itself can be shared from the notebook menu', async ({ page }
 })
 
 test('View → AI Activity opens the audit panel', async ({ app, page }) => {
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('ai-activity')!.click())
+  await clickMenu(app, 'ai-activity')
   await expect(page.getByTestId('ai-activity')).toContainText('No AI activity yet')
   await page.getByTestId('ai-activity-close').click()
   await expect(page.getByTestId('ai-activity')).toHaveCount(0)

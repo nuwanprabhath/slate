@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { writeFakeConverter } from '../../importer/test/fakeOne2html'
-import { createBoxAt, expect, launchApp, MOD, test } from './fixtures'
+import { createBoxAt, expect, launchApp, MOD, test, clickMenu } from './fixtures'
 
 async function openAppearance(page: Page) {
   await expect(page.getByTestId('canvas')).toBeVisible()
@@ -116,7 +116,7 @@ test('imported black text is readable in Dark and stays black in Paper', async (
   const converter = writeFakeConverter(scratch, join(__dirname, '../../importer/test/fixtures/one2html-colors'))
   const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
-    await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('import-onenote-backup')!.click())
+    await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     await expect(dialog.getByTestId('backup-picker')).toBeVisible()
     await dialog.getByTestId('import-start').click()
