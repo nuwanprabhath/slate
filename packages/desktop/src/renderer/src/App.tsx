@@ -20,6 +20,7 @@ import { SectionList } from './sidebar/SectionList'
 import { onOpenSettings, openSettings } from './settings/open'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { providerName, syncStateText, useSyncState } from './sync/SyncStatus'
+import { TitleBar } from './titleBar/TitleBar'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
 import { UpdateBanner } from './update/UpdateBanner'
@@ -283,14 +284,17 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
   const activeTool = tools.find((t) => t.id === layout.activeTool) ?? tools[0]
 
   return (
-    <div className="app">
-      <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
-      {layout.panelOpen && activeTool.panel()}
-      <main className="app-main">
-        <UpdateBanner />
-        <Toolbar />
-        {page?.pageId ? <PageView key={page.pageId} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}
-      </main>
+    <div className="app-shell">
+      <TitleBar title={page ? `${page.title || 'Untitled page'} — ${entry.doc.name}` : entry.doc.name} />
+      <div className="app">
+        <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
+        {layout.panelOpen && activeTool.panel()}
+        <main className="app-main">
+          <UpdateBanner />
+          <Toolbar />
+          {page?.pageId ? <PageView key={page.pageId} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}
+        </main>
+      </div>
     </div>
   )
 }

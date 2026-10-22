@@ -56,6 +56,13 @@ export function AppearanceSection({ settings, patch }: SectionProps) {
         onChange={(followSystem) => patch({ followSystem })}
       />
       {claude && <ThemeDescribe onSaved={choose} />}
+      <CheckboxSetting
+        testId="setting-system-title-bar"
+        label="Use the system title bar (restart to apply)"
+        help="Your system's own title bar instead of Slate's themed one. Takes effect the next time Slate starts."
+        checked={settings.systemTitleBar}
+        onChange={(systemTitleBar) => patch({ systemTitleBar })}
+      />
     </>
   )
 }
