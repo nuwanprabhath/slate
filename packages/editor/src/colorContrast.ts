@@ -46,10 +46,11 @@ export function parseColor(css: string): Rgba | null {
   const s = css.trim().toLowerCase()
   const named = NAMED[s]
   if (named) return parseColor(named)
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(s)
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(s)
   if (hex) {
     const h = hex[1]!.length === 3 ? [...hex[1]!].map((c) => c + c).join('') : hex[1]!
-    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: 1 }
+    const a = h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a }
   }
   const fn = /^rgba?\(([^)]*)\)$/.exec(s)
   if (!fn) return null
@@ -167,23 +168,34 @@ export interface Theme {
   text: string
 }
 
-// Mirrors --bg and --text in the desktop app.css.
+// The desktop's Dark theme, in force until the app applies its theme (`setThemeColors`).
 const DARK_THEME: Theme = { dark: true, background: '#1e1e1e', text: '#e6e6e6' }
 const LIGHT_THEME: Theme = { dark: false, background: '#ffffff', text: '#1f1f1f' }
 
-function query(): MediaQueryList | null {
-  return typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: light)') : null
+let theme: Theme = DARK_THEME
+let themeKey = ''
+const listeners = new Set<() => void>()
+
+/**
+ * The applied theme's page background and body text, which imported colours are adapted against.
+ * A translucent page is taken as opaque: what shows through is the theme's own backdrop, close
+ * enough in lightness for picking "light or dark ink".
+ */
+export function setThemeColors({ background, text }: { background: string; text: string }): void {
+  const bg = parseColor(background)
+  const key = `${background}|${text}`
+  if (!bg || key === themeKey) return
+  themeKey = key
+  theme ={ dark: relativeLuminance(bg) < 0.18, background: format({ ...bg, a: 1 }), text }
+  for (const l of listeners) l()
 }
 
-let theme: Theme = query()?.matches ? LIGHT_THEME : DARK_THEME
-const listeners = new Set<() => void>()
-query()?.addEventListener?.('change', (e) => setTheme(!e.matches))
-
-/** Follows the system theme; exported so tests can pick one. */
+/** Dark or Light without a theme spec; for tests. */
 export function setTheme(dark: boolean): void {
   const next = dark ? DARK_THEME : LIGHT_THEME
-  if (next === theme) return
+  if (next.background === theme.background && next.text === theme.text) return
   theme = next
+  themeKey = ''
   for (const l of listeners) l()
 }
 

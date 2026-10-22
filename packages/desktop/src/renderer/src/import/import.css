@@ -1,5 +1,5 @@
 /* OneNote import overlay */
-.import-backdrop { position: fixed; inset: 0; z-index: 30; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; }
+.import-backdrop { position: fixed; inset: 0; z-index: 30; background: var(--overlay); display: grid; place-items: center; }
 .import-dialog { width: min(560px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; font-size: 13px; }
 .import-dialog header { display: flex; align-items: center; justify-content: space-between; }
 .import-dialog h2 { margin: 0; font-size: 16px; }
@@ -7,7 +7,7 @@
 .import-dialog header button { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
 .import-dialog .muted { color: var(--muted); }
 .import-dialog button { font: inherit; color: var(--text); background: var(--hover); border: 1px solid var(--border); border-radius: 4px; padding: 5px 12px; cursor: pointer; }
-.import-dialog button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.import-dialog button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 .import-dialog button:disabled { opacity: 0.5; cursor: default; }
 .import-dialog button.link { background: none; border: none; padding: 0; color: var(--accent); }
 .import-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }

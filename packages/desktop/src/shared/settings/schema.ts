@@ -5,6 +5,8 @@
  * is a field there, an entry here, and its control in `renderer/src/settings/sections/`.
  */
 import type { GitAuthMode, GitSettings, Settings, SyncProvider } from '../api'
+import { DEFAULT_THEME_ID } from '../theme/builtins'
+import type { MotionSetting } from '../theme/motion'
 
 export interface SettingDef<T> {
   default: T
@@ -17,6 +19,7 @@ const stringOrNull = (v: unknown): string | null | undefined => (v === null || t
 
 const PROVIDERS: readonly SyncProvider[] = ['onedrive', 'git']
 const AUTH_MODES: readonly GitAuthMode[] = ['system', 'token', 'gh', 'device']
+const MOTIONS: readonly MotionSetting[] = ['auto', 'full', 'reduced']
 
 function gitSettings(v: unknown): GitSettings | null | undefined {
   if (v === null) return null
@@ -37,6 +40,9 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   plugins: { default: {}, sanitize: (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined) },
   updateAutomaticChecks: { default: true, sanitize: bool },
   updateCheckIntervalHours: { default: 6, sanitize: (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(168, Math.max(1, Math.round(v))) : undefined) },
+  themeId: { default: DEFAULT_THEME_ID, sanitize: (v) => (typeof v === 'string' && v.length > 0 && v.length <= 100 ? v : undefined) },
+  motion: { default: 'auto', sanitize: (v) => (MOTIONS.some((m) => m === v) ? (v as MotionSetting) : undefined) },
+  followSystem: { default: false, sanitize: bool },
 }
 
 const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>

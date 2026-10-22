@@ -32,13 +32,13 @@
 .slate-box-content img { max-width: 100%; display: block; }
 .slate-box-content img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
 .slate-box-content .selectedCell { background: color-mix(in srgb, var(--accent) 20%, transparent); }
-.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #c792ea; }
-.hljs-string, .hljs-attr { color: #c3e88d; }
-.hljs-number, .hljs-literal { color: #f78c6c; }
-.hljs-comment { color: #7f848e; font-style: italic; }
-.hljs-title, .hljs-function { color: #82aaff; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: var(--code-keyword); }
+.hljs-string, .hljs-attr { color: var(--code-string); }
+.hljs-number, .hljs-literal { color: var(--code-number); }
+.hljs-comment { color: var(--code-comment); font-style: italic; }
+.hljs-title, .hljs-function { color: var(--code-title); }
 .slate-box-lock { width: 26px; border: none; border-radius: 4px 4px 0 0; background: var(--panel-2); color: var(--muted); cursor: pointer; display: grid; place-items: center; padding: 0; }
-.slate-box-lock[aria-pressed='true'] { color: #c9a227; visibility: visible; opacity: 1; }
-.slate-box.is-private { border: 1px dashed #c9a227; background: repeating-linear-gradient(45deg, transparent 0 8px, rgb(201 162 39 / 0.07) 8px 16px); }
+.slate-box-lock[aria-pressed='true'] { color: var(--warning); visibility: visible; opacity: 1; }
+.slate-box.is-private { border: 1px dashed var(--warning); background: repeating-linear-gradient(45deg, transparent 0 8px, color-mix(in srgb, var(--warning) 7%, transparent) 8px 16px); }
 .slate-box.is-private .slate-box-bar, .slate-box.has-conflict .slate-box-bar { opacity: 1; }
-.slate-box-conflict { border: none; border-radius: 4px 4px 0 0; padding: 0 6px; font-size: 10px; line-height: 18px; background: #b7791f; color: #1e1e1e; cursor: pointer; white-space: nowrap; }
+.slate-box-conflict { border: none; border-radius: 4px 4px 0 0; padding: 0 6px; font-size: 10px; line-height: 18px; background: var(--warning); color: var(--page); cursor: pointer; white-space: nowrap; }

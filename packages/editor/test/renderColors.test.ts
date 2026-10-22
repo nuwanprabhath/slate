@@ -44,3 +44,23 @@ describe('rendering imported colours in the dark theme', () => {
     expect(JSON.stringify(parsed.toJSON())).toContain('"color":"rgb(0,0,0)"')
   })
 })
+
+describe('colours follow the applied theme', () => {
+  it('adapts to the page background and text a theme sets, and notifies boxes', async () => {
+    const { setThemeColors, currentTheme, onThemeChange } = await import('../src/colorContrast')
+    let calls = 0
+    const off = onThemeChange(() => calls++)
+    setThemeColors({ background: '#f4ecd8ff', text: '#2b2418ff' })
+    expect(calls).toBe(1)
+    expect(currentTheme().dark).toBe(false)
+    const black = render([{ type: 'textStyle', attrs: { color: 'rgb(0,0,0)' } }]).querySelector('span')!
+    expect(black.style.color.replace(/\s/g, '')).toBe('rgb(0,0,0)')
+    setThemeColors({ background: '#0b1020', text: '#e6e6e6' })
+    expect(currentTheme().dark).toBe(true)
+    const adapted = render([{ type: 'textStyle', attrs: { color: 'rgb(0,0,0)' } }]).querySelector('span')!
+    expect(contrastRatio(adapted.style.color, '#0b1020')).toBeGreaterThanOrEqual(3)
+    setThemeColors({ background: '#0b1020', text: '#e6e6e6' })
+    expect(calls).toBe(2)
+    off()
+  })
+})

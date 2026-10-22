@@ -19,6 +19,7 @@ import { readSettings, writeSettings } from './settings'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { DocStore } from './store'
 import { SyncService } from './sync/syncService'
+import { registerThemeIpc, windowBackground } from './theme/ipc'
 
 app.setName(APP_NAME)
 const userData = defaultUserDataDir()
@@ -32,13 +33,13 @@ protocol.registerSchemesAsPrivileged([{ scheme: BLOB_SCHEME, privileges: { stand
 // a packaged app, so `resources/` only has to be included in the package files.
 const iconPath = join(__dirname, '../../resources/icon.png')
 
-function createWindow(): BrowserWindow {
+function createWindow(backgroundColor = '#1e1e1e'): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 860,
     show: false,
     title: 'Slate',
-    backgroundColor: '#1e1e1e',
+    backgroundColor,
     icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -144,11 +145,12 @@ void app.whenReady().then(() => {
   } catch (e) {
     console.error('update checks are off:', e)
   }
+  const themes = registerThemeIpc(store, isE2E)
   buildMenu(store, () => void updates?.check({ manual: true }))
   syncMenuChecks()
-  createWindow()
+  createWindow(windowBackground(store, themes))
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(windowBackground(store, themes))
   })
   const watch = createExternalWatch(
     store,

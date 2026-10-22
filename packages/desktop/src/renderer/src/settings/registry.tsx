@@ -8,6 +8,7 @@
 import type { ComponentType } from 'react'
 import type { Settings } from '../../../shared/api'
 import { SyncSection } from '../sync/SyncSettings'
+import { AppearanceSection } from './sections/AppearanceSection'
 import { AutocorrectSection } from './sections/AutocorrectSection'
 import { DiagnosticsSection, diagnosticsSectionEntry } from './sections/DiagnosticsSection'
 import { UpdatesSection, updatesSectionEntry } from './sections/UpdatesSection'
@@ -38,6 +39,13 @@ export const SECTIONS: SettingsSection[] = [
     blurb: 'What Slate changes as you type. Everything else stays exactly as typed.',
     keywords: ['bullets', 'lists', 'markdown', 'shortcuts', 'headings', 'code'],
     Component: AutocorrectSection,
+  },
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    blurb: 'How Slate looks: themes, textures and animations.',
+    keywords: ['theme', 'dark', 'light', 'glass', 'paper', 'colours', 'colors', 'motion', 'animation', 'claude', 'generate'],
+    Component: AppearanceSection,
   },
   {
     id: 'sync',
