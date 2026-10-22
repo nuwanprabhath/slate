@@ -30,7 +30,12 @@
   --code-number: #f78c6c;
   --code-comment: #7f848e;
   --code-title: #82aaff;
-  font-family: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --control-bg: #2d2d2d;
+  --radius-control: 5px;
+  /* applyTheme replaces both from shared/theme/fonts.ts; every piece of chrome reads --font-ui. */
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
+  --font-note: var(--font-ui);
+  font-family: var(--font-ui);
   font-size: 14px;
 }
 * { box-sizing: border-box; }

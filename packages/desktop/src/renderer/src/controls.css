@@ -1,0 +1,72 @@
+/*
+ * Every form control in the app, on theme tokens, so none shows the OS look on a themed surface.
+ * All selectors sit in :where(), so any component rule (a borderless rename field, the page title)
+ * still wins without fighting specificity.
+ */
+
+/* Controls do not inherit the font by default; this is what keeps all chrome on --font-ui. */
+:where(button, input, select, textarea) { font: inherit; }
+
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select) {
+  background-color: var(--control-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea) { padding: 4px 8px; }
+
+/*
+ * The chevron is two gradient triangles in currentColor, so it follows the text colour; a mask
+ * would need a pseudo-element, which a <select> cannot have.
+ */
+:where(select) {
+  appearance: none;
+  min-height: 26px;
+  padding: 2px 26px 2px 8px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 13px center, right 9px center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+:where(select) option { background: var(--popover); color: var(--text); }
+
+:where(input[type='checkbox'], input[type='radio']) {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+:where(input[type='radio']) { border-radius: 50%; }
+:where(input[type='checkbox'], input[type='radio']):checked { background: var(--accent); border-color: var(--accent); }
+:where(input[type='checkbox']):checked::before {
+  content: '';
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--accent-contrast);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+:where(input[type='radio']):checked::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-contrast); }
+:where(input, select, textarea):disabled { opacity: 0.5; cursor: default; }
+
+:where(input, select, textarea, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:where(input:not([type='checkbox'], [type='radio']), select, textarea):focus { border-color: var(--accent); }
+
+/* The font combo box (settings/fields/FontCombo.tsx). */
+.font-combo { position: relative; display: inline-flex; width: 240px; }
+.font-combo input { flex: 1; min-width: 0; padding-right: 28px; }
+.font-combo-toggle { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 24px; background: none; border: none; color: var(--text); cursor: pointer; }
+.font-combo-list { position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; right: 0; max-height: 240px; overflow: auto; margin: 0; padding: 4px; list-style: none; background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-control); box-shadow: 0 6px 18px rgb(0 0 0 / 0.25); }
+.font-combo-list li { padding: 4px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.font-combo-list li[aria-selected='true'] { background: var(--selected); }
+.font-combo-error { color: var(--danger); font-size: 12px; }

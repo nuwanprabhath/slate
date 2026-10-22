@@ -4,7 +4,9 @@ import type { MotionSetting } from '../../../../shared/theme/motion'
 import { ThemeDescribe } from '../../theme/ThemeDescribe'
 import { ThemeGrid, type ThemeEntry } from '../../theme/ThemeGrid'
 import { themeState } from '../../theme/themeState'
+import type { FontOverride } from '../../../../shared/theme/fonts'
 import { CheckboxSetting } from '../fields/CheckboxSetting'
+import { FontCombo } from '../fields/FontCombo'
 import { SelectSetting } from '../fields/SelectSetting'
 import type { SectionProps } from '../registry'
 
@@ -27,11 +29,20 @@ export function AppearanceSection({ settings, patch }: SectionProps) {
   }, [])
   const all: ThemeEntry[] = [...BUILTIN_THEMES.map((b) => ({ ...b, saved: false })), ...saved.map((t) => ({ id: t.id, spec: t.spec, saved: true }))]
   const choose = (themeId: string) => patch({ themeId, followSystem: false })
+  const activeId = settings.followSystem ? themeState.activeId() : settings.themeId
+  const fonts = settings.fontOverrides[activeId] ?? {}
+  const setFont = (key: keyof FontOverride, name: string | undefined) => {
+    const next: FontOverride = { ...fonts, [key]: name }
+    if (name === undefined) delete next[key]
+    const fontOverrides = { ...settings.fontOverrides, [activeId]: next }
+    if (next.note === undefined && next.ui === undefined) delete fontOverrides[activeId]
+    patch({ fontOverrides })
+  }
   return (
     <>
       <ThemeGrid
         all={all}
-        activeId={settings.followSystem ? themeState.activeId() : settings.themeId}
+        activeId={activeId}
         onChoose={choose}
         onDuplicate={(t) => void window.slate.themes.save({ ...t.spec, name: `${t.spec.name} copy` }).then((s) => choose(s.id))}
         onRename={(id, name) => void window.slate.themes.rename(id, name)}
@@ -40,6 +51,11 @@ export function AppearanceSection({ settings, patch }: SectionProps) {
           void window.slate.themes.remove(id)
         }}
       />
+      <div className="theme-fonts">
+        <span className="settings-help">Fonts for this theme. Text you gave a font of its own keeps it.</span>
+        <FontCombo testId="setting-note-font" label="Note font" value={fonts.note} onChange={(name) => setFont('note', name)} />
+        <FontCombo testId="setting-app-font" label="App font" value={fonts.ui} onChange={(name) => setFont('ui', name)} />
+      </div>
       <SelectSetting
         testId="setting-motion"
         label={<strong>Animations</strong>}

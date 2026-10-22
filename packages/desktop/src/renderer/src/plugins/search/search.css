@@ -2,7 +2,7 @@
 .search-header { padding: 10px 12px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .search-input { width: auto; margin: 0 12px; }
 .search-scope { display: flex; align-items: center; gap: 6px; margin: 8px 12px 0; color: var(--muted); font-size: 12px; }
-.search-scope select { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 2px; font: inherit; padding: 2px 4px; }
+.search-scope select { flex: 1; min-width: 0; }
 .search-summary { margin: 8px 12px 4px; color: var(--muted); font-size: 12px; }
 .search-results { flex: 1; min-height: 0; overflow-y: auto; outline: none; padding-bottom: 8px; }
 .search-group, .search-match { display: flex; align-items: center; gap: 6px; padding: 2px 12px; cursor: pointer; white-space: nowrap; }
