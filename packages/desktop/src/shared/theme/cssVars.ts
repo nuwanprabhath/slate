@@ -10,8 +10,10 @@ import { DEFAULT_PALETTE, PALETTE_TOKENS, type ThemeSpec } from './spec'
 export function themeToCssVars(spec: ThemeSpec): Record<string, string> {
   const out: Record<string, string> = {}
   for (const t of PALETTE_TOKENS) out[`--${t}`] = spec.palette[t] ?? toHex8(parseColor(DEFAULT_PALETTE[t])!)
+  // A theme saved before controls had a colour of their own: its raised surface, not Dark's.
+  if (spec.palette['control-bg'] === undefined && spec.palette['panel-2'] !== undefined) out['--control-bg'] = spec.palette['panel-2']
   return out
 }
 
-/** Every property `themeToCssVars` (and applyTheme's texture tile) can set. */
-export const ALL_THEME_VARS: readonly string[] = [...PALETTE_TOKENS.map((t) => `--${t}`), '--texture-image']
+/** Every property `themeToCssVars` (and applyTheme's texture tile and fonts) can set. */
+export const ALL_THEME_VARS: readonly string[] = [...PALETTE_TOKENS.map((t) => `--${t}`), '--texture-image', '--font-note', '--font-ui']

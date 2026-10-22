@@ -1,5 +1,6 @@
 import type { ImportProgress, OneNoteNotebook } from '@slate/importer'
 import type { ConflictRecord, SyncReport } from '@slate/sync'
+import type { FontOverride } from './theme/fonts'
 import type { MotionSetting } from './theme/motion'
 import type { SavedTheme, ThemeGenerateResult } from './theme/resolve'
 import type { ThemeSpec } from './theme/spec'
@@ -8,7 +9,7 @@ import type { ThemeSpec } from './theme/spec'
 export interface ThemesApi {
   /** Read synchronously at preload, so the first paint already has the theme. */
   initial: {
-    settings: Pick<Settings, 'themeId' | 'followSystem' | 'motion'>
+    settings: Pick<Settings, 'themeId' | 'followSystem' | 'motion' | 'fontOverrides'>
     saved: SavedTheme[]
     safeMode: boolean
     gpuCompositing: boolean
@@ -52,6 +53,8 @@ export interface Settings {
   motion: MotionSetting
   /** Light or Dark by the OS, whatever `themeId` says. */
   followSystem: boolean
+  /** Note and UI fonts the user picked, per theme id; a theme without an entry uses its own. */
+  fontOverrides: Record<string, FontOverride>
 }
 
 export type SyncProvider = 'onedrive' | 'git'
