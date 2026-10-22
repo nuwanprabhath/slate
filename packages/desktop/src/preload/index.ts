@@ -27,6 +27,7 @@ const api: SlateApi = {
   audit: { list: (limit) => ipcRenderer.invoke(CH.auditList, limit) },
   mcp: { launcherInfo: () => ipcRenderer.invoke(CH.mcpLauncher) },
   clipboardText: () => ipcRenderer.invoke(CH.clipboardText),
+  openExternal: (url) => ipcRenderer.invoke(CH.openExternal, url),
   onenote: {
     status: () => ipcRenderer.invoke(CH.onenoteStatus),
     signIn: () => ipcRenderer.invoke(CH.onenoteSignIn),

@@ -109,6 +109,7 @@ export type MenuCommand =
   | { cmd: 'show-connect-agents' }
   | { cmd: 'find' }
   | { cmd: 'show-settings'; section?: string }
+  | { cmd: 'link' }
 
 export interface SlateApi {
   isE2E: boolean
@@ -131,6 +132,8 @@ export interface SlateApi {
   audit: { list(limit?: number): Promise<AuditEntryRow[]> }
   mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }
   clipboardText(): Promise<string>
+  /** Opens an http(s) or mailto link in the system browser. Anything else is ignored. */
+  openExternal(url: string): Promise<void>
   onenote: {
     status(): Promise<OneNoteStatus>
     signIn(): Promise<void>

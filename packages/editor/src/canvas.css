@@ -11,6 +11,12 @@
 .slate-box-resize { position: absolute; top: 0; right: -5px; width: 9px; height: 100%; cursor: ew-resize; }
 .slate-box-content { padding: 6px 8px; outline: none; min-height: 1.6em; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .slate-box-content p { margin: 0; }
+.slate-link-popover { position: fixed; z-index: 1000; display: flex; flex-direction: column; gap: 6px; width: 280px; padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); }
+.slate-link-popover input { padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; color: inherit; font: inherit; }
+.slate-link-popover input[aria-invalid='true'] { border-color: #d33; }
+.slate-link-error { color: #d33; font-size: 12px; }
+.slate-link-actions { display: flex; gap: 6px; }
+.slate-box-content a { cursor: text; }
 .slate-box-content h1, .slate-box-content h2, .slate-box-content h3 { margin: 0.2em 0; line-height: 1.25; }
 .slate-box-content h1 { font-size: 1.6em; }
 .slate-box-content h2 { font-size: 1.35em; }

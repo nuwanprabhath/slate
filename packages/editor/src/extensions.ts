@@ -1,4 +1,4 @@
-import { Extension, getSchema, type Extensions } from '@tiptap/core'
+import { Extension, getSchema, InputRule, type Extensions } from '@tiptap/core'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
@@ -78,12 +78,34 @@ const ListStyle = Extension.create({
   },
 })
 
+// --- autoBullets (WP-H) ---
+/**
+ * The one auto-format Slate applies by default: "* " at the start of a plain paragraph starts a
+ * bullet list. Kept apart from StarterKit's markdown rules so it works with Markdown Shortcuts off
+ * (the editor enables input rules for this extension by name). Backspace right after undoes it.
+ */
+export const AutoBullets = Extension.create({
+  name: 'autoBullets',
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /^\*\s$/,
+        handler: ({ state, range, chain }) => {
+          const $from = state.doc.resolve(range.from)
+          if ($from.parent.type.name !== 'paragraph' || $from.depth !== 1) return null
+          chain().deleteRange(range).toggleBulletList().run()
+        },
+      }),
+    ]
+  },
+})
+
 /**
  * Every box editor uses exactly this extension list, so the static renderer's schema matches.
  * Undo/redo is handled per page by Loro (PageSession), not by TipTap history.
  * No Typography extension: no smart quotes or dash replacement.
  */
-export function buildExtensions(): Extensions {
+export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extensions {
   return [
     StarterKit.configure({
       undoRedo: false,
@@ -101,6 +123,8 @@ export function buildExtensions(): Extensions {
     Image.configure({ inline: false, allowBase64: true }),
     TableKit.configure({ table: { resizable: false } }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'plaintext' }),
+    // --- autoBullets (WP-H) ---
+    ...(opts.autoBullets === false ? [] : [AutoBullets]),
   ]
 }
 

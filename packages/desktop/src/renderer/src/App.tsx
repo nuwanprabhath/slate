@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { activeEditor, EditorServicesContext, type EditorServices } from '@slate/editor'
+import { activeEditor, EditorServicesContext, openLinkPopover, pastePlainOrLink, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
 import { ActivityBar } from './activity/ActivityBar'
 import { createTools } from './activity/tools'
@@ -42,8 +42,11 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
             void window.slate.clipboardText().then((text) => {
               const editor = activeEditor.get()
               if (inField) document.execCommand('insertText', false, text)
-              else if (editor?.isFocused) editor.view.pasteText(text)
+              else if (editor?.isFocused) pastePlainOrLink(editor.view, text)
             })
+            break
+          case 'link':
+            openLinkPopover(activeEditor.get())
             break
           case 'settings-changed':
             setSettings(command.settings)
@@ -79,8 +82,10 @@ export function useServices(settings: Settings): EditorServices {
       copyImage: (url) => window.slate.blobs.copyImage(url),
       readClipboardText: () => window.slate.clipboardText(),
       markdownShortcuts: settings.markdownShortcuts,
+      autoBullets: settings.autoBullets,
+      openExternal: (url) => window.slate.openExternal(url),
     }),
-    [settings.markdownShortcuts],
+    [settings.markdownShortcuts, settings.autoBullets],
   )
 }
 

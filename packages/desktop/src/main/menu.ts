@@ -58,6 +58,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
         { label: 'Paste as Plain Text', accelerator: 'CmdOrCtrl+Shift+V', registerAccelerator: false, click: () => send({ cmd: 'paste-plain' }) },
         { role: 'selectAll' },
         { type: 'separator' },
+        { label: 'Insert Link…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, click: () => send({ cmd: 'link' }) },
         { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => send({ cmd: 'find' }) },
       ],
     },
