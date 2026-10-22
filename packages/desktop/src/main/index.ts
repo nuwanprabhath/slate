@@ -4,7 +4,8 @@ import { pathToFileURL } from 'node:url'
 import { CH } from '../shared/ipc'
 import { BLOB_SCHEME, BlobStore } from './blobs'
 import { createExternalWatch } from './externalWatch'
-import { registerIpc, registerOneNoteIpc, registerSyncIpc } from './ipc'
+import { registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
+import { SearchIndex } from './search/searchIndex'
 import { buildMenu } from './menu'
 import { launcherInfo } from './mcpLauncher'
 import { createUpdates } from './update'
@@ -69,7 +70,19 @@ void app.whenReady().then(() => {
     if ((await sync?.ensureBlob(basename(file))) === false) return new Response('Not found', { status: 404 })
     return net.fetch(pathToFileURL(file).toString())
   })
-  registerIpc(store, blobs, () => sync?.edited())
+  const search = new SearchIndex(store)
+  registerIpc(
+    store,
+    blobs,
+    (docId) => {
+      sync?.edited()
+      search.docChanged(docId)
+    },
+    (docId) => search.docRemoved(docId),
+  )
+  registerSearchIpc(search)
+  // After the window is asked for, not before; a query arriving first waits behind it.
+  setTimeout(() => search.ensureBuilt(), 0)
   // out/main sits four levels under the repo root when running from a checkout.
   ipcMain.handle(CH.mcpLauncher, () =>
     launcherInfo({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, repoRoot: join(__dirname, '../../../..'), platform: process.platform }),
@@ -129,11 +142,14 @@ void app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
-  const watch = createExternalWatch(store, (batches) =>
-    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.externalUpdates, batches)),
-  )
+  const watch = createExternalWatch(store, (batches) => {
+    // Agents and sync write through other connections; their page and notebook edits re-index here.
+    for (const { docId } of batches) search.docChanged(docId)
+    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.externalUpdates, batches))
+  })
   app.on('will-quit', () => {
     watch.stop()
+    search.close()
     updates?.stop()
     sync?.close()
     importer.close()

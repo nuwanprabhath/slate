@@ -13,6 +13,12 @@ export interface AuditRow {
   outcome: string
 }
 
+export interface SearchRow {
+  boxId: string
+  ord: number
+  text: string
+}
+
 /** Local document store: Loro snapshots + append-only update rows, WAL-journaled. */
 export class DocStore {
   private db: Database.Database
@@ -36,6 +42,7 @@ export class DocStore {
       CREATE TABLE IF NOT EXISTS blob_synced (name TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, box_id TEXT NOT NULL, device TEXT NOT NULL, mine TEXT NOT NULL, theirs TEXT NOT NULL, merged TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, message TEXT NOT NULL);
+      CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(page_id UNINDEXED, section_id UNINDEXED, notebook_id UNINDEXED, box_id UNINDEXED, ord UNINDEXED, text, tokenize = 'trigram');
     `)
     const columns = this.db.prepare('PRAGMA table_info(updates)').all() as Array<{ name: string }>
     if (!columns.some((c) => c.name === 'origin')) this.db.exec(`ALTER TABLE updates ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'`)
@@ -189,6 +196,47 @@ export class DocStore {
       this.db.prepare('DELETE FROM snapshots WHERE doc_id = ?').run(docId)
       this.db.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
     })()
+  }
+
+  /** The search index's rows for one page: one per text block, `ord` in reading order. */
+  replaceSearchPage(page: { pageId: string; sectionId: string; notebookId: string }, rows: SearchRow[]): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM search WHERE page_id = ?').run(page.pageId)
+      const insert = this.db.prepare('INSERT INTO search (page_id, section_id, notebook_id, box_id, ord, text) VALUES (?, ?, ?, ?, ?, ?)')
+      for (const r of rows) insert.run(page.pageId, page.sectionId, page.notebookId, r.boxId, r.ord, r.text)
+    })()
+  }
+
+  removeSearchPage(pageId: string): void {
+    this.db.prepare('DELETE FROM search WHERE page_id = ?').run(pageId)
+  }
+
+  clearSearch(): void {
+    this.db.prepare('DELETE FROM search').run()
+  }
+
+  setSearchPageScope(pageId: string, sectionId: string, notebookId: string): void {
+    this.db.prepare('UPDATE search SET section_id = ?, notebook_id = ? WHERE page_id = ? AND (section_id != ? OR notebook_id != ?)').run(sectionId, notebookId, pageId, sectionId, notebookId)
+  }
+
+  hasSearchRows(): boolean {
+    return this.db.prepare('SELECT 1 FROM search LIMIT 1').get() !== undefined
+  }
+
+  /** Rows in scope, narrowed by an FTS5 trigram phrase when `phrase` is given (it needs 3+ characters). */
+  searchRows(scope: { column: 'section_id' | 'notebook_id'; id: string } | null, phrase: string | null): Array<SearchRow & { pageId: string }> {
+    const where: string[] = []
+    const params: string[] = []
+    if (phrase !== null) {
+      where.push('search MATCH ?')
+      params.push(`text:"${phrase.replace(/"/g, '""')}"`)
+    }
+    if (scope) {
+      where.push(`${scope.column} = ?`)
+      params.push(scope.id)
+    }
+    const sql = `SELECT page_id AS pageId, box_id AS boxId, ord, text FROM search ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY page_id, ord`
+    return this.db.prepare(sql).all(...params) as Array<SearchRow & { pageId: string }>
   }
 
   getSetting<T>(key: string): T | undefined {
