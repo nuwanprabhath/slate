@@ -144,12 +144,17 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
     ctx.app.openPage(row.page.pageId, { highlight: { query, options: opts, boxId: row.match.boxId, occurrence: row.match.occurrence } })
   }
 
-  const onInputKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+  const clear = () => {
+    store.update({ query: '', results: null })
+    inputRef.current?.focus()
+  }
+  const onInputKey =(e: ReactKeyboardEvent<HTMLInputElement>) => {
     const t = TOGGLES.find((x) => x.code === e.code)
     if (e.key === 'ArrowDown' && rows.length > 0) {
       setActive(0)
       treeRef.current?.focus()
-    } else if (e.altKey && !(isMac ? e.metaKey : e.ctrlKey) && t) toggle(t.key)
+    } else if (e.key === 'Escape' && query !== '') clear()
+    else if (e.altKey && !(isMac ? e.metaKey : e.ctrlKey) && t) toggle(t.key)
     else return
     e.preventDefault()
   }
@@ -184,6 +189,11 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
           onChange={(e) => store.update({ query: e.target.value })}
           onKeyDown={onInputKey}
         />
+        {query !== '' && (
+          <button type="button" className="search-clear" data-testid="search-clear" title="Clear search" aria-label="Clear search" onMouseDown={(e) => e.preventDefault()} onClick={clear}>
+            ✕
+          </button>
+        )}
         {TOGGLES.map((t) => (
           <button
             key={t.key}

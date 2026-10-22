@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { activeEditor, EditorServicesContext, openLinkPopover, pastePlainOrLink, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
 import { ActivityBar } from './activity/ActivityBar'
 import { toolsFromViews } from './activity/tools'
 import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
-import { clampWidth, loadLayout, saveLayout, type Layout } from './layout'
+import { clampPane, clampWidth, loadLayout, paneWidth, saveLayout, scaleColumns, type Layout } from './layout'
 import { Column, Splitter } from './Splitter'
 import { currentSession } from './currentSession'
 import { ConnectAgents } from './ConnectAgents'
@@ -246,6 +246,41 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [togglePanel])
 
+  // Last measured Library geometry: the Search view takes its total width, and a manual Search
+  // width is scaled back onto the two columns (see scaleColumns).
+  const libraryBox = useRef({ total: 300, sections: 0, pages: 0 })
+  useLayoutEffect(() => {
+    if (!layout.panelOpen || layout.activeTool !== 'library') return
+    const aside = document.querySelector<HTMLElement>('[data-testid="library-panel"]')
+    if (!aside) return
+    const measure = () => {
+      const width = (id: string) => aside.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().width ?? 0
+      libraryBox.current = { total: aside.getBoundingClientRect().width, sections: width('sections-column'), pages: width('pages-column') }
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(aside)
+    return () => observer.disconnect()
+  }, [layout.panelOpen, layout.activeTool])
+  // The Library's own splitters win over a manual Search width, so the two views stay the same width.
+  const setLibraryWidth = (key: 'sectionsWidth' | 'pagesWidth', w: number | null) =>
+    setLayout((l) => ({ ...l, [key]: w === null ? null : clampWidth(w), searchWidth: null }))
+  const resizeSearch = (w: number | null) =>
+    setLayout((l) => {
+      if (w === null) return { ...l, searchWidth: null }
+      const box = libraryBox.current
+      // The splitter measures the pane to its left; the pane's own splitter is 1 px more.
+      const total = clampPane(w + 1, window.innerWidth)
+      const [sections, pages] = scaleColumns(box.sections, box.pages, total - (box.total - box.sections - box.pages))
+      return { ...l, searchWidth: total, sectionsWidth: clampWidth(sections), pagesWidth: clampWidth(pages) }
+    })
+  const sidePane = (panel: ReactNode) => (
+    <div className="side-pane" style={{ width: paneWidth(layout.searchWidth, libraryBox.current.total, window.innerWidth) }}>
+      {panel}
+      <Splitter testId="splitter-search" label="Resize search" width={layout.searchWidth} onChange={resizeSearch} />
+    </div>
+  )
+
   const libraryPanel = () => (
     <aside className="sidebar" data-testid="library-panel">
       <NotebookPicker
@@ -264,7 +299,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
             onDeleted={removeDocs}
           />
         </Column>
-        <Splitter testId="splitter-sections" label="Resize sections" width={layout.sectionsWidth} onChange={(w) => setLayout((l) => ({ ...l, sectionsWidth: w === null ? null : clampWidth(w) }))} />
+        <Splitter testId="splitter-sections" label="Resize sections" width={layout.sectionsWidth} onChange={(w) => setLibraryWidth('sectionsWidth', w)} />
         <Column testId="pages-column" width={layout.pagesWidth}>
           <PageList
             nb={entry.doc}
@@ -274,7 +309,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
             onDeleted={removeDocs}
           />
         </Column>
-        <Splitter testId="splitter-pages" label="Resize pages" width={layout.pagesWidth} onChange={(w) => setLayout((l) => ({ ...l, pagesWidth: w === null ? null : clampWidth(w) }))} />
+        <Splitter testId="splitter-pages" label="Resize pages" width={layout.pagesWidth} onChange={(w) => setLibraryWidth('pagesWidth', w)} />
       </div>
     </aside>
   )
@@ -285,7 +320,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
   return (
     <div className="app">
       <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
-      {layout.panelOpen && activeTool.panel()}
+      {layout.panelOpen && (activeTool.id === 'library' ? activeTool.panel() : sidePane(activeTool.panel()))}
       <main className="app-main">
         <UpdateBanner />
         <Toolbar />
