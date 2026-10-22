@@ -61,7 +61,9 @@ Checked by `.claude/hooks/definition-of-done.mjs` (Stop hook) on the whole branc
 
 - **No auto-formatting by default**: lists, headings and code blocks only from an explicit
   command. TipTap input/paste rules are off unless the "Markdown Shortcuts" setting is on. No
-  smart quotes, autocorrect, autocapitalise or spellcheck replacement.
+  smart quotes, autocorrect, autocapitalise or spellcheck replacement. The one exception is
+  `* ` at the start of a paragraph becoming a bullet list (`autoBullets`): on by default,
+  switchable in Settings → Autocorrect, and undone by Backspace right after.
 - **Copy as plain text**: real list numbers, 2-space nesting, `- ` bullets, code verbatim, tabs
   between table cells, LF only, NBSP → space, no zero-width characters, trailing newlines trimmed.
   Lives in `toPlainText` (`packages/core/src/plaintext.ts`); extend it there, never a second copy.
