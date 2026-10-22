@@ -8,8 +8,12 @@ const AUTH_LABELS: Record<GitAuthMode, string> = {
   device: 'Sign in with GitHub',
 }
 
-/** Where notebooks sync to. A token typed here goes to the main process and is stored encrypted. */
-export function SyncSettings({ onClose }: { onClose: () => void }) {
+/**
+ * Settings → Sync: where notebooks sync to. Saved with its own button, not field by field, because
+ * the provider, remote and token only make sense together. A token typed here goes to the main
+ * process and is stored encrypted.
+ */
+export function SyncSection({ onClose }: { onClose: () => void }) {
   const [provider, setProvider] = useState<SyncProvider | null>(null)
   const [remoteUrl, setRemoteUrl] = useState('')
   const [branch, setBranch] = useState('main')
@@ -34,12 +38,6 @@ export function SyncSettings({ onClose }: { onClose: () => void }) {
       setLoaded(true)
     })
   }, [])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   const git = (): GitSettings => ({ remoteUrl: remoteUrl.trim(), branch: branch.trim() || 'main', auth })
   const typedToken = auth === 'token' && token ? token : undefined
@@ -88,9 +86,8 @@ export function SyncSettings({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sync-settings" data-testid="sync-settings" role="dialog" aria-label="Sync settings">
-        <h2>Sync settings</h2>
+    <div data-testid="sync-settings">
+      <div className="sync-settings">
         {loaded && (
           <>
             <fieldset>

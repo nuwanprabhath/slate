@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { ExternalBatch, MenuCommand, SlateApi, SyncState, UpdateState } from '../shared/api'
+import type { ExternalBatch, MenuCommand, Settings, SlateApi, SyncState, UpdateState } from '../shared/api'
 import type { ImportProgress } from '@slate/importer'
 import { CH } from '../shared/ipc'
 
@@ -18,6 +18,11 @@ const api: SlateApi = {
   settings: {
     get: () => ipcRenderer.invoke(CH.settingsGet),
     set: (patch) => ipcRenderer.invoke(CH.settingsSet, patch),
+    onChange(handler) {
+      const listener = (_e: IpcRendererEvent, settings: Settings) => handler(settings)
+      ipcRenderer.on(CH.settingsChanged, listener)
+      return () => ipcRenderer.removeListener(CH.settingsChanged, listener)
+    },
   },
   audit: { list: (limit) => ipcRenderer.invoke(CH.auditList, limit) },
   mcp: { launcherInfo: () => ipcRenderer.invoke(CH.mcpLauncher) },

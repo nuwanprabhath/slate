@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyncState } from '../../../shared/api'
-import { SyncSettings } from './SyncSettings'
+import { openSettings } from '../settings/open'
 import { syncAgeText } from './syncAge'
 import './sync.css'
 
@@ -73,7 +73,6 @@ function CloudIcon({ status, setUp }: { status: SyncState['status']; setUp: bool
 export function SyncStatus() {
   const state = useSyncState()
   const [open, setOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   // Set from the click until the report arrives, so the icon doesn't wait for the status event.
   const [running, setRunning] = useState(false)
   const [, tick] = useState(0)
@@ -122,7 +121,7 @@ export function SyncStatus() {
         aria-label={tooltip}
         title={tooltip}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => (setUp ? syncNow() : setSettingsOpen(true))}
+        onClick={() => (setUp ? syncNow() : openSettings('sync'))}
         onContextMenu={(e) => {
           e.preventDefault()
           setOpen((o) => !o)
@@ -167,14 +166,13 @@ export function SyncStatus() {
             data-testid="sync-settings-open"
             onClick={() => {
               setOpen(false)
-              setSettingsOpen(true)
+              openSettings('sync')
             }}
           >
             Sync settings…
           </button>
         </div>
       )}
-      {settingsOpen && <SyncSettings onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }

@@ -4,6 +4,8 @@ import type { ConflictRecord, SyncReport } from '@slate/sync'
 export interface Settings {
   /** When true, typing "1. ", "- ", "# " or "```" turns into lists/headings/code. Off by default. */
   markdownShortcuts: boolean
+  /** Typing `* ` at the start of a line starts a bulleted list. On by default. */
+  autoBullets: boolean
   /** Application (client) id of the user's Azure app registration, for OneNote import. */
   msClientId: string | null
   /** Where notebooks sync to; null (the default) is off, and sync then never touches the network. */
@@ -28,7 +30,7 @@ export interface GitSettings {
   auth: GitAuthMode
 }
 
-export const DEFAULT_SETTINGS: Settings = { markdownShortcuts: false, msClientId: null, syncProvider: null, git: null, deviceId: null }
+export { DEFAULT_SETTINGS } from './settings/schema'
 
 /** What the sync settings overlay saves. A token is stored encrypted, never in the settings. */
 export interface SyncConfig {
@@ -106,6 +108,7 @@ export type MenuCommand =
   | { cmd: 'show-import-backup' }
   | { cmd: 'show-connect-agents' }
   | { cmd: 'find' }
+  | { cmd: 'show-settings'; section?: string }
 
 export interface SlateApi {
   isE2E: boolean
@@ -122,6 +125,8 @@ export interface SlateApi {
   settings: {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
+    /** The full settings after any window (or the menu, or sync) wrote them. */
+    onChange(handler: (settings: Settings) => void): () => void
   }
   audit: { list(limit?: number): Promise<AuditEntryRow[]> }
   mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }

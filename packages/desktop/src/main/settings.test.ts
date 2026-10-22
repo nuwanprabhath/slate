@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readSettings, writeSettings } from './settings'
+import { onSettingsWritten, readSettings, writeSettings } from './settings'
 import { DocStore } from './store'
 
 const dirs: string[] = []
@@ -38,6 +38,35 @@ describe('settings', () => {
     writeSettings(store, { syncProvider: 'git', git })
     expect(store.getSetting('settings')).not.toHaveProperty('syncEnabled')
     expect(readSettings(store)).toMatchObject({ syncProvider: 'git', git })
+    store.close()
+  })
+})
+
+describe('settings schema in the store', () => {
+  it('reads bad stored values back as defaults, and round-trips good ones', () => {
+    const store = tempStore()
+    store.setSetting('settings', { autoBullets: 'no', markdownShortcuts: true })
+    expect(readSettings(store)).toMatchObject({ autoBullets: true, markdownShortcuts: true })
+    writeSettings(store, { autoBullets: false })
+    expect(readSettings(store)).toMatchObject({ autoBullets: false, markdownShortcuts: true })
+    store.close()
+  })
+
+  it('ignores invalid patch values', () => {
+    const store = tempStore()
+    writeSettings(store, { autoBullets: 'off', syncProvider: 'ftp' } as never)
+    expect(readSettings(store)).toMatchObject({ autoBullets: true, syncProvider: null })
+    store.close()
+  })
+
+  it('tells listeners the full settings after a write', () => {
+    const store = tempStore()
+    const seen: unknown[] = []
+    const off = onSettingsWritten((s) => seen.push(s))
+    writeSettings(store, { autoBullets: false })
+    off()
+    writeSettings(store, { autoBullets: true })
+    expect(seen).toEqual([expect.objectContaining({ autoBullets: false, markdownShortcuts: false })])
     store.close()
   })
 })

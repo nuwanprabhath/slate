@@ -1,7 +1,7 @@
 import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { MenuCommand } from '../shared/api'
 import { CH } from '../shared/ipc'
-import { readSettings, writeSettings } from './settings'
+import { onSettingsWritten, readSettings, writeSettings } from './settings'
 import type { DocStore } from './store'
 
 function send(command: MenuCommand): void {
@@ -22,6 +22,8 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
               { role: 'about' as const },
               checkUpdates,
               { type: 'separator' as const },
+              { id: 'settings', label: 'Settings…', accelerator: 'Cmd+,', click: () => send({ cmd: 'show-settings' }) },
+              { type: 'separator' as const },
               { role: 'services' as const },
               { type: 'separator' as const },
               { role: 'hide' as const },
@@ -39,6 +41,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
         { id: 'import-onenote', label: 'Import from OneNote…', click: () => send({ cmd: 'show-import' }) },
         { id: 'import-onenote-backup', label: 'Import from OneNote backup…', click: () => send({ cmd: 'show-import-backup' }) },
         { type: 'separator' },
+        ...(isMac ? [] : [{ id: 'settings', label: 'Settings…', accelerator: 'Ctrl+,', click: () => send({ cmd: 'show-settings' }) }, { type: 'separator' as const }]),
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
     },
@@ -66,7 +69,14 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
           label: 'Markdown Shortcuts',
           type: 'checkbox',
           checked: readSettings(store).markdownShortcuts,
-          click: (item) => send({ cmd: 'settings-changed', settings: writeSettings(store, { markdownShortcuts: item.checked }) }),
+          click: (item) => void writeSettings(store, { markdownShortcuts: item.checked }),
+        },
+        {
+          id: 'auto-bullets',
+          label: 'Auto Bullets',
+          type: 'checkbox',
+          checked: readSettings(store).autoBullets,
+          click: (item) => void writeSettings(store, { autoBullets: item.checked }),
         },
         { id: 'ai-activity', label: 'AI Activity…', click: () => send({ cmd: 'show-ai-activity' }) },
         { type: 'separator' },
@@ -88,4 +98,15 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
     },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+/** Keeps the View menu's checkboxes in step with settings changed elsewhere (the Settings dialog). */
+export function syncMenuChecks(): () => void {
+  return onSettingsWritten((settings) => {
+    const menu = Menu.getApplicationMenu()
+    const markdown = menu?.getMenuItemById('markdown-shortcuts')
+    const bullets = menu?.getMenuItemById('auto-bullets')
+    if (markdown) markdown.checked = settings.markdownShortcuts
+    if (bullets) bullets.checked = settings.autoBullets
+  })
 }

@@ -5,7 +5,7 @@ import { CH } from '../shared/ipc'
 import { BLOB_SCHEME, BlobStore } from './blobs'
 import { createExternalWatch } from './externalWatch'
 import { registerIpc, registerOneNoteIpc, registerSyncIpc } from './ipc'
-import { buildMenu } from './menu'
+import { buildMenu, syncMenuChecks } from './menu'
 import { launcherInfo } from './mcpLauncher'
 import { createUpdates } from './update'
 import { createAuthService, type AuthService } from './onenote/auth'
@@ -125,6 +125,7 @@ void app.whenReady().then(() => {
     console.error('update checks are off:', e)
   }
   buildMenu(store, () => void updates?.check({ manual: true }))
+  syncMenuChecks()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
