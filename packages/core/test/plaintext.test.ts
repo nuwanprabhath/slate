@@ -59,4 +59,21 @@ describe('toPlainText', () => {
   it('skips images', () => {
     expect(toPlainText([p('a'), { type: 'image', attrs: { src: 'slate-blob://blob/x.png' } }, p('b')])).toBe('a\nb')
   })
+
+  it('writes letter and roman markers for styled numbered lists', () => {
+    const items = [li(p('a')), li(p('b')), li(p('c')), li(p('d'))]
+    const styled = (listStyle: string, start = 1): PMJSON => ({ type: 'orderedList', attrs: { start, listStyle }, content: items })
+    expect(toPlainText([styled('lower-alpha')])).toBe('a. a\nb. b\nc. c\nd. d')
+    expect(toPlainText([styled('upper-alpha')])).toBe('A. a\nB. b\nC. c\nD. d')
+    expect(toPlainText([styled('lower-roman')])).toBe('i. a\nii. b\niii. c\niv. d')
+    expect(toPlainText([styled('upper-roman', 8)])).toBe('VIII. a\nIX. b\nX. c\nXI. d')
+    expect(toPlainText([styled('lower-alpha', 26)]).split('\n')[1]).toBe('aa. b')
+    expect(toPlainText([styled('decimal')])).toBe('1. a\n2. b\n3. c\n4. d')
+  })
+
+  it('uses "- " for every bullet style', () => {
+    for (const listStyle of ['disc', 'circle', 'square']) {
+      expect(toPlainText([{ type: 'bulletList', attrs: { listStyle }, content: [li(p('x'))] }])).toBe('- x')
+    }
+  })
 })
