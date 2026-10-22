@@ -3,32 +3,41 @@ import { createWriteStream } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { clipboard, net, shell } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import { autoUpdater, type AppUpdater } from 'electron-updater'
 import type { UpdateBackend } from './updateService'
 import { assetUrl } from './versions'
 
 /** Reads the GitHub feed (latest-mac.yml / latest-linux.yml) through electron-updater. */
 export function electronBackend(opts: { downloadsDir: string; log: (message: unknown) => void }): UpdateBackend {
-  autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = false
-  autoUpdater.logger = { info: () => {}, warn: opts.log, error: opts.log, debug: () => {} }
+  // electron-updater builds its updater on first access, and that throws for a non-semver app
+  // version (an unpackaged Linux run reports "0.0"). Touching it only when a check runs keeps that
+  // throw inside the update service, which logs it, instead of in app start-up.
+  let configured: AppUpdater | undefined
+  const updater = (): AppUpdater => {
+    if (configured) return configured
+    const u = autoUpdater
+    u.autoDownload = false
+    u.autoInstallOnAppQuit = false
+    u.logger = { info: () => {}, warn: opts.log, error: opts.log, debug: () => {} }
+    return (configured = u)
+  }
   return {
     async check() {
-      const result = await autoUpdater.checkForUpdates()
+      const result = await updater().checkForUpdates()
       if (!result) return null
       const info = result.updateInfo
       return { version: info.version, files: info.files.map((f) => ({ url: f.url, sha512: f.sha512, size: f.size ?? 0 })) }
     },
     async downloadAuto(onProgress) {
       const listener = (p: { percent: number }) => onProgress(p.percent)
-      autoUpdater.on('download-progress', listener)
+      updater().on('download-progress', listener)
       try {
-        await autoUpdater.downloadUpdate()
+        await updater().downloadUpdate()
       } finally {
-        autoUpdater.off('download-progress', listener)
+        updater().off('download-progress', listener)
       }
     },
-    installAuto: () => autoUpdater.quitAndInstall(),
+    installAuto: () => updater().quitAndInstall(),
     async downloadFile(file, version, onProgress) {
       const name = basename(file.url)
       const url = /^https?:/.test(file.url) ? file.url : assetUrl(version, name)

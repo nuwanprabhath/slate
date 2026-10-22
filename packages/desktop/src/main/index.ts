@@ -115,8 +115,14 @@ void app.whenReady().then(() => {
   })
   registerSyncIpc(sync)
   sync.start()
-  const updates = createUpdates(store, isE2E)
-  buildMenu(store, () => void updates.check({ manual: true }))
+  // Updates are optional: whatever goes wrong setting them up must not stop the window opening.
+  let updates: ReturnType<typeof createUpdates> | undefined
+  try {
+    updates = createUpdates(store, isE2E)
+  } catch (e) {
+    console.error('update checks are off:', e)
+  }
+  buildMenu(store, () => void updates?.check({ manual: true }))
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -126,7 +132,7 @@ void app.whenReady().then(() => {
   )
   app.on('will-quit', () => {
     watch.stop()
-    updates.stop()
+    updates?.stop()
     sync?.close()
     importer.close()
     store.close()
