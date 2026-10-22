@@ -2,6 +2,7 @@ import { tmpdir } from 'node:os'
 import { app, BrowserWindow, clipboard, ipcMain } from 'electron'
 import { CH } from '../../shared/ipc'
 import { log as diagLog } from '../log/logger'
+import { onSettingsWritten, readSettings } from '../settings'
 import type { DocStore } from '../store'
 import { detectInstallKind } from './capability'
 import { electronBackend } from './electronBackend'
@@ -27,9 +28,14 @@ export function createUpdates(store: DocStore, isE2E: boolean): UpdateService {
     log,
     diag: diagLog.scoped('update'),
     emit: (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.updateStateEvent, state)),
+    settings: () => {
+      const s = readSettings(store)
+      return { automaticChecks: s.updateAutomaticChecks, intervalHours: s.updateCheckIntervalHours }
+    },
     ...(fake ? { firstCheckMs: 500 } : {}),
   })
   registerUpdateIpc(ipcMain, service)
+  onSettingsWritten(() => service.settingsChanged())
   if (live || fake) service.start()
   return service
 }

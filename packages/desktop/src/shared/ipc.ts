@@ -53,6 +53,7 @@ export const CH = {
   updateCopyCommand: 'update:copy-command',
   updateCopyReleaseUrl: 'update:copy-release-url',
   updateSkip: 'update:skip',
+  updateUnskip: 'update:unskip',
   updateDismiss: 'update:dismiss',
   updateStateEvent: 'update:state-event',
 } as const

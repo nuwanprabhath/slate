@@ -10,6 +10,7 @@ import type { Settings } from '../../../shared/api'
 import { SyncSection } from '../sync/SyncSettings'
 import { AutocorrectSection } from './sections/AutocorrectSection'
 import { DiagnosticsSection, diagnosticsSectionEntry } from './sections/DiagnosticsSection'
+import { UpdatesSection, updatesSectionEntry } from './sections/UpdatesSection'
 import { GeneralSection } from './sections/GeneralSection'
 
 export interface SectionProps {
@@ -52,5 +53,6 @@ export const SECTIONS: SettingsSection[] = [
     keywords: ['ai', 'agents', 'mcp', 'claude'],
     Component: GeneralSection,
   },
+  { ...updatesSectionEntry, Component: () => <UpdatesSection /> },
   { ...diagnosticsSectionEntry, Component: () => <DiagnosticsSection /> },
 ]

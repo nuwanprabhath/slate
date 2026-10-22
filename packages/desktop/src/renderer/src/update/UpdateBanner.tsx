@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { UpdateState } from '../../../shared/api'
+import { openSettings } from '../settings/open'
 import './update.css'
 
 export function UpdateBanner() {
@@ -20,8 +21,13 @@ export function UpdateBanner() {
     <div className="update-banner" data-testid="update-banner" role="status">
       <span className="update-banner-text">
         {downloaded ? `Slate ${state.version} is downloaded` : `Slate ${state.version} is available`}
+        {state.phase === 'available' && state.currentVersion && ` · you are on ${state.currentVersion}`}
         {state.phase === 'downloading' && ` · downloading ${state.progress ?? 0}%`}
+        {downloaded && state.kind === 'dmg' && ' · drag Slate into Applications'}
       </span>
+      {state.phase === 'downloading' && (
+        <progress className="update-banner-progress" data-testid="update-progress" max={100} value={state.progress ?? 0} />
+      )}
       {state.phase === 'available' && (
         <button type="button" onClick={() => void u.download()}>
           {state.kind === 'auto' ? 'Download and install' : 'Download'}
@@ -55,6 +61,14 @@ export function UpdateBanner() {
           Skip this version
         </button>
       )}
+      <button
+        type="button"
+        className="update-banner-link"
+        data-testid="update-settings"
+        onClick={() => openSettings('updates')}
+      >
+        Update settings
+      </button>
       <button type="button" className="update-banner-close" aria-label="Dismiss" data-testid="update-dismiss" onClick={() => void u.dismiss()}>
         ×
       </button>

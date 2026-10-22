@@ -86,6 +86,7 @@ const api: SlateApi = {
     copyCommand: () => ipcRenderer.invoke(CH.updateCopyCommand),
     copyReleaseUrl: () => ipcRenderer.invoke(CH.updateCopyReleaseUrl),
     skip: () => ipcRenderer.invoke(CH.updateSkip),
+    unskip: () => ipcRenderer.invoke(CH.updateUnskip),
     dismiss: () => ipcRenderer.invoke(CH.updateDismiss),
     onState(handler) {
       const listener = (_e: IpcRendererEvent, state: UpdateState) => handler(state)

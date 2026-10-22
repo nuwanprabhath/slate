@@ -16,4 +16,11 @@ describe('electronBackend', () => {
     const backend = electronBackend({ downloadsDir: '/tmp', log: () => {} })
     await expect(backend.check()).rejects.toThrow(/semver/)
   })
+
+  it('marks a downloaded installer as quarantined so Gatekeeper still checks it', async () => {
+    const { setQuarantine } = await import('./electronBackend')
+    const run = vi.fn().mockResolvedValue(undefined)
+    await setQuarantine('/dl/Slate.dmg', run)
+    expect(run).toHaveBeenCalledWith('xattr', ['-w', 'com.apple.quarantine', expect.stringMatching(/^0081;[0-9a-f]+;Slate;$/), '/dl/Slate.dmg'])
+  })
 })

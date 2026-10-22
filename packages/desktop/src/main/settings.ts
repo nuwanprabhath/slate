@@ -24,3 +24,4 @@ export function writeSettings(store: DocStore, patch: Partial<Settings>): Settin
   listeners.forEach((l) => l(next))
   return next
 }
+

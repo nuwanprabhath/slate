@@ -3,3 +3,8 @@
 .update-banner button { padding: 3px 8px; background: var(--hover); color: var(--text); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font: inherit; }
 .update-banner button.update-banner-link { background: none; border: none; color: var(--muted); text-decoration: underline; }
 .update-banner button.update-banner-close { background: none; border: none; color: var(--muted); font-size: 15px; line-height: 1; }
+.updates-section { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.updates-section p { margin: 0; }
+.updates-help { color: var(--muted); font-size: 12px; }
+.updates-check { display: flex; align-items: center; gap: 10px; }
+.updates-field { display: flex; align-items: center; gap: 8px; }

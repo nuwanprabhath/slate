@@ -16,6 +16,7 @@ export function registerUpdateIpc(ipc: Handles, service: UpdateService): void {
   ipc.handle(CH.updateCopyCommand, () => service.copyCommand())
   ipc.handle(CH.updateCopyReleaseUrl, () => service.copyReleaseUrl())
   ipc.handle(CH.updateSkip, () => service.skip())
+  ipc.handle(CH.updateUnskip, () => service.unskip())
   ipc.handle(CH.updateDismiss, () => service.dismiss())
 }
 

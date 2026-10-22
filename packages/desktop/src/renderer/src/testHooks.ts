@@ -27,3 +27,4 @@ export function installTestHooks(): void {
     lastPageOpenMs: (): number | null => pageOpenTiming.lastMs,
   }
 }
+

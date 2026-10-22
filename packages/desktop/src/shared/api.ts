@@ -16,6 +16,10 @@ export interface Settings {
   deviceId: string | null
   /** Writes a redacted diagnostic log to the user-data folder. Off by default; off writes nothing. */
   debugLog: boolean
+  /** Whether Slate asks GitHub for a newer release on its own; a manual check always works. */
+  updateAutomaticChecks: boolean
+  /** Hours between automatic checks. */
+  updateCheckIntervalHours: number
 }
 
 export type SyncProvider = 'onedrive' | 'git'
@@ -105,6 +109,14 @@ export interface UpdateState {
   command?: string
   /** Whether the banner shows: an update is available or downloaded, and not skipped or dismissed. */
   visible: boolean
+  currentVersion?: string
+  lastCheckedAt?: number
+  /** The version the user chose to skip, shown in Settings with a way to stop skipping. */
+  skippedVersion?: string
+  /** What this build can do about an update, in a sentence; absent where electron-updater installs it. */
+  reason?: string
+  /** The last check or download failure. */
+  error?: string
 }
 
 export interface AuditEntryRow {
@@ -195,7 +207,8 @@ export interface SlateApi {
   }
   update: {
     state(): Promise<UpdateState>
-    check(): Promise<void>
+    /** Resolves with the state this check ended in, so the caller can say what it found. */
+    check(): Promise<UpdateState>
     download(): Promise<void>
     install(): Promise<void>
     openInstaller(): Promise<void>
@@ -203,6 +216,7 @@ export interface SlateApi {
     copyCommand(): Promise<void>
     copyReleaseUrl(): Promise<void>
     skip(): Promise<void>
+    unskip(): Promise<void>
     dismiss(): Promise<void>
     onState(handler: (state: UpdateState) => void): () => void
   }
