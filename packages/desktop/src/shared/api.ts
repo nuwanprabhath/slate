@@ -12,6 +12,8 @@ export interface Settings {
   git: GitSettings | null
   /** This install's id in the sync folder, created once. */
   deviceId: string | null
+  /** Activity-bar plugins' own settings, keyed `plugins.<pluginId>.<key>`. */
+  plugins?: Record<string, unknown>
 }
 
 export type SyncProvider = 'onedrive' | 'git'
