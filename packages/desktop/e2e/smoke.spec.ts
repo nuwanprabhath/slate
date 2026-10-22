@@ -10,6 +10,8 @@ test('boots and round-trips a document through IPC', async ({ page }) => {
 })
 
 test('keeps the window hidden during e2e runs', async ({ app }) => {
+  // CI shows it on a virtual display (SLATE_E2E_SHOW, see src/main/index.ts); everywhere else it stays hidden.
+  const shown = process.env.SLATE_E2E_SHOW === '1'
   const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())
-  expect(visible).toBe(false)
+  expect(visible).toBe(shown)
 })
