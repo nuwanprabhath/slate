@@ -1,4 +1,5 @@
 import type { ExternalBatch } from '../shared/api'
+import { noLog, type ScopedLog } from './log/logger'
 import type { DocStore } from './store'
 
 const POLL_MS = 500
@@ -9,7 +10,11 @@ const POLL_MS = 500
  * per tick while nothing happens. Rows the app itself wrote can be included; Loro imports are
  * idempotent, so re-importing them is harmless.
  */
-export function createExternalWatch(store: DocStore, emit: (batches: ExternalBatch[]) => void): { check(): void; stop(): void } {
+export function createExternalWatch(
+  store: DocStore,
+  emit: (batches: ExternalBatch[]) => void,
+  log: ScopedLog = noLog,
+): { check(): void; stop(): void } {
   let version = store.dataVersion()
   let lastId = store.maxUpdateId()
   const check = () => {
@@ -21,6 +26,7 @@ export function createExternalWatch(store: DocStore, emit: (batches: ExternalBat
     lastId = rows[rows.length - 1].id
     const byDoc = new Map<string, Uint8Array[]>()
     for (const row of rows) byDoc.set(row.docId, [...(byDoc.get(row.docId) ?? []), row.data])
+    log.info('external updates', { docs: byDoc.size, updates: rows.length })
     emit([...byDoc].map(([docId, updates]) => ({ docId, updates })))
   }
   const timer = setInterval(check, POLL_MS)

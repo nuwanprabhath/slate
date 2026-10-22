@@ -14,6 +14,8 @@ export interface Settings {
   git: GitSettings | null
   /** This install's id in the sync folder, created once. */
   deviceId: string | null
+  /** Writes a redacted diagnostic log to the user-data folder. Off by default; off writes nothing. */
+  debugLog: boolean
 }
 
 export type SyncProvider = 'onedrive' | 'git'
@@ -31,6 +33,21 @@ export interface GitSettings {
 }
 
 export { DEFAULT_SETTINGS } from './settings/schema'
+
+export interface DiagnosticsStatus {
+  enabled: boolean
+  /** The log file, whether or not it exists yet. */
+  file: string
+  /** Size of the log files on disk, in bytes. */
+  bytes: number
+}
+
+/** An error in the renderer, reduced to what is safe to log: no message, only the stack's frames. */
+export interface RendererErrorReport {
+  kind: 'error' | 'unhandledrejection'
+  name: string
+  frames: string[]
+}
 
 /** What the sync settings overlay saves. A token is stored encrypted, never in the settings. */
 export interface SyncConfig {
@@ -130,6 +147,17 @@ export interface SlateApi {
     onChange(handler: (settings: Settings) => void): () => void
   }
   audit: { list(limit?: number): Promise<AuditEntryRow[]> }
+  diagnostics: {
+    status(): Promise<DiagnosticsStatus>
+    /** The redacted log text, oldest line first. */
+    read(): Promise<string>
+    /** Puts the redacted log on the clipboard; resolves to its length in characters. */
+    copy(): Promise<number>
+    clear(): Promise<void>
+    openFolder(): Promise<void>
+    /** Forwards a renderer error to the log. */
+    rendererError(report: RendererErrorReport): Promise<void>
+  }
   mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }
   clipboardText(): Promise<string>
   /** Opens an http(s) or mailto link in the system browser. Anything else is ignored. */

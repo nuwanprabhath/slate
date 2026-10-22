@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os'
 import { app, BrowserWindow, clipboard, ipcMain } from 'electron'
 import { CH } from '../../shared/ipc'
+import { log as diagLog } from '../log/logger'
 import type { DocStore } from '../store'
 import { detectInstallKind } from './capability'
 import { electronBackend } from './electronBackend'
@@ -24,6 +25,7 @@ export function createUpdates(store: DocStore, isE2E: boolean): UpdateService {
     loadPrefs: prefs.load,
     savePrefs: prefs.save,
     log,
+    diag: diagLog.scoped('update'),
     emit: (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.updateStateEvent, state)),
     ...(fake ? { firstCheckMs: 500 } : {}),
   })

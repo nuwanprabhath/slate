@@ -33,6 +33,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   syncProvider: { default: null, sanitize: (v) => (v === null || PROVIDERS.some((p) => p === v) ? (v as SyncProvider | null) : undefined) },
   git: { default: null, sanitize: gitSettings },
   deviceId: { default: null, sanitize: stringOrNull },
+  debugLog: { default: false, sanitize: bool },
 }
 
 const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>

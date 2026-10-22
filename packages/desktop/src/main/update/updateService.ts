@@ -1,4 +1,5 @@
 import type { InstallKind, UpdateState } from '../../shared/api'
+import type { ScopedLog } from '../log/logger'
 import { installCommand, pickInstaller, type UpdateFile } from './pickInstaller'
 import { isNewer, releaseUrl } from './versions'
 
@@ -38,6 +39,8 @@ export interface UpdateServiceDeps {
   loadPrefs(): UpdatePrefs
   savePrefs(prefs: UpdatePrefs): void
   log(message: unknown): void
+  /** The diagnostic log. */
+  diag?: ScopedLog
   emit(state: UpdateState): void
   firstCheckMs?: number
   everyMs?: number
@@ -84,9 +87,11 @@ export class UpdateService {
     if (this.s.phase === 'downloaded' && !opts.manual) return
     if (opts.manual) this.forced = true
     this.set({ phase: 'checking', kind: this.deps.kind })
+    this.deps.diag?.info('update check start', { manual: opts.manual === true, kind: this.deps.kind, current: this.deps.currentVersion })
     try {
       const found = await this.deps.backend.check()
       this.savePrefs({ lastCheckedAt: Date.now(), lastError: undefined })
+      this.deps.diag?.info('update check result', { latest: found?.version ?? null, newer: found ? isNewer(found.version, this.deps.currentVersion) : false })
       if (found && isNewer(found.version, this.deps.currentVersion)) {
         if (found.version !== this.found?.version) this.forced = opts.manual === true
         this.found = found
@@ -164,6 +169,7 @@ export class UpdateService {
   private fail(what: string, e: unknown): void {
     const message = `${what}: ${e instanceof Error ? e.message : String(e)}`
     this.deps.log(message)
+    this.deps.diag?.error(what, { error: e instanceof Error ? e.message : String(e), version: this.found?.version })
     this.savePrefs({ lastError: message })
     this.set({ phase: 'error', kind: this.deps.kind, version: this.found?.version, releaseUrl: this.s.releaseUrl })
   }

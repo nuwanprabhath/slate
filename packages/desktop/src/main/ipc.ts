@@ -1,6 +1,7 @@
 import { BrowserWindow, clipboard, ClipboardItem, dialog, ipcMain, nativeImage, shell, type OpenDialogOptions } from 'electron'
 import { CH } from '../shared/ipc'
 import type { BackupPick, GitAuthMode, GitSettings, Settings, SyncConfig } from '../shared/api'
+import { configureLogging } from './log/configure'
 import { scanBackup } from './onenote/backup'
 import type { BlobStore } from './blobs'
 import type { AuthService } from './onenote/auth'
@@ -29,6 +30,7 @@ export function registerIpc(store: DocStore, blobs: BlobStore, onAppend: () => v
   ipcMain.handle(CH.settingsGet, () => readSettings(store))
   ipcMain.handle(CH.settingsSet, (_e, patch: Partial<Settings>) => writeSettings(store, patch))
   onSettingsWritten((settings) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.settingsChanged, settings)))
+  onSettingsWritten((settings) => configureLogging(settings))
   ipcMain.handle(CH.auditList, (_e, limit?: number) => store.listAudit(limit ?? 200))
   ipcMain.handle(CH.clipboardText, () => clipboard.readText())
   ipcMain.handle(CH.openExternal, (_e, url: string) => {
