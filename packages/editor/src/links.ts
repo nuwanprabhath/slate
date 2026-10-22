@@ -64,6 +64,9 @@ export const linkPopover = {
 /** Mod+K: edit the link under the selection, link the selected text, or insert linked text. */
 export function openLinkPopover(editor: Editor | null): boolean {
   if (!editor || editor.isDestroyed) return false
+  // ProseMirror reads a DOM selection change a moment later (selectionchange); a quick
+  // select-then-Mod+K would otherwise see the old, empty selection and insert the URL as new text.
+  ;(editor.view as unknown as { domObserver?: { flush(): void } }).domObserver?.flush()
   if (editor.state.selection.empty && editor.isActive('link')) editor.chain().extendMarkRange('link').run()
   const { from, to, empty } = editor.state.selection
   const existing = editor.isActive('link')
