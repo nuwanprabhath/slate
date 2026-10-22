@@ -1,0 +1,101 @@
+import type { ReactNode, SVGProps } from 'react'
+
+const ACCENT = 'var(--accent)'
+const GREY = 'var(--muted)'
+
+function Icon({ children, ...rest }: { children: ReactNode } & SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...rest}
+    >
+      {children}
+    </svg>
+  )
+}
+
+/** "A" over a bar in the colour the main button applies. */
+export function TextColorIcon({ color }: { color: string }) {
+  return (
+    <Icon>
+      <path d="M5.5 13 10 3l4.5 10M7.2 9.5h5.6" />
+      <rect x="3" y="15.5" width="14" height="3" rx="0.5" fill={color} stroke="none" />
+    </Icon>
+  )
+}
+
+/** A slanted marker with its nib at the lower left, over a bar in the highlight colour. */
+export function HighlightIcon({ color }: { color: string }) {
+  return (
+    <Icon>
+      <path d="m8 11.5 6.5-6.5a1.4 1.4 0 0 1 2 2L10 13.5Z" />
+      <path d="m8 11.5-1 1 2 2 1-1M7 12.5 4.5 14h3" />
+      <rect x="3" y="15.5" width="14" height="3" rx="0.5" fill={color} stroke="none" />
+    </Icon>
+  )
+}
+
+/** OneNote's "Clear All Formatting": an A with an eraser at its lower right. */
+export function ClearFormattingIcon() {
+  return (
+    <Icon>
+      <path d="M3 14 7.5 3 12 14M4.8 10h5.4" />
+      <path d="m12 17 4.5-4.5 2 2L14 19h-2l-1-1Z" fill="#e8738a" stroke="#c94f68" strokeWidth="1" />
+    </Icon>
+  )
+}
+
+export function BulletListIcon() {
+  return (
+    <Icon>
+      {[4, 10, 16].map((y) => (
+        <g key={y}>
+          <rect x="2.5" y={y - 1.5} width="3" height="3" fill={ACCENT} stroke="none" />
+          <path d={`M8.5 ${y}H17.5`} stroke={GREY} />
+        </g>
+      ))}
+    </Icon>
+  )
+}
+
+export function NumberedListIcon() {
+  return (
+    <Icon>
+      <g stroke={ACCENT} strokeWidth="1.2">
+        <path d="M3 2.5 4 2v4" />
+        <path d="M2.8 8.6a1.2 1.2 0 0 1 2.2.6c0 .9-2.2 1.8-2.2 2.8H5" />
+        <path d="M2.8 14.2h2l-1 1.3a1.1 1.1 0 1 1-1.1 1.6" />
+      </g>
+      {[4, 10, 16].map((y) => (
+        <path key={y} d={`M8.5 ${y}H17.5`} stroke={GREY} />
+      ))}
+    </Icon>
+  )
+}
+
+/** A 3×3 grid whose header row is filled, as OneNote's Insert Table. */
+export function TableIcon() {
+  return (
+    <Icon strokeWidth="1.2">
+      <rect x="2.5" y="3.5" width="15" height="4" fill="currentColor" />
+      <rect x="2.5" y="3.5" width="15" height="13" rx="0.5" />
+      <path d="M2.5 12h15M7.5 7.5v9M12.5 7.5v9" />
+    </Icon>
+  )
+}
+
+export function ChevronIcon() {
+  return (
+    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m1.5 3 2.5 2.5L6.5 3" />
+    </svg>
+  )
+}

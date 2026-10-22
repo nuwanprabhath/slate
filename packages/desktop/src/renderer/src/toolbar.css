@@ -1,10 +1,11 @@
 .toolbar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
-.toolbar button { min-width: 28px; height: 28px; padding: 0 6px; background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text); font: inherit; cursor: pointer; }
+.toolbar button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text); font: inherit; font-size: 14px; line-height: 1; vertical-align: middle; cursor: pointer; }
 .toolbar button:hover:not(:disabled) { background: var(--hover); }
 .toolbar button.active { background: var(--selected); border-color: var(--border); }
 .toolbar button:disabled, .toolbar select:disabled { opacity: 0.4; cursor: default; }
 .toolbar select { height: 28px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; margin: 0 2px; }
 .toolbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 6px; }
-.color-input { position: relative; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 4px; cursor: pointer; font-weight: 600; }
-.color-input:hover { background: var(--hover); }
-.color-input input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.toolbar .split, .toolbar .split-menu { position: relative; display: inline-flex; align-items: center; }
+.toolbar .chevron { min-width: 14px; width: 14px; padding: 0; }
+.toolbar .style-menu { position: absolute; top: 32px; left: -28px; z-index: 50; display: flex; flex-direction: column; min-width: 110px; padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.35); }
+.toolbar .style-menu button { justify-content: flex-start; white-space: nowrap; }

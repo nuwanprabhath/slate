@@ -91,13 +91,20 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
           className="slate-box-lock"
           data-testid="box-lock"
           aria-pressed={box.private}
-          title={box.private ? 'Private: never shared with AI agents' : 'Mark private: hide from AI agents'}
+          title={box.private ? 'Private: hidden from AI agents — click to share' : 'Visible to AI agents — click to make private'}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => session.page.updateBox(box.id, { private: !box.private })}
         >
-          <svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true">
-            <rect x="1" y="5" width="8" height="6.5" rx="1" fill="currentColor" />
-            <path d={box.private ? 'M2.5 5V3.5a2.5 2.5 0 0 1 5 0V5' : 'M2.5 5V3.5a2.5 2.5 0 0 1 5 0'} fill="none" stroke="currentColor" strokeWidth="1.3" />
+          {/* Open: the shackle is lifted and swung right, so the gap reads as unlocked at a glance. */}
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <rect x="2" y="6.5" width="8" height="6" rx="1" fill="currentColor" />
+            <path
+              d={box.private ? 'M3.75 6.5V4.5a2.25 2.25 0 0 1 4.5 0v2' : 'M8.25 4V2.75a2.25 2.25 0 0 1 4.5 0V5'}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
       </div>
