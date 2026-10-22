@@ -45,7 +45,7 @@ describe('Logger', () => {
   it('rotates the active file once it passes a fifth of the budget', () => {
     const dir = tmp()
     const l = new Logger()
-    l.configure({ enabled: true, dir, maxSizeMb: 1 })
+    l.configure({ enabled: true, dir, maxSizeMb: 5 })
     for (let i = 0; i < 4000; i++) l.info('app', 'x', { pad: 'y'.repeat(400), i })
     const files = readdirSync(dir)
     expect(files.length).toBeGreaterThan(1)

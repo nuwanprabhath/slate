@@ -5,6 +5,8 @@ import { CH } from '../shared/ipc'
 import { BLOB_SCHEME, BlobStore } from './blobs'
 import { createExternalWatch } from './externalWatch'
 import { registerIpc, registerOneNoteIpc, registerSyncIpc } from './ipc'
+import { configureLogging, logIpcRejections, registerDiagnosticsIpc } from './log/configure'
+import { log } from './log/logger'
 import { buildMenu } from './menu'
 import { launcherInfo } from './mcpLauncher'
 import { createUpdates } from './update'
@@ -62,6 +64,9 @@ void app.whenReady().then(() => {
   const store = new DocStore(join(dataDir, 'slate.db'))
   const blobs = new BlobStore(join(dataDir, 'blobs'))
   let sync: SyncService | undefined
+  logIpcRejections()
+  configureLogging(readSettings(store))
+  registerDiagnosticsIpc()
   protocol.handle(BLOB_SCHEME, async (request) => {
     const file = blobs.pathForUrl(request.url)
     if (!file) return new Response('Not found', { status: 404 })
@@ -96,6 +101,7 @@ void app.whenReady().then(() => {
     graphUrl: process.env.SLATE_GRAPH_URL ?? 'https://graph.microsoft.com/v1.0',
     emit: (p) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.onenoteProgress, p)),
     converter: converterPath(defaultConverterDirs()),
+    log: log.scoped('import'),
   })
   registerOneNoteIpc(currentAuth, importer, (id) => {
     writeSettings(store, { msClientId: id || null })
@@ -114,6 +120,7 @@ void app.whenReady().then(() => {
     ...(intervalMs > 0 ? { intervalMs } : {}),
     emitStatus: (state) => toWindows(CH.syncStatusEvent, state),
     emitNotice: (message) => toWindows(CH.syncNotice, message),
+    log: log.scoped('sync'),
   })
   registerSyncIpc(sync)
   sync.start()
@@ -131,6 +138,7 @@ void app.whenReady().then(() => {
   })
   const watch = createExternalWatch(store, (batches) =>
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.externalUpdates, batches)),
+    log.scoped('watch'),
   )
   app.on('will-quit', () => {
     watch.stop()

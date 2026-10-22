@@ -28,6 +28,15 @@ export interface LoggerOptions {
 
 export type LogFields = Record<string, unknown>
 
+/** What a service is handed to log with. Never pass note content. */
+export interface ScopedLog {
+  info(message: string, fields?: LogFields): void
+  warn(message: string, fields?: LogFields): void
+  error(message: string, fields?: LogFields): void
+}
+
+export const noLog: ScopedLog = { info() {}, warn() {}, error() {} }
+
 const ACTIVE = 'slate.log'
 const PREFIX = 'slate'
 const SUFFIX = '.log'
@@ -129,6 +138,15 @@ export class Logger {
   info(scope: LogScope, message: string, fields?: LogFields): void { this.log('info', scope, message, fields) }
   warn(scope: LogScope, message: string, fields?: LogFields): void { this.log('warn', scope, message, fields) }
   error(scope: LogScope, message: string, fields?: LogFields): void { this.log('error', scope, message, fields) }
+
+  /** A logger with the scope fixed, for services that must not import this module (they take it as a dependency). */
+  scoped(scope: LogScope): ScopedLog {
+    return {
+      info: (message, fields) => this.info(scope, message, fields),
+      warn: (message, fields) => this.warn(scope, message, fields),
+      error: (message, fields) => this.error(scope, message, fields),
+    }
+  }
 
   /** All log files, oldest first. Every line was redacted when written. */
   read(): string {

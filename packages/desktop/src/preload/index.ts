@@ -20,6 +20,14 @@ const api: SlateApi = {
     set: (patch) => ipcRenderer.invoke(CH.settingsSet, patch),
   },
   audit: { list: (limit) => ipcRenderer.invoke(CH.auditList, limit) },
+  diagnostics: {
+    status: () => ipcRenderer.invoke(CH.diagnosticsStatus),
+    read: () => ipcRenderer.invoke(CH.diagnosticsRead),
+    copy: () => ipcRenderer.invoke(CH.diagnosticsCopy),
+    clear: () => ipcRenderer.invoke(CH.diagnosticsClear),
+    openFolder: () => ipcRenderer.invoke(CH.diagnosticsOpenFolder),
+    rendererError: (report) => ipcRenderer.invoke(CH.diagnosticsRendererError, report),
+  },
   mcp: { launcherInfo: () => ipcRenderer.invoke(CH.mcpLauncher) },
   clipboardText: () => ipcRenderer.invoke(CH.clipboardText),
   onenote: {

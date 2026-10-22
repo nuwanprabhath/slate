@@ -16,6 +16,7 @@ import {
   type SyncReport,
   type SyncStatus,
 } from '@slate/sync'
+import { noLog, type ScopedLog } from '../log/logger'
 import type { DeviceCode, GitAuthInfo, GitAuthMode, GitCheck, GitSettings, Settings, SyncConfig, SyncState } from '../../shared/api'
 import type { BlobStore } from '../blobs'
 import { SIGN_IN_SCOPES, type AuthService, type SecretStorage } from '../onenote/auth'
@@ -45,6 +46,24 @@ export interface SyncServiceDeps {
   intervalMs?: number
   emitStatus: (state: SyncState) => void
   emitNotice: (message: string) => void
+  /** The diagnostic log, handed in so the sync package never imports main's logger. */
+  log?: ScopedLog
+}
+
+/** Logs a git command that failed or timed out. Only the subcommand is named: the rest carries URLs. */
+function loggedGit(run: GitRunner, log: ScopedLog): GitRunner {
+  return async (args, opts) => {
+    try {
+      const result = await run(args, opts)
+      if (result.code !== 0 || result.timedOut) {
+        log.warn('git command failed', { command: args[0], code: result.code, timedOut: result.timedOut === true, stderr: result.stderr })
+      }
+      return result
+    } catch (e) {
+      log.error('git command could not run', { command: args[0], error: e instanceof Error ? e.message : String(e) })
+      throw e
+    }
+  }
 }
 
 interface Connection {
@@ -85,6 +104,10 @@ export class SyncService {
   private soon: ReturnType<typeof setTimeout> | undefined
   private closed = false
 
+  private get log(): ScopedLog {
+    return this.deps.log ?? noLog
+  }
+
   constructor(private readonly deps: SyncServiceDeps) {
     this.store = new DocStore(deps.dbFile, { compact: false })
     this.deviceId = readSettings(this.store).deviceId ?? writeSettings(this.store, { deviceId: randomUUID() }).deviceId!
@@ -92,7 +115,7 @@ export class SyncService {
     this.oneDrive = new OneDriveClient(http)
     this.deviceName = deps.deviceName ?? hostname()
     this.baseLocal = docStoreLocal(this.store, deps.blobs, deps.emitNotice)
-    this.git = nodeGitRunner(deps.gitPath)
+    this.git = loggedGit(nodeGitRunner(deps.gitPath), this.log)
     this.tokenSecret = secretFile(join(deps.gitDir, 'token.bin'), deps.secrets)
     this.deviceSecret = secretFile(join(deps.gitDir, 'github-device-token.bin'), deps.secrets)
   }
@@ -262,7 +285,18 @@ export class SyncService {
     const connection = this.connection(settings)
     if (!connection) return this.setReport({ ...this.idle('error'), message: 'Choose a repository in Sync settings' })
     await this.setReport({ ...this.report, status: 'syncing' })
-    const report = await connection.engine.syncOnce()
+    const started = Date.now()
+    this.log.info('sync start', { provider: settings.syncProvider })
+    let report: SyncReport
+    try {
+      report = await connection.engine.syncOnce()
+    } catch (e) {
+      this.log.error('sync threw', { provider: settings.syncProvider, ms: Date.now() - started, error: e instanceof Error ? e.message : String(e) })
+      throw e
+    }
+    const fields = { provider: settings.syncProvider, status: report.status, pushed: report.pushed, pulled: report.pulled, conflicts: report.conflicts, ms: Date.now() - started }
+    if (report.status === 'error') this.log.error('sync end', { ...fields, message: report.message })
+    else this.log.info('sync end', fields)
     if (report.status === 'idle-synced') this.lastSyncedAt = report.at
     return this.setReport(report)
   }

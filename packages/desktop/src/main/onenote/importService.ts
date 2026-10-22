@@ -2,6 +2,7 @@ import { NotebookDoc, PageDoc, SECTION_COLORS, newId, writeContent, type TreeIte
 import { GraphClient, runImport, selectionToPaths, type GraphSource, type ImportProgress, type ImportSink, type ImportState, type OneNoteNotebook, type SectionPath } from '@slate/importer'
 import type { TreeID } from 'loro-crdt'
 import type { BlobStore } from '../blobs'
+import { noLog, type ScopedLog } from '../log/logger'
 import { DocStore } from '../store'
 import { SIGN_IN_SCOPES, type AuthService } from './auth'
 import { BackupSource, scanBackup } from './backup'
@@ -117,7 +118,7 @@ export class ImportService {
   private lastPaths: SectionPath[] = []
   private controller: AbortController | null = null
 
-  constructor(private readonly deps: { dbFile: string; blobs: BlobStore; auth: AuthService; graphUrl: string; emit: (p: ImportProgress) => void; converter?: string }) {
+  constructor(private readonly deps: { dbFile: string; blobs: BlobStore; auth: AuthService; graphUrl: string; emit: (p: ImportProgress) => void; converter?: string; log?: ScopedLog }) {
     // Never compacts: compaction deletes update rows the watcher has not delivered yet.
     this.store = new DocStore(deps.dbFile, { compact: false })
     const pageOrder = this.pageOrder
@@ -197,8 +198,12 @@ export class ImportService {
     if (this.controller) throw new Error('An import is already running')
     const controller = new AbortController()
     this.controller = controller
+    const log = this.deps.log ?? noLog
+    const started = Date.now()
+    const source = this.backup ? 'backup' : 'graph'
+    log.info('import start', { source, onlyFailed, sections: this.lastPaths.length })
     try {
-      return await runImport({
+      const result = await runImport({
         graph: this.active,
         sink: this.sink,
         state: this.sink,
@@ -207,6 +212,11 @@ export class ImportService {
         signal: controller.signal,
         onlyFailed,
       })
+      log.info('import end', { source, phase: result.phase, imported: result.imported, skipped: result.skipped, failed: result.failed.length, lossy: result.lossy.length, ms: Date.now() - started })
+      return result
+    } catch (e) {
+      log.error('import failed', { source, ms: Date.now() - started, error: e instanceof Error ? e.message : String(e) })
+      throw e
     } finally {
       this.controller = null
     }
