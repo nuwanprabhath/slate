@@ -43,6 +43,42 @@ function listLines(list: PMJSON, indent: string, marker: (i: number) => string):
   return out
 }
 
+/** Spreadsheet-style letters, as CSS lower-alpha counts: 1 → a, 26 → z, 27 → aa. */
+function alpha(n: number): string {
+  let s = ''
+  for (let k = n; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(97 + ((k - 1) % 26)) + s
+  return s || String(n)
+}
+
+const ROMAN: Array<[number, string]> = [
+  [1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'],
+  [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i'],
+]
+
+function roman(n: number): string {
+  if (n <= 0 || n >= 4000) return String(n)
+  let s = ''
+  let k = n
+  for (const [v, r] of ROMAN) for (; k >= v; k -= v) s += r
+  return s
+}
+
+/** The number a CSS list-style-type would draw, so the copied text matches the screen. */
+function listLabel(style: string): (n: number) => string {
+  switch (style) {
+    case 'lower-alpha':
+      return alpha
+    case 'upper-alpha':
+      return (n) => alpha(n).toUpperCase()
+    case 'lower-roman':
+      return roman
+    case 'upper-roman':
+      return (n) => roman(n).toUpperCase()
+    default:
+      return String
+  }
+}
+
 function blockLines(node: PMJSON, indent: string): string[] {
   switch (node.type) {
     case 'paragraph':
@@ -54,7 +90,8 @@ function blockLines(node: PMJSON, indent: string): string[] {
       return listLines(node, indent, () => '- ')
     case 'orderedList': {
       const start = typeof node.attrs?.start === 'number' ? node.attrs.start : 1
-      return listLines(node, indent, (i) => `${start + i}. `)
+      const label = listLabel(typeof node.attrs?.listStyle === 'string' ? node.attrs.listStyle : 'decimal')
+      return listLines(node, indent, (i) => `${label(start + i)}. `)
     }
     case 'blockquote':
       return blocksToLines(node.content ?? [], indent + '> ')

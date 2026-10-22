@@ -1,4 +1,4 @@
-import { getSchema, type Extensions } from '@tiptap/core'
+import { Extension, getSchema, type Extensions } from '@tiptap/core'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
@@ -56,6 +56,28 @@ const AdaptiveHighlight = Highlight.extend({
   },
 })
 
+/** A list's marker style (disc, lower-alpha, upper-roman…), set from the toolbar's list menus. */
+const ListStyle = Extension.create({
+  name: 'listStyle',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['bulletList', 'orderedList'],
+        attributes: {
+          listStyle: {
+            default: null,
+            parseHTML: (el) => el.getAttribute('data-list-style') || null,
+            renderHTML: (attrs) => {
+              const style = attrs.listStyle as string | null
+              return style ? { 'data-list-style': style, style: `list-style-type: ${style}` } : {}
+            },
+          },
+        },
+      },
+    ]
+  },
+})
+
 /**
  * Every box editor uses exactly this extension list, so the static renderer's schema matches.
  * Undo/redo is handled per page by Loro (PageSession), not by TipTap history.
@@ -70,6 +92,7 @@ export function buildExtensions(): Extensions {
       heading: { levels: [1, 2, 3] },
       link: { autolink: false, linkOnPaste: false, openOnClick: false },
     }),
+    ListStyle,
     TextStyle,
     AdaptiveColor,
     FontFamily,
