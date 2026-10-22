@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, saveLayout } from './layout'
+import { clampPane, clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, paneWidth, PANE_MIN, saveLayout, scaleColumns } from './layout'
 
 describe('fitWidth', () => {
   it('is the widest name plus its chrome', () => {
@@ -44,11 +44,46 @@ describe('layout storage', () => {
 
   it('migrates unversioned widths to auto but keeps the other settings', () => {
     store.set('slate:layout', JSON.stringify({ panelOpen: false, activeTool: 'x', sectionsWidth: 260, pagesWidth: 300 }))
-    expect(loadLayout()).toEqual({ panelOpen: false, activeTool: 'x', sectionsWidth: null, pagesWidth: null })
+    expect(loadLayout()).toEqual({ panelOpen: false, activeTool: 'x', sectionsWidth: null, pagesWidth: null, searchWidth: null })
   })
 
   it('round-trips a manual width and an auto column', () => {
-    saveLayout({ panelOpen: true, activeTool: 'library', sectionsWidth: 222, pagesWidth: null })
-    expect(loadLayout()).toMatchObject({ sectionsWidth: 222, pagesWidth: null })
+    saveLayout({ panelOpen: true, activeTool: 'library', sectionsWidth: 222, pagesWidth: null, searchWidth: 400 })
+    expect(loadLayout()).toMatchObject({ sectionsWidth: 222, pagesWidth: null, searchWidth: 400 })
+  })
+
+  it('keeps v2 column widths and adds an automatic search width', () => {
+    store.set('slate:layout', JSON.stringify({ version: 2, sectionsWidth: 260, pagesWidth: 300 }))
+    expect(loadLayout()).toMatchObject({ sectionsWidth: 260, pagesWidth: 300, searchWidth: null })
+  })
+
+  it('clamps a stored search width to the pane minimum', () => {
+    store.set('slate:layout', JSON.stringify({ version: 3, searchWidth: 20 }))
+    expect(loadLayout().searchWidth).toBe(PANE_MIN)
+  })
+})
+
+describe('side pane width', () => {
+  it('matches the Library width unless a manual width is set', () => {
+    expect(paneWidth(null, 420, 1400)).toBe(420)
+    expect(paneWidth(350, 420, 1400)).toBe(350)
+  })
+
+  it('stays between 200 px and half the window', () => {
+    expect(clampPane(50, 1400)).toBe(PANE_MIN)
+    expect(clampPane(900, 1400)).toBe(700)
+    expect(paneWidth(null, 900, 1000)).toBe(500)
+    expect(clampPane(300, 300)).toBe(PANE_MIN)
+  })
+
+  it('scales the Library columns proportionally to fill a width', () => {
+    expect(scaleColumns(100, 300, 800)).toEqual([200, 600])
+    const [s, p] = scaleColumns(130, 170, 501)
+    expect(s + p).toBe(501)
+    expect(s).toBeCloseTo((501 * 130) / 300, 0)
+  })
+
+  it('splits evenly when nothing was measured', () => {
+    expect(scaleColumns(0, 0, 400)).toEqual([200, 200])
   })
 })

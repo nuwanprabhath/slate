@@ -1,6 +1,7 @@
 /* The Dark theme's tokens (shared/theme/spec.ts DEFAULT_PALETTE); applyTheme overrides every one. */
 :root {
   color-scheme: dark;
+  --radius-control: 5px;
   --bg: #1e1e1e;
   --page: #1e1e1e;
   --panel: #252526;
