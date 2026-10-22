@@ -7,6 +7,7 @@ export const CH = {
   blobsCopyImage: 'blobs:copy-image',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
+  settingsChanged: 'settings:changed',
   clipboardText: 'clipboard:text',
   auditList: 'audit:list',
   menu: 'menu:command',

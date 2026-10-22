@@ -1,0 +1,26 @@
+import { describe, expect, it } from 'vitest'
+import { DEFAULT_SETTINGS, mergeSettings, sanitizePatch } from './schema'
+
+describe('settings schema', () => {
+  it('fills every key from its default', () => {
+    expect(mergeSettings({})).toEqual(DEFAULT_SETTINGS)
+    expect(DEFAULT_SETTINGS.autoBullets).toBe(true)
+    expect(DEFAULT_SETTINGS.markdownShortcuts).toBe(false)
+  })
+
+  it('coerces bad stored values back to their defaults and drops unknown keys', () => {
+    const merged = mergeSettings({ autoBullets: 'yes', markdownShortcuts: 1, syncProvider: 'dropbox', git: { remoteUrl: 3 }, deviceId: 7, junk: true })
+    expect(merged).toEqual(DEFAULT_SETTINGS)
+  })
+
+  it('keeps good stored values', () => {
+    const git = { remoteUrl: 'git@github.com:me/n.git', branch: 'main', auth: 'gh' as const }
+    expect(mergeSettings({ autoBullets: false, syncProvider: 'git', git, msClientId: 'abc' })).toMatchObject({ autoBullets: false, syncProvider: 'git', git, msClientId: 'abc' })
+  })
+
+  it('validates a patch, keeping only good keys', () => {
+    expect(sanitizePatch({ autoBullets: false, markdownShortcuts: 'on', nope: 1 })).toEqual({ autoBullets: false })
+    expect(sanitizePatch({ git: { remoteUrl: 'x', branch: 'main', auth: 'magic' } })).toEqual({})
+    expect(sanitizePatch({ syncProvider: null })).toEqual({ syncProvider: null })
+  })
+})

@@ -5,7 +5,7 @@ import { scanBackup } from './onenote/backup'
 import type { BlobStore } from './blobs'
 import type { AuthService } from './onenote/auth'
 import type { ImportService } from './onenote/importService'
-import { readSettings, writeSettings } from './settings'
+import { onSettingsWritten, readSettings, writeSettings } from './settings'
 import type { DocStore } from './store'
 import type { SyncService } from './sync/syncService'
 
@@ -28,6 +28,7 @@ export function registerIpc(store: DocStore, blobs: BlobStore, onAppend: () => v
   })
   ipcMain.handle(CH.settingsGet, () => readSettings(store))
   ipcMain.handle(CH.settingsSet, (_e, patch: Partial<Settings>) => writeSettings(store, patch))
+  onSettingsWritten((settings) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.settingsChanged, settings)))
   ipcMain.handle(CH.auditList, (_e, limit?: number) => store.listAudit(limit ?? 200))
   ipcMain.handle(CH.clipboardText, () => clipboard.readText())
 }
