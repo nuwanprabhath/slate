@@ -23,6 +23,7 @@ async function launch(userData: string): Promise<{ app: ElectronApplication; pag
 async function openSettings(page: Page) {
   await page.getByTestId('sync-menu').click()
   await page.getByTestId('sync-settings-open').click()
+  await expect(page.getByTestId('settings-heading')).toHaveText('Sync')
   await expect(page.getByTestId('sync-settings')).toBeVisible()
 }
 

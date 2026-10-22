@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { openSettings } from '../settings/open'
 import type { ActivityTool } from './tools'
 
 const isMac = navigator.platform.toLowerCase().includes('mac')
@@ -32,11 +33,22 @@ export function ActivityBar({ tools, activeId, panelOpen, onSelect, bottom }: Pr
           </button>
         )
       })}
-      {bottom && (
-        <div className="activity-bottom" data-testid="activity-bottom">
-          {bottom}
-        </div>
-      )}
+      <div className="activity-bottom" data-testid="activity-bottom">
+        {bottom}
+        <button
+          type="button"
+          className="activity-button"
+          data-testid="activity-settings"
+          aria-label="Settings"
+          title={`Settings (${isMac ? '⌘,' : 'Ctrl+,'})`}
+          onClick={() => openSettings()}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+            <circle cx="10" cy="10" r="2.5" />
+            <path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }

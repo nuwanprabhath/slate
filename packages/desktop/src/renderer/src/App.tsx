@@ -16,6 +16,8 @@ import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
 import { PageList } from './sidebar/PageList'
 import { SectionList } from './sidebar/SectionList'
+import { onOpenSettings, openSettings } from './settings/open'
+import { SettingsDialog } from './settings/SettingsDialog'
 import { providerName, syncStateText, useSyncState } from './sync/SyncStatus'
 import { Toolbar } from './Toolbar'
 import { findItem, firstOfKind } from './treeUtils'
@@ -61,6 +63,9 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
           case 'find':
             findBar.open()
             break
+          case 'show-settings':
+            openSettings(command.section)
+            break
         }
       }),
     [setSettings, onShowAiActivity, onShowImport, onShowConnectAgents, onShowBackupImport],
@@ -88,7 +93,23 @@ export function App() {
   useEffect(() => {
     void Library.load(window.slate).then(setLibrary)
     void window.slate.settings.get().then(setSettings)
+    return window.slate.settings.onChange(setSettings)
   }, [])
+  // null: closed; otherwise the section to open on.
+  const [settingsOpen, setSettingsOpen] = useState<{ section?: string } | null>(null)
+  useEffect(() => onOpenSettings((section) => setSettingsOpen({ section })), [])
+  // The menu accelerator handles a real keypress; this catches the key when the menu did not see it
+  // (a focused box editor on some platforms, synthetic input in tests). Opening twice is harmless.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== ',' || e.altKey || e.shiftKey || !(e.metaKey || e.ctrlKey)) return
+      e.preventDefault()
+      openSettings()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
+  const closeSettings = useCallback(() => setSettingsOpen(null), [])
   const [aiActivity, setAiActivity] = useState(false)
   const showAiActivity = useCallback(() => setAiActivity(true), [])
   const [importOpen, setImportOpen] = useState<false | 'graph' | 'backup'>(false)
@@ -110,6 +131,17 @@ export function App() {
       {aiActivity && <AiActivity onClose={() => setAiActivity(false)} />}
       {importOpen && <ImportDialog onClose={closeImport} initial={importOpen} />}
       {connectOpen && <ConnectAgents onClose={closeConnectAgents} />}
+      {settingsOpen && (
+        <SettingsDialog
+          settings={settings}
+          section={settingsOpen.section}
+          onClose={closeSettings}
+          onShowConnectAgents={() => {
+            closeSettings()
+            showConnectAgents()
+          }}
+        />
+      )}
       <Notices />
     </EditorServicesContext.Provider>
   )
