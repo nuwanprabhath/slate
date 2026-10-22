@@ -12,9 +12,6 @@ import './titleBar.css'
 export function TitleBar({ title }: { title: string }) {
   const { kind, platform } = window.slate.chrome
   useChromeColors(kind === 'overlay')
-  useEffect(() => {
-    document.title = title
-  }, [title])
   if (kind === 'system') return null
   return (
     <header
