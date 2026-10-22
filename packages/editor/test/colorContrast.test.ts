@@ -62,7 +62,7 @@ describe('readableColor', () => {
 
 describe('readableHighlight', () => {
   it('darkens a light highlight behind light text', () => {
-    const out = readableHighlight('#ffff00', '#e6e6e6')
+    const out = readableHighlight('#ffff00', '#e6e6e6')!
     expect(contrastRatio('#e6e6e6', out)).toBeGreaterThanOrEqual(4.5)
   })
   it('keeps a highlight that already works', () => {
