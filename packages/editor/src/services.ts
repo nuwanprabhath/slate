@@ -6,6 +6,9 @@ export interface EditorServices {
   copyImage(url: string): Promise<boolean>
   readClipboardText(): Promise<string>
   markdownShortcuts: boolean
+  autoBullets: boolean
+  /** Opens a link in the system browser; the renderer never navigates itself. */
+  openExternal(url: string): Promise<void>
 }
 
 export const EditorServicesContext = createContext<EditorServices | null>(null)

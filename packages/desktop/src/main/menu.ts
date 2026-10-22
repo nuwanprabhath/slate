@@ -55,6 +55,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
         { label: 'Paste as Plain Text', accelerator: 'CmdOrCtrl+Shift+V', registerAccelerator: false, click: () => send({ cmd: 'paste-plain' }) },
         { role: 'selectAll' },
         { type: 'separator' },
+        { label: 'Insert Link…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, click: () => send({ cmd: 'link' }) },
         { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => send({ cmd: 'find' }) },
       ],
     },
@@ -67,6 +68,14 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
           type: 'checkbox',
           checked: readSettings(store).markdownShortcuts,
           click: (item) => send({ cmd: 'settings-changed', settings: writeSettings(store, { markdownShortcuts: item.checked }) }),
+        },
+        // Temporary: Settings → Autocorrect replaces this item.
+        {
+          id: 'auto-bullets',
+          label: 'Bullets from "* "',
+          type: 'checkbox',
+          checked: readSettings(store).autoBullets,
+          click: (item) => send({ cmd: 'settings-changed', settings: writeSettings(store, { autoBullets: item.checked }) }),
         },
         { id: 'ai-activity', label: 'AI Activity…', click: () => send({ cmd: 'show-ai-activity' }) },
         { type: 'separator' },

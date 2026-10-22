@@ -1,3 +1,6 @@
+import type { Editor } from '@tiptap/core'
+import type { EditorView } from '@tiptap/pm/view'
+
 export type LinkInput = { href: string } | { error: string }
 
 const SAFE_SCHEMES = new Set(['http', 'https', 'mailto'])
@@ -24,6 +27,64 @@ export function normalizeLinkInput(raw: string): LinkInput {
 
 /** Whether pasted text is exactly one http(s) or mailto URL, the case that links a selection. */
 export function isSingleUrl(text: string): boolean {
-  const t = text.trim()
-  return /^(?:https?:\/\/|mailto:)\S+$/i.test(t)
+  return /^(?:https?:\/\/|mailto:)\S+$/i.test(text.trim())
+}
+
+/** What the open link popover is editing. One at a time: only the focused box has one. */
+export interface LinkPopoverState {
+  editor: Editor
+  /** Collapsed selection outside a link: the popover also asks for the text to insert. */
+  askText: boolean
+  href: string
+  /** The range to link, or where the new text goes. */
+  from: number
+  to: number
+  /** Whether a link is being edited, so Remove link shows. */
+  existing: boolean
+}
+
+let popover: LinkPopoverState | null = null
+const listeners = new Set<() => void>()
+
+export const linkPopover = {
+  get: (): LinkPopoverState | null => popover,
+  subscribe(listener: () => void): () => void {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  },
+  close(): void {
+    if (!popover) return
+    popover = null
+    listeners.forEach((l) => l())
+  },
+}
+
+/** Mod+K: edit the link under the selection, link the selected text, or insert linked text. */
+export function openLinkPopover(editor: Editor | null): boolean {
+  if (!editor || editor.isDestroyed) return false
+  if (editor.state.selection.empty && editor.isActive('link')) editor.chain().extendMarkRange('link').run()
+  const { from, to, empty } = editor.state.selection
+  const existing = editor.isActive('link')
+  popover = {
+    editor,
+    askText: empty,
+    href: existing ? ((editor.getAttributes('link').href as string | undefined) ?? '') : '',
+    from,
+    to,
+    existing,
+  }
+  listeners.forEach((l) => l())
+  return true
+}
+
+/** Links the selection when the text is one URL; otherwise pastes it as plain text. */
+export function pastePlainOrLink(view: EditorView, text: string): void {
+  const { from, to, empty } = view.state.selection
+  if (empty || !isSingleUrl(text)) {
+    view.pasteText(text)
+    return
+  }
+  view.dispatch(view.state.tr.addMark(from, to, view.state.schema.marks.link.create({ href: text.trim() })))
 }

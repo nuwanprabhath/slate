@@ -10,6 +10,8 @@ import { buildExtensions, schema } from './extensions'
 import { findHighlightPlugin } from './find'
 import { copySelectedImage, imageFilesFrom, insertImages } from './images'
 import { SlateKeymap } from './keymap'
+import { LinkPopover } from './LinkPopover'
+import { isSingleUrl, pastePlainOrLink } from './links'
 import { LoroBinding } from './loroBinding'
 import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
@@ -30,12 +32,13 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
   const editor = useEditor(
     {
       extensions: [
-        ...buildExtensions(),
+        ...buildExtensions({ autoBullets: services.autoBullets }),
         LoroBinding.configure({ doc: session.doc, containerId: box.contentId }),
         SlateKeymap.configure({ session, services }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
       ],
-      enableInputRules: services.markdownShortcuts,
+      // Markdown Shortcuts turns on every rule; otherwise only the "* " bullet rule may run.
+      enableInputRules: services.markdownShortcuts ? true : services.autoBullets ? ['autoBullets'] : false,
       enablePasteRules: false,
       autofocus: autoFocus ? 'end' : false,
       editorProps: {
@@ -50,13 +53,32 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         clipboardSerializer,
         transformPastedHTML: cleanPastedHtml,
         handlePaste: (view, event) => {
+          const url = event.clipboardData?.getData('text/plain') ?? ''
+          if (!view.state.selection.empty && isSingleUrl(url)) {
+            event.preventDefault()
+            pastePlainOrLink(view, url)
+            return true
+          }
           const files = imageFilesFrom(event.clipboardData)
           if (files.length === 0) return false
           event.preventDefault()
           insertImages(view, files, services.putBlob)
           return true
         },
+        handleClick: (_view, _pos, event) => {
+          const anchor = (event.target as HTMLElement).closest('a[href]')
+          if (!anchor) return false
+          // Editing never navigates; Mod+click opens through the main process.
+          event.preventDefault()
+          if (event.metaKey || event.ctrlKey) void services.openExternal(anchor.getAttribute('href') ?? '')
+          return event.metaKey || event.ctrlKey
+        },
         handleDOMEvents: {
+          mouseover: (_view, event) => {
+            const anchor = (event.target as HTMLElement).closest?.('a[href]')
+            if (anchor && !anchor.hasAttribute('title')) anchor.setAttribute('title', 'Mod+click to open')
+            return false
+          },
           copy: (view, event) => copySelectedImage(view, event, services.copyImage),
         },
       },
@@ -73,7 +95,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         session.deleteIfEmpty(box.id)
       },
     },
-    [box.contentId, services.markdownShortcuts, theme],
+    [box.contentId, services.markdownShortcuts, services.autoBullets, theme],
   )
   useEffect(
     () => () => {
@@ -81,5 +103,10 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
     },
     [editor],
   )
-  return <EditorContent editor={editor} />
+  return (
+    <>
+      <EditorContent editor={editor} />
+      <LinkPopover editor={editor} />
+    </>
+  )
 }

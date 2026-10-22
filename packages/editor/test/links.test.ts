@@ -45,7 +45,7 @@ describe('isSingleUrl', () => {
 function typeText(editor: Editor, text: string): void {
   for (const ch of text) {
     const { from, to } = editor.state.selection
-    const handled = editor.view.someProp('handleTextInput', (f) => f(editor.view, from, to, ch))
+    const handled = editor.view.someProp('handleTextInput', (f) => f(editor.view, from, to, ch, () => editor.state.tr.insertText(ch, from, to)))
     if (!handled) editor.view.dispatch(editor.state.tr.insertText(ch, from, to))
   }
 }

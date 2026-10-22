@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+import { openLinkPopover, pastePlainOrLink } from './links'
 import type { PageSession } from './PageSession'
 import type { EditorServices } from './services'
 
@@ -24,10 +25,11 @@ export const SlateKeymap = Extension.create<{ session: PageSession | null; servi
       'Mod-Shift-v': () => {
         const view = this.editor.view
         void this.options.services?.readClipboardText().then((text) => {
-          if (!view.isDestroyed) view.pasteText(text)
+          if (!view.isDestroyed) pastePlainOrLink(view, text)
         })
         return true
       },
+      'Mod-k': () => openLinkPopover(this.editor),
     }
   },
 })

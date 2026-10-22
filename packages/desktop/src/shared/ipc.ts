@@ -8,6 +8,7 @@ export const CH = {
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   clipboardText: 'clipboard:text',
+  openExternal: 'shell:open-external',
   auditList: 'audit:list',
   menu: 'menu:command',
   externalUpdates: 'docs:external',
