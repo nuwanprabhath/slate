@@ -13,6 +13,8 @@ const LOW_POWER_FPS = 15
 const LOW_POWER_DPR = 1
 /** A window left in the background this long stops animating until it is focused again. */
 const BLUR_PAUSE_MS = 30_000
+/** No new frame until this long after the last key. */
+const TYPING_HOLD_MS = 800
 /**
  * Glass blurs what shows through it by drawing the canvas at a fraction of the window's resolution
  * and letting it scale up, not with `backdrop-filter`: a live backdrop filter re-runs on every
@@ -63,18 +65,33 @@ export function ThemeEffects({ animated, lowPower }: { animated: boolean; lowPow
     let raf: number | null = null
     let last = 0
     let blurredAt: number | null = document.hasFocus() ? null : performance.now()
+    let typedAt = -Infinity
+    const onKey = (): void => { typedAt = performance.now() }
+    const interval = 1000 / (lowPower ? LOW_POWER_FPS : FPS)
+    // The next frame is asked for by a timer, not by requesting animation frames back to back: a
+    // pending rAF makes Chromium run a main-frame update every vsync, which cost Glass about 5 ms
+    // of p95 keystroke time (perf.spec.ts) even on the frames it skipped.
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const schedule = (delay: number): void => {
+      timer = setTimeout(() => {
+        timer = null
+        raf = requestAnimationFrame(tick)
+      }, Math.max(0, delay))
+    }
     const tick = (now: number): void => {
       raf = null
       if (document.hidden) return
       if (blurredAt !== null && now - blurredAt > BLUR_PAUSE_MS) return
-      if (now - last >= 1000 / (lowPower ? LOW_POWER_FPS : FPS)) {
-        last = now
-        draw(now / 1000, false)
-      }
-      raf = requestAnimationFrame(tick)
+      // Held while typing, so a frame never lands between a key and its paint; a drift this
+      // slow does not visibly stop.
+      const sinceKey = now - typedAt
+      if (sinceKey < TYPING_HOLD_MS) return schedule(TYPING_HOLD_MS - sinceKey)
+      last = now
+      draw(now / 1000, false)
+      schedule(interval - (performance.now() - last))
     }
     const resume = (): void => {
-      if (raf === null && animated && !document.hidden) raf = requestAnimationFrame(tick)
+      if (raf === null && timer === null && animated && !document.hidden) raf = requestAnimationFrame(tick)
     }
     const start = (): void => {
       size()
@@ -85,12 +102,15 @@ export function ThemeEffects({ animated, lowPower }: { animated: boolean; lowPow
     const onBlur = (): void => { blurredAt = performance.now() }
     start()
     window.addEventListener('resize', start)
+    window.addEventListener('keydown', onKey, { capture: true, passive: true })
     window.addEventListener('focus', onFocus)
     window.addEventListener('blur', onBlur)
     document.addEventListener('visibilitychange', resume)
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
+      if (timer !== null) clearTimeout(timer)
       window.removeEventListener('resize', start)
+      window.removeEventListener('keydown', onKey, { capture: true })
       window.removeEventListener('focus', onFocus)
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', resume)

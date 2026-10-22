@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
 // The budgets are for a real machine. CI sets SLATE_PERF_FACTOR for its shared, GPU-less VM (page
@@ -6,8 +7,7 @@ const factor = Number(process.env.SLATE_PERF_FACTOR) || 1
 
 type TestWindow = Window & { slateTest: { seedBoxes(n: number): void; lastPageOpenMs(): number | null }; __keyTimes: number[] }
 
-test('a 200-box page opens in under 100 ms and typing stays under 16 ms per key', async ({ page }) => {
-  await expect(page.getByTestId('canvas')).toBeVisible()
+async function measure(page: Page, label: string) {
   await page.evaluate(() => (window as unknown as TestWindow).slateTest.seedBoxes(200))
   await expect(page.getByTestId('box')).toHaveCount(200)
 
@@ -16,7 +16,7 @@ test('a 200-box page opens in under 100 ms and typing stays under 16 ms per key'
   await page.getByTestId('page-item').first().click()
   await expect(page.getByTestId('box')).toHaveCount(200)
   const openMs = await page.evaluate(() => (window as unknown as TestWindow).slateTest.lastPageOpenMs())
-  console.log(`page open: ${openMs?.toFixed(1)} ms`)
+  console.log(`${label} page open: ${openMs?.toFixed(1)} ms`)
   expect(openMs).not.toBeNull()
   expect(openMs!).toBeLessThan(100 * factor)
 
@@ -45,6 +45,19 @@ test('a 200-box page opens in under 100 ms and typing stays under 16 ms per key'
   const times = await page.evaluate(() => (window as unknown as TestWindow).__keyTimes)
   const sorted = [...times].sort((a, b) => a - b)
   const p95 = sorted[Math.floor(sorted.length * 0.95)]
-  console.log(`keystroke p50 ${sorted[Math.floor(sorted.length * 0.5)].toFixed(1)} ms, p95 ${p95.toFixed(1)} ms, max ${sorted[sorted.length - 1].toFixed(1)} ms over ${times.length} keys`)
+  console.log(`${label} keystroke p50 ${sorted[Math.floor(sorted.length * 0.5)].toFixed(1)} ms, p95 ${p95.toFixed(1)} ms, max ${sorted[sorted.length - 1].toFixed(1)} ms over ${times.length} keys`)
   expect(p95).toBeLessThan(16 * factor)
+}
+
+test('a 200-box page opens in under 100 ms and typing stays under 16 ms per key', async ({ page }) => {
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await measure(page, 'Dark')
+})
+
+test('the same budgets hold with the Glass theme and its animated backdrop', async ({ page }) => {
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await page.evaluate(() => window.slate.settings.set({ themeId: 'builtin:glass', motion: 'full' }))
+  await expect(page.locator('html')).toHaveAttribute('data-material', 'glass')
+  await expect(page.getByTestId('theme-effects')).toHaveAttribute('data-frames', /\d+/)
+  await measure(page, 'Glass')
 })
