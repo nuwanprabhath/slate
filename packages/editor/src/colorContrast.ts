@@ -133,7 +133,7 @@ function adapt(c: Rgba, against: Rgba, minRatio: number): Rgba {
 }
 
 const colorCache = new Map<string, string>()
-const highlightCache = new Map<string, string>()
+const highlightCache = new Map<string, string | null>()
 
 export function readableColor(css: string, background: string, minRatio = 3): string {
   const key = `${css}|${background}|${minRatio}`
@@ -148,15 +148,28 @@ export function readableColor(css: string, background: string, minRatio = 3): st
   return out
 }
 
-/** Keeps the text drawn on a highlight at 4.5:1 or better by moving the highlight, not the text. */
-export function readableHighlight(bg: string, textColor: string, minRatio = 4.5): string {
+// A highlight at least this light and this grey was invisible on OneNote's white page, so it is
+// drawn as no background. rgb(248,248,248) is inside; peach rgb(253,234,218) has luminance 0.83
+// and HSL saturation 0.9, so it stays.
+const NEAR_WHITE_LUMINANCE = 0.9
+const NEAR_WHITE_SATURATION = 0.15
+
+function isNearWhite(c: Rgba): boolean {
+  return relativeLuminance(c) >= NEAR_WHITE_LUMINANCE && toHsl(c)[1] <= NEAR_WHITE_SATURATION
+}
+
+/**
+ * Keeps the text drawn on a highlight at 4.5:1 or better by moving the highlight, not the text.
+ * Null means draw no background (a near-white highlight).
+ */
+export function readableHighlight(bg: string, textColor: string, minRatio = 4.5): string | null {
   const key = `${bg}|${textColor}|${minRatio}`
   let out = highlightCache.get(key)
   if (out === undefined) {
     const c = parseColor(bg)
     const text = parseColor(textColor)
     const adapted = c && text ? adapt(c, text, minRatio) : c
-    out = !c || adapted === c ? bg : format(adapted!)
+    out = c && isNearWhite(c) ? null : !c || adapted === c ? bg : format(adapted!)
     highlightCache.set(key, out)
   }
   return out

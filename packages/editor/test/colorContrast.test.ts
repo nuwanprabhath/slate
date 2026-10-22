@@ -68,4 +68,15 @@ describe('readableHighlight', () => {
   it('keeps a highlight that already works', () => {
     expect(readableHighlight('#ffff00', '#1f1f1f')).toBe('#ffff00')
   })
+  it('drops near-white highlights, which were invisible on a white OneNote page', () => {
+    for (const bg of ['#ffffff', 'rgb(255,255,255)', '#f8f8f8', 'rgb(248,248,248)']) {
+      expect(readableHighlight(bg, '#e6e6e6')).toBeNull()
+      expect(readableHighlight(bg, '#1f1f1f')).toBeNull()
+    }
+  })
+  it('keeps peach, yellow and light grey that is not near white', () => {
+    expect(readableHighlight('rgb(253,234,218)', '#1f1f1f')).not.toBeNull()
+    expect(readableHighlight('#ffff00', '#1f1f1f')).not.toBeNull()
+    expect(readableHighlight('#e0e0e0', '#1f1f1f')).not.toBeNull()
+  })
 })

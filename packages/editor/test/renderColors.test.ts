@@ -34,9 +34,24 @@ describe('rendering imported colours in the dark theme', () => {
     expect(span.style.color.replace(/\s/g, '')).toBe('rgb(255,0,0)')
   })
   it('darkens a light highlight so light text stays readable', () => {
-    const mark = render([{ type: 'highlight', attrs: { color: '#ffffff' } }]).querySelector('mark')!
-    expect(mark.getAttribute('data-color')).toBe('#ffffff')
+    const mark = render([{ type: 'highlight', attrs: { color: '#ffff99' } }]).querySelector('mark')!
+    expect(mark.getAttribute('data-color')).toBe('#ffff99')
     expect(contrastRatio('#e6e6e6', mark.style.backgroundColor)).toBeGreaterThanOrEqual(4.5)
+  })
+  it.each([true, false])('draws white and #f8f8f8 highlights with no background (dark=%s)', (dark) => {
+    setTheme(dark)
+    for (const color of ['#ffffff', '#f8f8f8']) {
+      const mark = render([{ type: 'highlight', attrs: { color } }]).querySelector('mark')!
+      expect(mark.getAttribute('data-color')).toBe(color)
+      expect(mark.style.backgroundColor).toBe('transparent')
+    }
+  })
+  it.each([true, false])('still draws yellow and peach highlights (dark=%s)', (dark) => {
+    setTheme(dark)
+    for (const color of ['#ffff00', 'rgb(253,234,218)']) {
+      const mark = render([{ type: 'highlight', attrs: { color } }]).querySelector('mark')!
+      expect(mark.style.backgroundColor).not.toBe('')
+    }
   })
   it('parses the original colour back from data-color', () => {
     const span = render([{ type: 'textStyle', attrs: { color: 'rgb(0,0,0)' } }]).querySelector('span')!
