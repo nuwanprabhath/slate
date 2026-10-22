@@ -40,6 +40,9 @@ jobs:
       - run: npm run test:main
       - name: E2E (virtual display)
         run: xvfb-run --auto-servernum npm run e2e
+        env:
+          # A shared runner with no GPU: perf.spec.ts scales its budgets by this (see the spec).
+          SLATE_PERF_FACTOR: 1.5
       # Playwright hides the app's own output, so a launch that hangs shows only timeouts. Start it
       # once by hand and print what Electron and the main process said.
       - name: App startup log
