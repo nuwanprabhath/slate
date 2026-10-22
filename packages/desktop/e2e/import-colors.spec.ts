@@ -46,6 +46,10 @@ test('imported black text is readable on the dark theme and red stays red', asyn
     })
     expect(result).toBeGreaterThanOrEqual(3)
     await expect(red).toHaveCSS('color', 'rgb(255, 0, 0)')
+    // A white highlight on a link was invisible on OneNote's white page; it must not draw a block.
+    const white = page.locator('mark[data-color]', { hasText: 'white link' }).first()
+    await expect(white).toBeVisible()
+    await expect(white).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   } finally {
     await app.close()
   }
