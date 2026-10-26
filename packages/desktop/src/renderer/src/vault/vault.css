@@ -1,0 +1,59 @@
+/* "Encrypt my notes" wizard, join dialog and sync-vault banners: theme tokens only. */
+.vault-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: rgb(0 0 0 / 0.35); }
+.vault-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 22px 24px 18px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.vault-dialog h2 { margin: 0 0 4px; font-size: 17px; }
+.vault-dialog p, .vault-dialog ul { margin: 0; line-height: 1.45; }
+.vault-dialog input[type='password'], .vault-dialog input[type='text'], .vault-dialog textarea { padding: 6px 10px; font: inherit; }
+.vault-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.vault-primary { padding: 6px 14px; background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-control); color: var(--accent-contrast); cursor: pointer; }
+.vault-primary:disabled { opacity: 0.6; cursor: default; }
+.vault-error { color: var(--danger); min-height: 1.2em; }
+.vault-hint { color: var(--text-muted, var(--text)); font-size: 12px; }
+.vault-key { display: grid; grid-template-columns: repeat(7, auto); gap: 6px 10px; justify-content: center; padding: 12px; font-family: var(--font-mono, monospace); font-size: 15px; letter-spacing: 0.06em; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; user-select: all; }
+.vault-steps { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.vault-steps li[data-state='done']::before { content: '✓ '; }
+.vault-steps li[data-state='active'] { font-weight: 600; }
+.vault-steps li[data-state='todo'] { opacity: 0.55; }
+.vault-banner { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--popover); border-bottom: 1px solid var(--border); color: var(--text); font-size: 13px; }
+.vault-banner-text { flex: 1; }
+.security-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+@media print {
+  body * { visibility: hidden; }
+  .vault-print, .vault-print * { visibility: visible; }
+  .vault-print { position: absolute; inset: 0; padding: 32px; }
+}
+
+/* Settings → Security: the cryptographic module's label/value list. */
+.security-module { display: grid; gap: 2px; margin: 0 0 8px; font-size: 13px; }
+.security-module > div { display: flex; gap: 8px; }
+.security-module dt { color: var(--muted); min-width: 140px; }
+.security-module dd { margin: 0; overflow-wrap: anywhere; }
+
+/* The wizard's profile choice (C5): shown only where the FIPS module runs. */
+.vault-profile {
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+  border-radius: 6px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+}
+
+.vault-profile label {
+  display: block;
+  margin: 4px 0;
+}

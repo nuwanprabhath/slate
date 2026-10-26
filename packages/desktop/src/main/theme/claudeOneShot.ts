@@ -1,3 +1,4 @@
+import { env } from '../testHooks'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,7 +17,7 @@ import type { ThemeRunner, ThemeRunRequest } from './themeGenerator'
  * every argument as its own positional parameter: nothing the user typed is ever parsed by a shell.
  */
 
-const loginShell = (): string => process.env.SHELL || '/bin/zsh'
+const loginShell = (): string => env('SHELL') || '/bin/zsh'
 
 function shellArgs(argv: string[]): { cmd: string; args: string[] } {
   if (process.platform === 'win32') return { cmd: argv[0]!, args: argv.slice(1) }

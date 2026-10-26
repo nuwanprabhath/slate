@@ -4,6 +4,19 @@ import { NotebookDoc, SECTION_COLORS } from '../src/tree'
 
 const titles = (nb: NotebookDoc) => nb.items().map((i) => i.title)
 
+describe('NotebookDoc openOn', () => {
+  it('records the last time each device opened the notebook, merging across devices', () => {
+    const a = NotebookDoc.create('Work')
+    a.markOpen('dev-a', 100)
+    const b = NotebookDoc.fromUpdates([a.doc.export({ mode: 'snapshot' })])
+    b.markOpen('dev-b', 200)
+    a.markOpen('dev-a', 150)
+    a.doc.import(b.doc.export({ mode: 'update' }))
+    expect(a.openOn()).toEqual({ 'dev-a': 150, 'dev-b': 200 })
+    expect(NotebookDoc.create('New').openOn()).toEqual({})
+  })
+})
+
 describe('NotebookDoc', () => {
   it('stores the notebook name', () => {
     const nb = NotebookDoc.create('Work')
@@ -21,10 +34,10 @@ describe('NotebookDoc', () => {
     nb.addPage(s1, 'Hot fixes')
     const items = nb.items()
     expect(items.map((i) => [i.kind, i.title])).toEqual([['sectionGroup', 'Projects'], ['section', 'TERN']])
-    expect(items[0].children.map((c) => c.id)).toEqual([s2])
-    expect(items[1].color).toBe(SECTION_COLORS[0])
-    expect(items[1].children.map((c) => [c.title, c.level])).toEqual([['Releases', 0], ['Hot fixes', 0]])
-    expect(items[1].children[0].pageId).toBe(pageId)
+    expect(items[0]!.children.map((c) => c.id)).toEqual([s2])
+    expect(items[1]!.color).toBe(SECTION_COLORS[0])
+    expect(items[1]!.children.map((c) => [c.title, c.level])).toEqual([['Releases', 0], ['Hot fixes', 0]])
+    expect(items[1]!.children[0]!.pageId).toBe(pageId)
   })
 
   it('rejects invalid placements', () => {
@@ -45,7 +58,7 @@ describe('NotebookDoc', () => {
     const c = nb.addSection('C')
     nb.moveBefore(c, a)
     expect(titles(nb)).toEqual(['C', 'A', 'B'])
-    nb.moveAfter(c, nb.items()[2].id)
+    nb.moveAfter(c, nb.items()[2]!.id)
     expect(titles(nb)).toEqual(['A', 'B', 'C'])
   })
 

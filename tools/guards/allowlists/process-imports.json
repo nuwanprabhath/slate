@@ -1,0 +1,9 @@
+{
+  "$comment": "Source files that import node:child_process directly instead of src/main/proc.ts (lint rule slate/child-process-through-proc). Each predates proc.ts; none passes a shell option (slate/no-shell-option). Only shrinks: move a file onto runFile/spawnProgram and delete its line.",
+  "packages/desktop/src/main/update/electronBackend.ts": "execFile (promisified) to set the quarantine attribute on a downloaded installer, with a fixed argument array.",
+  "packages/desktop/src/main/theme/claudeOneShot.ts": "spawn of the claude CLI with an argument array, and of the user's login shell with the fixed command `command -v claude` to find it on the login PATH; no user text reaches that shell.",
+  "packages/desktop/src/main/sync/git/auth.ts": "execFile of `gh auth token` with shell: false.",
+  "packages/desktop/src/main/vault/screenLock.ts": "Long-lived dbus/gdbus monitors (spawn) and one-shot queries (execFile, spawnSync) for the screen-lock signal on Linux.",
+  "packages/desktop/src/main/onenote/backup.ts": "execFile of the one2html converter with a path argument array.",
+  "packages/sync/src/gitRunner.ts": "The sync engine's git runner: spawn with an argument array and a prompt-free environment, in a package that cannot import desktop's proc.ts."
+}

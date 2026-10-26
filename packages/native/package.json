@@ -1,0 +1,21 @@
+{
+  "name": "@slate/native",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "gypfile": false,
+  "scripts": {
+    "build:openssl": "node scripts/build-openssl.mjs",
+    "build:sqlcipher": "node scripts/build-sqlcipher.mjs",
+    "build:addon": "node scripts/build-addon.mjs",
+    "build": "node scripts/build.mjs",
+    "check:exports": "node scripts/check-exports.mjs",
+    "test:kat": "node scripts/kat.mjs",
+    "test:kat:asan": "node scripts/kat.mjs --asan",
+    "test:crosscheck": "sh test/crossCheck.sh"
+  },
+  "devDependencies": {
+    "node-addon-api": "8.9.2"
+  }
+}

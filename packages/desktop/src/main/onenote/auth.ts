@@ -1,11 +1,13 @@
 import { PublicClientApplication, type AccountInfo, type ICachePlugin } from '@azure/msal-node'
-import { safeStorage as electronSafeStorage } from 'electron'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appSecretStorage, secretFile, type SecretFile, type SecretStorage } from '../secretStorage'
 
 export interface AuthStatus {
   configured: boolean
   signedIn: boolean
   account?: string
+  /** False when this computer has no keyring: the sign-in lasts until Slate quits. */
+  remembered?: boolean
 }
 
 export interface AuthService {
@@ -15,37 +17,29 @@ export interface AuthService {
   token(scopes: string[]): Promise<string>
 }
 
-/** The subset of Electron's safeStorage the token cache needs; tests pass a fake. */
-export interface SecretStorage {
-  isEncryptionAvailable(): boolean
-  encryptString(plain: string): Buffer
-  decryptString(encrypted: Buffer): string
-}
-
 // Phase 4 sync needs the app folder too; asking for it now spares a second consent prompt.
 export const SIGN_IN_SCOPES = ['Notes.Read', 'Files.ReadWrite.AppFolder', 'User.Read', 'offline_access']
 const AUTHORITY = 'https://login.microsoftonline.com/common'
 const SUCCESS_TEMPLATE = '<h1>Signed in to Slate. You can close this tab.</h1>'
 
-/** MSAL cache persistence in one file, encrypted with the OS keychain when it is available. */
-export function encryptedCachePlugin(file: string, storage: SecretStorage, warn: (msg: string) => void = console.warn): ICachePlugin {
-  const encrypt = storage.isEncryptionAvailable()
-  if (!encrypt) warn('safeStorage is unavailable; the Microsoft token cache is stored unencrypted')
+/**
+ * MSAL cache persistence, sealed by the OS keyring (src/main/secretStorage.ts). Without a keyring
+ * the tokens stay in memory and the user signs in again after a restart (B-5: never in plain text).
+ */
+export function encryptedCachePlugin(store: SecretFile): ICachePlugin {
   return {
     async beforeCacheAccess(ctx) {
-      if (!existsSync(file)) return
-      const raw = readFileSync(file)
+      const json = await store.get()
+      if (json === undefined) return
       try {
-        ctx.tokenCache.deserialize(encrypt ? storage.decryptString(raw) : raw.toString('utf8'))
+        ctx.tokenCache.deserialize(json)
       } catch {
         // An unreadable cache (keychain reset, corrupt file) just means signing in again.
       }
     },
     async afterCacheAccess(ctx) {
       if (!ctx.cacheHasChanged) return
-      const json = ctx.tokenCache.serialize()
-      writeFileSync(`${file}.tmp`, encrypt ? storage.encryptString(json) : Buffer.from(json, 'utf8'))
-      renameSync(`${file}.tmp`, file)
+      await store.set(ctx.tokenCache.serialize())
     },
   }
 }
@@ -73,15 +67,17 @@ export function createAuthService(opts: {
   cacheFile: string
   openBrowser: (url: string) => Promise<void>
   fake: boolean
-  storage?: SecretStorage
+  /** The OS keyring; Electron's by default. */
+  secrets?: SecretStorage
 }): AuthService {
   if (opts.fake) return fakeAuth(opts.cacheFile)
+  const store = secretFile(opts.cacheFile, opts.secrets ?? appSecretStorage())
   let pca: PublicClientApplication | null = null
   const client = (): PublicClientApplication => {
     if (!opts.clientId) throw new Error('No Microsoft client id is configured')
     pca ??= new PublicClientApplication({
       auth: { clientId: opts.clientId, authority: AUTHORITY },
-      cache: { cachePlugin: encryptedCachePlugin(opts.cacheFile, opts.storage ?? electronSafeStorage) },
+      cache: { cachePlugin: encryptedCachePlugin(store) },
     })
     return pca
   }
@@ -93,7 +89,7 @@ export function createAuthService(opts: {
     async status() {
       if (!opts.clientId) return { configured: false, signedIn: false }
       const a = await account()
-      return { configured: true, signedIn: !!a, ...(a ? { account: a.username } : {}) }
+      return { configured: true, signedIn: !!a, ...(a ? { account: a.username } : {}), remembered: await store.persistent() }
     },
     async signIn() {
       await interactive(SIGN_IN_SCOPES)

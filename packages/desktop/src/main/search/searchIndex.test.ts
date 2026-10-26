@@ -64,9 +64,9 @@ describe('SearchIndex', () => {
     expect(r.pages.map((p) => p.pageId).sort()).toEqual([p1.pageId, p2.pageId].sort())
     const first = r.pages.find((p) => p.pageId === p1.pageId)!
     expect(first).toMatchObject({ pageTitle: 'First', sectionName: 'One', notebookName: 'Work' })
-    expect(first.matches[0].snippet).toBe('alpha beta')
-    expect(first.matches[0].ranges).toEqual([[0, 5]])
-    expect(first.matches[0].occurrence).toBe(0)
+    expect(first.matches[0]!.snippet).toBe('alpha beta')
+    expect(first.matches[0]!.ranges).toEqual([[0, 5]])
+    expect(first.matches[0]!.occurrence).toBe(0)
   })
 
   it('finds substrings inside words and short queries', () => {
@@ -131,8 +131,8 @@ describe('SearchIndex', () => {
     writePage(store, p1.pageId, [{ lines: ['zeta', 'zeta zeta'], y: 200 }, { lines: ['zeta'], y: 0 }])
     index.docChanged(`page:${p1.pageId}`)
     const [page] = index.query(q('zeta')).pages
-    expect(page.matches.map((m) => m.occurrence)).toEqual([0, 0, 1, 2])
-    expect(new Set(page.matches.slice(1).map((m) => m.boxId)).size).toBe(1)
+    expect(page!.matches.map((m) => m.occurrence)).toEqual([0, 0, 1, 2])
+    expect(new Set(page!.matches.slice(1).map((m) => m.boxId)).size).toBe(1)
   })
 
   it('includes private boxes: the flag only hides them from AI', () => {
@@ -146,9 +146,9 @@ describe('SearchIndex', () => {
     const { index, store, p1 } = setup()
     writePage(store, p1.pageId, [{ lines: [`${'x'.repeat(100)} needle ${'y'.repeat(100)}`] }])
     index.docChanged(`page:${p1.pageId}`)
-    const m = index.query(q('needle')).pages[0].matches[0]
+    const m = index.query(q('needle')).pages[0]!.matches[0]!
     expect(m.snippet.length).toBeLessThan(100)
-    expect(m.snippet.slice(m.ranges[0][0], m.ranges[0][1])).toBe('needle')
+    expect(m.snippet.slice(m.ranges[0]![0], m.ranges[0]![1])).toBe('needle')
   })
 
   it('builds once on startup and rebuilds when the index version changes', () => {

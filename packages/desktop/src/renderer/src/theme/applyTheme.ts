@@ -2,7 +2,7 @@ import { setThemeColors } from '@slate/editor'
 import { composite, parseColor, toHex8 } from '../../../shared/theme/color'
 import { ALL_THEME_VARS, themeToCssVars } from '../../../shared/theme/cssVars'
 import { resolveFonts, type FontOverride } from '../../../shared/theme/fonts'
-import { DEFAULT_PALETTE, type PaletteToken, type ThemeSpec } from '../../../shared/theme/spec'
+import { DEFAULT_PALETTE, SURFACES, type PaletteToken, type Texture, type ThemeSpec } from '../../../shared/theme/spec'
 import { drawTexture, TEXTURE_TILE } from '../../../shared/theme/textures'
 
 type Listener = () => void
@@ -21,16 +21,16 @@ export const appliedTheme = {
 const tiles = new Map<string, string>()
 
 /** A texture as an image, drawn once per texture and ink and then reused. */
-function textureTile(spec: ThemeSpec, ink: string): string | null {
-  if (spec.texture === 'none') return null
-  const key = `${spec.texture}|${ink}`
+function textureTile(texture: Texture, ink: string): string | null {
+  if (texture === 'none') return null
+  const key = `${texture}|${ink}`
   let url = tiles.get(key)
   if (url === undefined) {
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = TEXTURE_TILE
     const ctx = canvas.getContext('2d')
     if (ctx === null) return null
-    drawTexture(spec.texture, ctx, TEXTURE_TILE, ink)
+    drawTexture(texture, ctx, TEXTURE_TILE, ink)
     url = canvas.toDataURL('image/png')
     tiles.set(key, url)
   }
@@ -52,11 +52,19 @@ export function applyTheme(spec: ThemeSpec, fonts?: FontOverride): void {
   const colour = (t: PaletteToken) => parseColor(spec.palette[t] ?? DEFAULT_PALETTE[t])!
   const page = composite(colour('page'), colour('bg'))
   const text = toHex8(colour('text'))
-  const tile = textureTile(spec, text)
+  const tile = textureTile(spec.texture, text)
   if (tile !== null) root.style.setProperty('--texture-image', `url("${tile}")`)
+  for (const s of SURFACES) {
+    const surface = spec.surfaces?.[s]
+    const own = textureTile(surface?.texture ?? 'none', text)
+    if (own !== null) root.style.setProperty(`--${s}-texture`, `url("${own}")`)
+    // `data-sidebar-surface` / `data-toolbar-surface` say whether themes.css paints the surface's own image.
+    root.dataset[`${s}Surface`] = surface === undefined ? 'plain' : 'painted'
+  }
   root.dataset.material = spec.material
   root.dataset.texture = spec.texture
   root.dataset.font = spec.font
+  root.dataset.uiFont = spec.uiFont ?? 'system'
   const { note, ui } = resolveFonts(spec, fonts)
   root.style.setProperty('--font-note', note)
   root.style.setProperty('--font-ui', ui)

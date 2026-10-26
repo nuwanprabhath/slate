@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { NotebookDoc, PageDoc, contentToJSON } from '@slate/core'
 import type { ImportProgress } from '@slate/importer'
 import { startFakeGraph, type FakeGraph, type FakeGraphData } from '../../../../importer/test/fakeGraph'
-import { BlobStore } from '../blobs'
+import { FileBlobStore } from '../blobs'
 import { DocStore } from '../store'
 import { createAuthService } from './auth'
 import { ImportService } from './importService'
@@ -62,7 +62,7 @@ describe('ImportService', () => {
     await auth.signIn()
     service = new ImportService({
       dbFile: join(dir, 'slate.db'),
-      blobs: new BlobStore(join(dir, 'blobs')),
+      blobs: new FileBlobStore(join(dir, 'blobs')),
       auth,
       graphUrl: fake.url,
       emit: (p) => {

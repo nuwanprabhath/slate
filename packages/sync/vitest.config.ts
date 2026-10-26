@@ -1,3 +1,3 @@
 import { defineProject } from 'vitest/config'
 
-export default defineProject({ test: { name: 'sync', environment: 'node', include: ['test/**/*.test.ts'] } })
+export default defineProject({ test: { name: 'sync', environment: 'node', expect: { requireAssertions: true }, include: ['test/**/*.test.ts'] } })

@@ -1,0 +1,7 @@
+{
+  "$comment": "Files in src/main that may pass SQL that is not a plain literal to prepare/exec/pragma (lint rule slate/sql-text-is-literal). Only shrinks (tools/guards/ratchet.test.ts).",
+  "packages/desktop/src/main/store.ts": "searchRows builds its WHERE from a closed union of column names ('section_id' | 'notebook_id'); every value, including the FTS phrase, is a ? parameter.",
+  "packages/desktop/src/main/blobs.ts": "exec(BLOB_DATA_TABLE): the table's DDL is a module constant shared with db/migrateToEncrypted.ts so both create the same table.",
+  "packages/desktop/src/main/db/migrateToEncrypted.ts": "exec(BLOB_DATA_TABLE): the table's DDL is a module constant shared with blobs.ts so both create the same table.",
+  "packages/desktop/src/main/vault/migration.ts": "DELETE FROM sync_meta WHERE ${ENGINE_KEYS}: the key list is a module constant (the sync engine's own meta keys), no value from outside."
+}

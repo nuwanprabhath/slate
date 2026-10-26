@@ -1,0 +1,4 @@
+{
+  "$comment": "Electron fuses packages/desktop/electron-builder.cjs leaves looser than strict (tools/guards/packaging.test.ts). Only shrinks. runAsNode stays loose by decision until slate-mcp ships as its own executable (POA&M, audit B-6).",
+  "runAsNode": "The slate-mcp launcher runs the app binary as Node (ELECTRON_RUN_AS_NODE) until slate-mcp ships as its own executable (B-6)."
+}

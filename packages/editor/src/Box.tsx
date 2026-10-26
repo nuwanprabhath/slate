@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { BoxState } from '@slate/core'
 import { BoxEditor } from './BoxEditor'
 import { findStore } from './find'
@@ -28,7 +28,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
   const findHit = useSyncExternalStore(findStore.subscribe, () => findStore.hasMatches(box.id))
 
   useEffect(() => {
-    const io = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { root: scrollRoot, rootMargin: '600px 0px' })
+    const io = new IntersectionObserver((entries) => setVisible(entries[0]?.isIntersecting ?? false), { root: scrollRoot, rootMargin: '600px 0px' })
     io.observe(ref.current!)
     return () => io.disconnect()
   }, [scrollRoot])
@@ -69,11 +69,26 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
     target.addEventListener('pointerup', up)
   }
 
+  // The handle has focus only after a click on it, never while the caret is in the text, so these keys cannot eat text.
+  const onHandleKey = (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace' && e.key !== 'Escape') return
+    e.preventDefault()
+    e.currentTarget.closest<HTMLElement>('.slate-canvas')?.focus()
+    if (e.key !== 'Escape') session.deleteBox(box.id)
+  }
+
   const { x, y, width } = gesture ?? box
   return (
     <div ref={ref} className={['slate-box', box.private && 'is-private', conflict && 'has-conflict'].filter(Boolean).join(' ')} data-testid="box" data-box-id={box.id} style={{ left: x, top: y, width }}>
       <div className="slate-box-bar">
-        <div className="slate-box-handle" data-testid="box-handle" onPointerDown={(e) => startGesture(e, 'move')} />
+        <div className="slate-box-handle" data-testid="box-handle" tabIndex={-1}
+          onPointerDown={(e) => {
+            // startGesture's preventDefault would stop the click focusing the handle.
+            e.currentTarget.focus()
+            startGesture(e, 'move')
+          }}
+          onKeyDown={onHandleKey}
+        />
         {conflict && (
           <button
             type="button"

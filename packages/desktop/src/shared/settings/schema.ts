@@ -46,6 +46,10 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   followSystem: { default: false, sanitize: bool },
   systemTitleBar: { default: false, sanitize: bool },
   fontOverrides: { default: {}, sanitize: sanitizeFontOverrides },
+  idleMinutes: { default: 30, sanitize: (v) => (Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= 7 * 24 * 60 ? (v as number) : undefined) },
+  lockOnSleep: { default: true, sanitize: bool },
+  lockOnScreenLock: { default: true, sanitize: bool },
+  quickUnlock: { default: false, sanitize: bool },
 }
 
 const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>
@@ -66,4 +70,32 @@ export function sanitizePatch(patch: Record<string, unknown>): Partial<Settings>
 /** Stored values over the defaults; a bad stored value falls back to its default. */
 export function mergeSettings(stored: Record<string, unknown>): Settings {
   return { ...DEFAULT_SETTINGS, ...sanitizePatch(stored) }
+}
+
+/**
+ * What the vault's profile forces on the Security settings (audit §4.1, AC-11 and AC-12). The numbers repeat
+ * `PROFILES` in `main/vault/profile.ts`, which is what main enforces; `profileLimits.test.ts` fails if they differ.
+ */
+export interface ProfileLimits {
+  /** Minutes; null = any value, "Never" included. */
+  maxIdleMinutes: number | null
+  lockOnSleepForced: boolean
+  lockOnScreenLockForced: boolean
+}
+
+export function profileLimits(profile: 'standard' | 'fips-140-3' | null): ProfileLimits {
+  return profile === 'fips-140-3' ? { maxIdleMinutes: 15, lockOnSleepForced: true, lockOnScreenLockForced: true } : { maxIdleMinutes: null, lockOnSleepForced: false, lockOnScreenLockForced: false }
+}
+
+/** The idle lock a stored setting means under `limits`: "Never" (0) and values above the cap become the cap. */
+export function shownIdleMinutes(stored: number, limits: ProfileLimits): number {
+  if (limits.maxIdleMinutes === null) return stored
+  return stored === 0 ? limits.maxIdleMinutes : Math.min(stored, limits.maxIdleMinutes)
+}
+
+/** The idle choices a profile allows: no "Never" and nothing above the cap when there is one. */
+export function allowedIdleOptions<T extends { value: string }>(options: readonly T[], limits: ProfileLimits): T[] {
+  if (limits.maxIdleMinutes === null) return [...options]
+  const max = limits.maxIdleMinutes
+  return options.filter((o) => Number(o.value) > 0 && Number(o.value) <= max)
 }

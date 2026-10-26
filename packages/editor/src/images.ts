@@ -1,4 +1,4 @@
-import { NodeSelection } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import type { EditorServices } from './services'
 
@@ -13,7 +13,12 @@ export function insertImages(view: EditorView, files: File[], putBlob: EditorSer
     for (const file of files) {
       const src = await putBlob(new Uint8Array(await file.arrayBuffer()), file.type)
       if (view.isDestroyed) return
-      view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.nodes.image.create({ src })).scrollIntoView())
+      const { image, paragraph } = view.state.schema.nodes
+      const tr = view.state.tr.replaceSelectionWith(image!.create({ src }))
+      // Leave a text caret after the image: a selection beside a block node is drawn as a blinking gap-cursor line.
+      const end = tr.selection.to
+      if (!tr.doc.resolve(end).nodeAfter?.isTextblock) tr.insert(end, paragraph!.create())
+      view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(end), 1)).scrollIntoView())
     }
   })()
 }

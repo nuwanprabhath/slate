@@ -1,0 +1,42 @@
+/* The lock screen (lock/LockScreen.tsx): theme tokens only, so it follows the theme from preunlock.json. */
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-app-region: drag;
+}
+.lock-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 300px;
+  padding: 28px 28px 20px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+  -webkit-app-region: no-drag;
+}
+.lock-icon { align-self: center; }
+.lock-title { margin: 0 0 6px; font-size: 17px; font-weight: 600; text-align: center; }
+.lock-field { padding: 6px 10px; }
+.lock-unlock { padding: 6px 12px; background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-control); color: var(--accent-contrast); cursor: pointer; }
+.lock-unlock:disabled { opacity: 0.6; cursor: default; }
+.lock-error { min-height: 1.2em; margin: 0; color: var(--danger); font-size: 12px; text-align: center; }
+.lock-hint { margin: 0; color: var(--text-muted, var(--text)); font-size: 12px; text-align: center; }
+.lock-link { align-self: center; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
+.lock-quick:empty { display: none; }
+
+.migration-banner { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--popover); border-bottom: 1px solid var(--border); color: var(--text); font-size: 13px; }
+.migration-banner-text { flex: 1; }
+.migration-banner-error { color: var(--danger); }
+
+/* The self-test error screen (lock/SelfTestFailed.tsx, audit S-6). */
+.selftest-card { width: 360px; }
+.selftest-text { margin: 0 0 6px; font-size: 13px; line-height: 1.45; }
+.selftest-text code { font-family: var(--font-mono, monospace); font-size: 12px; }

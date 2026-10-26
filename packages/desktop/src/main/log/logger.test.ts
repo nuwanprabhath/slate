@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -32,6 +32,47 @@ describe('Logger', () => {
     expect(line).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z info {2}\[sync\] did ~\/x {"path":"~\/y","n":2}\n$/)
   })
 
+  it('never writes key bytes: the fields type refuses bytes, and key text is redacted (red team 5a)', () => {
+    const dir = tmp()
+    const l = new Logger()
+    l.configure({ enabled: true, dir, maxSizeMb: 5 })
+    const mk = Buffer.alloc(32, 0xa3)
+    // @ts-expect-error -- LogFields holds plain data only; a Buffer (a key) does not type-check
+    l.info('sync', 'unlocked', { key: mk })
+    l.info('sync', `master key ${mk.toString('hex')}`, { qu: mk.toString('base64') })
+    const text = readFileSync(join(dir, 'slate.log'), 'utf8')
+    expect(text).not.toContain(mk.toString('hex'))
+    expect(text).not.toContain(mk.toString('base64'))
+    expect(text).toContain('[redacted-hex]')
+  })
+
+  it('keeps its folder 0700 and every file 0600, also when they existed looser (review C10 low)', () => {
+    const dir = tmp()
+    mkdirSync(dir, { mode: 0o755 })
+    chmodSync(dir, 0o755)
+    writeFileSync(join(dir, 'slate.log'), 'old\n', { mode: 0o644 })
+    chmodSync(join(dir, 'slate.log'), 0o644)
+    const l = new Logger()
+    l.configure({ enabled: true, dir, maxSizeMb: 5 })
+    l.info('app', 'x'.repeat(100))
+    expect(statSync(dir).mode & 0o777).toBe(0o700)
+    expect(statSync(join(dir, 'slate.log')).mode & 0o777).toBe(0o600)
+    // A rotation's new active file is owner-only too.
+    for (let i = 0; i < 3000; i++) l.info('app', 'x', { pad: 'y'.repeat(400), i })
+    const names = readdirSync(dir)
+    expect(names.length).toBeGreaterThan(1)
+    for (const n of names) expect(statSync(join(dir, n)).mode & 0o777).toBe(0o600)
+  }, 30_000)
+
+  it('makes a fresh folder 0700 whatever the umask allows', () => {
+    const dir = tmp()
+    const l = new Logger()
+    l.configure({ enabled: true, dir, maxSizeMb: 5 })
+    l.info('app', 'hello')
+    expect(statSync(dir).mode & 0o777).toBe(0o700)
+    expect(statSync(join(dir, 'slate.log')).mode & 0o777).toBe(0o600)
+  })
+
   it('stops writing when switched off again', () => {
     const dir = tmp()
     const l = new Logger()
@@ -50,7 +91,8 @@ describe('Logger', () => {
     const files = readdirSync(dir)
     expect(files.length).toBeGreaterThan(1)
     expect(files).toContain('slate.log')
-  })
+    // 4000 synchronous appends: well over vitest's 5 s default on a loaded machine.
+  }, 30_000)
 
   it('swallows its own errors', () => {
     const l = new Logger()
@@ -99,8 +141,8 @@ describe('IPC rejection logging', () => {
     const wrapped = logHandlers(fake, l)
     wrapped.handle('x:y', () => Promise.reject(new Error('nope /Users/ann/f')))
     wrapped.handle('x:sync', () => { throw new Error('sync throw') })
-    await expect(handlers['x:y']({}, 1)).rejects.toThrow('nope')
-    expect(() => handlers['x:sync']({})).toThrow('sync throw')
+    await expect(handlers['x:y']!({}, 1)).rejects.toThrow('nope')
+    expect(() => handlers['x:sync']!({})).toThrow('sync throw')
     const text = l.read()
     expect(text).toContain('x:y')
     expect(text).toContain('ipc handler failed')

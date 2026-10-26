@@ -1,0 +1,50 @@
+{
+  "packages/desktop/src/main/update/index.ts": {
+    "slate/log-through-logger": {
+      "count": 1
+    }
+  },
+  "packages/desktop/src/main/vault/keyring.ts": {
+    "@typescript-eslint/no-non-null-assertion": {
+      "count": 1
+    }
+  },
+  "packages/desktop/src/main/vault/migration.ts": {
+    "@typescript-eslint/no-non-null-assertion": {
+      "count": 1
+    },
+    "slate/vault-writes-through-atomic": {
+      "count": 1
+    }
+  },
+  "packages/desktop/src/main/vault/names.ts": {
+    "@typescript-eslint/no-non-null-assertion": {
+      "count": 4
+    }
+  },
+  "packages/desktop/src/main/vault/quickUnlock.ts": {
+    "@typescript-eslint/no-non-null-assertion": {
+      "count": 1
+    }
+  },
+  "packages/desktop/src/main/vault/recovery.ts": {
+    "@typescript-eslint/no-non-null-assertion": {
+      "count": 1
+    }
+  },
+  "packages/desktop/src/main/vault/screenLock.ts": {
+    "@typescript-eslint/no-non-null-assertion": {
+      "count": 1
+    }
+  },
+  "packages/desktop/src/main/vault/testVault.ts": {
+    "@typescript-eslint/no-non-null-assertion": {
+      "count": 1
+    }
+  },
+  "packages/desktop/src/main/vault/unlock.ts": {
+    "slate/vault-writes-through-atomic": {
+      "count": 1
+    }
+  }
+}

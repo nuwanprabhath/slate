@@ -19,12 +19,17 @@ export const MAX_FONT_NAME_CHARS = 80
 /** The UI font when nothing overrides it, whatever the theme. */
 export const UI_FONT_STACK = "system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif"
 
-/** Each theme font as a stack of system or locally installed fonts: no web fonts. */
+/**
+ * Each theme font as a stack. `source-serif` and `inter` name the families the renderer bundles
+ * (@fontsource-variable, imported in main.tsx, so they work offline) first; the rest are system fonts.
+ */
 export const NOTE_FONT_STACKS: Record<Font, string> = {
   system: UI_FONT_STACK,
   serif: "Charter, 'Iowan Old Style', 'Palatino Linotype', Georgia, Cambria, serif",
   humanist: "Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', sans-serif",
   mono: "ui-monospace, 'SF Mono', Menlo, Consolas, 'Ubuntu Mono', monospace",
+  'source-serif': "'Source Serif 4 Variable', 'Source Serif 4', Charter, Georgia, serif",
+  inter: "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif",
 }
 
 type Generic = 'serif' | 'sans-serif' | 'monospace' | 'system-ui'
@@ -35,12 +40,12 @@ type Generic = 'serif' | 'sans-serif' | 'monospace' | 'system-ui'
  */
 export const CURATED_FONTS: ReadonlyArray<{ name: string; families: string[]; generic: Generic; optional?: boolean }> = [
   { name: 'System UI', families: ['-apple-system', 'Segoe UI', 'Ubuntu'], generic: 'system-ui' },
-  { name: 'Inter', families: ['Inter', 'Segoe UI', 'Ubuntu'], generic: 'sans-serif' },
+  { name: 'Inter', families: ['Inter Variable', 'Inter', 'Segoe UI', 'Ubuntu'], generic: 'sans-serif' },
   { name: 'Georgia', families: ['Georgia'], generic: 'serif' },
   { name: 'Charter', families: ['Charter', 'Bitstream Charter'], generic: 'serif' },
   { name: 'Iowan Old Style', families: ['Iowan Old Style'], generic: 'serif' },
   { name: 'Palatino', families: ['Palatino', 'Palatino Linotype', 'Book Antiqua'], generic: 'serif' },
-  { name: 'Source Serif', families: ['Source Serif 4', 'Source Serif Pro'], generic: 'serif' },
+  { name: 'Source Serif', families: ['Source Serif 4 Variable', 'Source Serif 4', 'Source Serif Pro'], generic: 'serif' },
   { name: 'Merriweather', families: ['Merriweather'], generic: 'serif', optional: true },
   { name: 'Menlo', families: ['Menlo', 'Consolas', 'DejaVu Sans Mono'], generic: 'monospace' },
   { name: 'JetBrains Mono', families: ['JetBrains Mono'], generic: 'monospace' },
@@ -76,7 +81,7 @@ export function resolveFonts(spec: ThemeSpec, override: FontOverride | undefined
   const pick = (name: string | undefined): string | null => (name === undefined ? null : fontCssValue(name))
   return {
     note: pick(override?.note) ?? NOTE_FONT_STACKS[spec.font],
-    ui: pick(override?.ui) ?? UI_FONT_STACK,
+    ui: pick(override?.ui) ?? (spec.uiFont === undefined ? UI_FONT_STACK : NOTE_FONT_STACKS[spec.uiFont]),
   }
 }
 

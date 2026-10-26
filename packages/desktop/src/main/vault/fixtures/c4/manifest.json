@@ -1,0 +1,30 @@
+{
+  "$comment": "Written by the pre-C4 build (main efcbb2d) through the audited vault/crypto.ts, header.ts, localKeys.ts, names.ts, quickUnlock.ts and preunlock.ts. Test-only keys.",
+  "password": "c4 fixture password ✓ ünïcode",
+  "recoveryKey": "NHAX-201G-W1PG-K7PF-VKCR-T3HP-YN4S-ARNN-WGV9-EJCK-JRJK-3FR0-F870-A8KA",
+  "vaultId": "e6be7b8b-3bf4-47af-add3-f30ad364caac",
+  "mk": "96666a7c0ef54a54b44d1894845d7716462d0aa13eb9f17ca859d54378a4fc64",
+  "lk": "08eefd5575bd89ba85634e38eadce8896fb846172dc0839a3a7967384fce8ae9",
+  "db": "slate-e6be7b8b.db",
+  "plaintext": "C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: C4 cross-version fixture: ",
+  "envelopes": {
+    "sle1-deflated.bin": "docs/page_x/y/00000001.chunk",
+    "sle1-raw.bin": "blobs/abc.png"
+  },
+  "ids": {
+    "notebook": "0b8f2c1e-3d4a-4b5c-8d6e-7f8091a2b3c4",
+    "page": "1c9a3d2f-4e5b-4c6d-9e7f-8091a2b3c4d5",
+    "device": "2dab4e3a-5f6c-4d7e-af80-91a2b3c4d5e6"
+  },
+  "names": {
+    "notebook": "fc3b1bc28ad4f764655808e0e46ec6bb",
+    "page": "10ee1b0ca9e347e63bdba833613bd540",
+    "device": "0bb22acb4a3cfee7f0d136857479b28e",
+    "blob": "439278d218c3d225ade91f19993d2ddaa892969f47546cc23b1a991310bf3f76"
+  },
+  "blobName": "deadbeef.png",
+  "settings": {
+    "idleMinutes": 42
+  },
+  "notice": "c4 fixture notice"
+}

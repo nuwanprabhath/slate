@@ -4,12 +4,17 @@ import { createWriteStream } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
-import { clipboard, net, shell } from 'electron'
+import { clipboard, net } from 'electron'
+import { openExternalSafe, openLocalPath, revealInFolder } from '../openExternal'
 import { autoUpdater, type AppUpdater } from 'electron-updater'
+import { UpdateSignatureError } from './signature'
 import type { UpdateBackend } from './updateService'
+import { sameRelease, type VerifiedRelease } from './verifier'
 import { assetUrl } from './versions'
 
 type RunFn = (file: string, args: string[]) => Promise<unknown>
+/** Feeds are a few KiB and signature files a few hundred bytes. */
+const MAX_ASSET_BYTES = 1024 * 1024
 const execFileAsync = promisify(execFile)
 
 /**
@@ -35,6 +40,14 @@ export function electronBackend(opts: { downloadsDir: string; log: (message: unk
     u.logger = { info: () => {}, warn: opts.log, error: opts.log, debug: () => {} }
     return (configured = u)
   }
+  /**
+   * electron-updater downloads and installs what its last checkForUpdates cached, which any later
+   * check replaces. Refuse unless that is the release we verified.
+   */
+  const assertCached = (expected: VerifiedRelease) => {
+    const info = (updater() as unknown as { updateInfoAndProvider?: { info?: { version: string; files: Array<{ url: string; sha512: string }> } } | null }).updateInfoAndProvider?.info
+    if (!sameRelease(info, expected)) throw new UpdateSignatureError(`electron-updater holds ${info?.version ?? 'no update'}, not the verified ${expected.version}`)
+  }
   return {
     async check() {
       const result = await updater().checkForUpdates()
@@ -42,7 +55,8 @@ export function electronBackend(opts: { downloadsDir: string; log: (message: unk
       const info = result.updateInfo
       return { version: info.version, files: info.files.map((f) => ({ url: f.url, sha512: f.sha512, size: f.size ?? 0 })) }
     },
-    async downloadAuto(onProgress) {
+    async downloadAuto(expected, onProgress) {
+      assertCached(expected)
       const listener = (p: { percent: number }) => onProgress(p.percent)
       updater().on('download-progress', listener)
       try {
@@ -51,7 +65,10 @@ export function electronBackend(opts: { downloadsDir: string; log: (message: unk
         updater().off('download-progress', listener)
       }
     },
-    installAuto: () => updater().quitAndInstall(),
+    installAuto(expected) {
+      assertCached(expected)
+      updater().quitAndInstall()
+    },
     async downloadFile(file, version, onProgress) {
       const name = basename(file.url)
       const url = /^https?:/.test(file.url) ? file.url : assetUrl(version, name)
@@ -81,12 +98,21 @@ export function electronBackend(opts: { downloadsDir: string; log: (message: unk
         throw e
       }
     },
+    async fetchAsset(version, name) {
+      const url = assetUrl(version, name)
+      const res = await net.fetch(url)
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`GET ${url}: ${res.status}`)
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      if (bytes.length > MAX_ASSET_BYTES) throw new Error(`GET ${url}: ${bytes.length} bytes is too large`)
+      return bytes
+    },
     async openPath(path) {
-      const error = await shell.openPath(path)
+      const error = await openLocalPath(path)
       if (error) throw new Error(error)
     },
-    showInFolder: (path) => shell.showItemInFolder(path),
-    openExternal: (url) => void shell.openExternal(url),
-    copy: (text) => clipboard.writeText(text),
+    showInFolder: (path) => revealInFolder(path),
+    openExternal: (url) => void openExternalSafe(url),
+    copy: (text) => void clipboard.writeText(text),
   }
 }

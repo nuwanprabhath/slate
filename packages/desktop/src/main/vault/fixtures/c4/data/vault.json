@@ -1,0 +1,25 @@
+{
+  "format": "slate-vault",
+  "version": 1,
+  "vaultId": "e6be7b8b-3bf4-47af-add3-f30ad364caac",
+  "revision": 1,
+  "createdAt": 1792797185327,
+  "kdf": {
+    "alg": "argon2id",
+    "memoryKiB": 64,
+    "passes": 1,
+    "parallelism": 1,
+    "salt": "EtBAIx+uMs7ih2VVJkRONg=="
+  },
+  "wraps": {
+    "password": {
+      "nonce": "UcCyJFi5sl2t6J3Y",
+      "ct": "wFfdQbAN5CFJzeLVUQ6x0llxxMNYrAj+ZXsO0C0bv+3i5k8LloFNDJkQLt0IUPoL"
+    },
+    "recovery": {
+      "nonce": "z3dYYXAzRVQ/L4+x",
+      "ct": "v9//ai4fRtDHEUxr/je4I0KKH4GB2GwE0NZtFDfw8rmemhx3PULrXLdNI0OaBv7L"
+    }
+  },
+  "check": "vmL1L5MrcEADs8Ile5iUkf6wF52CrwrpVfEo2qhUpH0="
+}

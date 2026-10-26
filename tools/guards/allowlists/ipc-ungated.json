@@ -1,0 +1,20 @@
+{
+  "$comment": "Every IPC channel main serves while the vault is locked: CHANNEL_POLICY rows other than unlocked, send and event (src/main/ipcGuard.ts). tools/guards/ipcChannels.test.ts requires this list to equal the table; the ratchet refuses an addition, so a new one needs the maintainer.",
+  "pre-unlock:openExternal": "Links on the lock screen (help, recovery instructions); https and mailto only through openExternalSafe.",
+  "pre-unlock:updateState": "The lock screen shows that an update is ready; read-only state.",
+  "pre-unlock:chromeMenu": "The custom title bar draws the application menu on the lock screen.",
+  "pre-unlock:appVersion": "The lock screen shows the version; public.",
+  "pre-unlock:vaultStatus": "The lock screen needs the vault state to know what to ask for.",
+  "pre-unlock:vaultUnlock": "Unlocking with the password is what the lock screen is for.",
+  "pre-unlock:vaultUnlockRecovery": "Unlocking with the recovery key.",
+  "pre-unlock:vaultQuickUnlock": "Unlocking with the OS keychain (Touch ID or the login keyring).",
+  "flush:docsAppend": "The renderer's last edit lands during the lock's flush step, while the state is already locking (§6.4).",
+  "flush:blobsPut": "An image pasted just before the lock lands during the flush step (§6.4).",
+  "send-pre-unlock:themesInitial": "The lock screen window reads its theme synchronously at start.",
+  "send-pre-unlock:chromeKind": "The lock screen window asks which title bar to draw.",
+  "send-pre-unlock:chromeSetColors": "The lock screen sets its title bar colours.",
+  "send-pre-unlock:chromeToggleMaximize": "Double-clicking the lock screen's title bar.",
+  "send-pre-unlock:chromeInvokeMenu": "Clicking an item of the lock screen's custom title-bar menu, the same menu the native bar shows.",
+  "send-pre-unlock:vaultFlushed": "The renderer's reply to the flush request, sent while the state is locking.",
+  "send-pre-unlock:vaultLock": "Locking needs no permission: the worst a page can do with it is lock the vault."
+}

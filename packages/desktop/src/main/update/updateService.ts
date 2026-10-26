@@ -2,7 +2,10 @@ import type { InstallKind, UpdateState } from '../../shared/api'
 import type { ScopedLog } from '../log/logger'
 import { capabilityReason } from './capability'
 import { installCommand, pickInstaller, type UpdateFile } from './pickInstaller'
+import { UpdateSignatureError } from './signature'
+import type { UpdateVerifier, VerifiedRelease } from './verifier'
 import { isNewer, releaseUrl } from './versions'
+import { securityEvent } from '../log/securityEvents'
 
 export interface FoundUpdate {
   version: string
@@ -13,10 +16,14 @@ export interface FoundUpdate {
 export interface UpdateBackend {
   /** The latest release in the feed, whatever its version. */
   check(): Promise<FoundUpdate | null>
-  downloadAuto(onProgress: (percent: number) => void): Promise<void>
-  installAuto(): void
+  /** Must refuse unless electron-updater's cached update is exactly `expected` (a later check replaces it). */
+  downloadAuto(expected: VerifiedRelease, onProgress: (percent: number) => void): Promise<void>
+  /** Same rule, right before quitAndInstall; throws instead of installing. */
+  installAuto(expected: VerifiedRelease): void
   /** Downloads `file`, checks its sha512 and resolves to the local path. */
   downloadFile(file: UpdateFile, version: string, onProgress: (percent: number) => void): Promise<string>
+  /** A file of the release (a feed or a `.sig`), or null when the release has none by that name. */
+  fetchAsset(version: string, name: string): Promise<Uint8Array | null>
   openPath(path: string): Promise<void>
   showInFolder(path: string): void
   openExternal(url: string): void
@@ -34,6 +41,8 @@ export interface UpdatePrefs {
 
 export interface UpdateServiceDeps {
   backend: UpdateBackend
+  /** Nothing is offered, downloaded or installed unless it passes (C12). */
+  verifier: UpdateVerifier
   kind: InstallKind
   arch: string
   currentVersion: string
@@ -61,7 +70,8 @@ const MAX_INTERVAL_HOURS = 24 * 7
 /** Never throws and never opens a dialog: failures go to the log and to `lastError`. */
 export class UpdateService {
   private s: Omit<UpdateState, 'visible'>
-  private found: FoundUpdate | null = null
+  /** The release the latest check verified; null after any failed check, so nothing stale is downloaded or installed. */
+  private found: VerifiedRelease | null = null
   /** A manual check shows the update even when it was skipped or dismissed. */
   private forced = false
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -126,27 +136,34 @@ export class UpdateService {
     if (opts.manual) this.forced = true
     this.set({ phase: 'checking', kind: this.deps.kind })
     this.deps.diag?.info('update check start', { manual: opts.manual === true, kind: this.deps.kind, current: this.deps.currentVersion })
+    let offered: string | undefined
+    const previous = this.found?.version
+    // Whatever this check ends in, the previous verification no longer describes what electron-updater holds.
+    this.found = null
     try {
       const found = await this.deps.backend.check()
+      offered = found?.version
       this.savePrefs({ lastCheckedAt: Date.now(), lastError: undefined })
       this.deps.diag?.info('update check result', { latest: found?.version ?? null, newer: found ? isNewer(found.version, this.deps.currentVersion) : false })
       if (found && isNewer(found.version, this.deps.currentVersion)) {
-        if (found.version !== this.found?.version) this.forced = opts.manual === true
-        this.found = found
+        const verified = await this.deps.verifier.release(found)
+        if (verified.version !== previous) this.forced = opts.manual === true
+        this.found = verified
         this.set({ phase: 'available', kind: this.deps.kind, version: found.version, releaseUrl: releaseUrl(found.version) })
       } else {
         this.found = null
         this.set({ phase: 'idle', kind: this.deps.kind })
       }
     } catch (e) {
-      this.fail('update check failed', e)
+      this.found = null
+      this.fail('update check failed', e, offered)
     }
     return this.state()
   }
 
   async download(): Promise<void> {
     const found = this.found
-    if (!found || (this.s.phase !== 'available' && this.s.phase !== 'error')) return
+    if (!found || this.s.phase !== 'available') return
     const { backend, kind } = this.deps
     const base = { kind, version: found.version, releaseUrl: releaseUrl(found.version) }
     if (kind === 'manual') {
@@ -157,12 +174,15 @@ export class UpdateService {
     progress(0)
     try {
       if (kind === 'auto') {
-        await backend.downloadAuto(progress)
+        // electron-updater picks the file itself, so every artefact of the release must verify.
+        for (const f of found.files) await this.deps.verifier.artifact(found, f)
+        await backend.downloadAuto(found, progress)
         this.set({ ...base, phase: 'downloaded' })
         return
       }
       const file = pickInstaller(found.files, kind, this.deps.arch)
       if (!file) throw new Error(`no ${kind} for ${this.deps.arch} in release ${found.version}`)
+      await this.deps.verifier.artifact(found, file)
       const path = await backend.downloadFile(file, found.version, progress)
       this.set({ ...base, phase: 'downloaded', file: path, command: installCommand(kind, path) ?? undefined })
       if (kind === 'dmg') await backend.openPath(path)
@@ -172,7 +192,13 @@ export class UpdateService {
   }
 
   install(): void {
-    if (this.s.phase === 'downloaded' && this.deps.kind === 'auto') this.deps.backend.installAuto()
+    const found = this.found
+    if (this.s.phase !== 'downloaded' || this.deps.kind !== 'auto' || !found) return
+    try {
+      this.deps.backend.installAuto(found)
+    } catch (e) {
+      this.fail('update install failed', e)
+    }
   }
 
   openInstaller(): void {
@@ -210,10 +236,12 @@ export class UpdateService {
     this.emit()
   }
 
-  private fail(what: string, e: unknown): void {
+  private fail(what: string, e: unknown, version = this.found?.version): void {
     const message = `${what}: ${e instanceof Error ? e.message : String(e)}`
     this.deps.log(message)
-    this.deps.diag?.error(what, { error: e instanceof Error ? e.message : String(e), version: this.found?.version })
+    const fields = { error: e instanceof Error ? e.message : String(e), version }
+    if (e instanceof UpdateSignatureError && this.deps.diag) securityEvent.updateSignatureFailed({ version: fields.version }, this.deps.diag)
+    this.deps.diag?.error(what, fields)
     this.savePrefs({ lastError: message })
     this.set({ phase: 'error', kind: this.deps.kind, version: this.found?.version, releaseUrl: this.s.releaseUrl })
   }

@@ -1,0 +1,4 @@
+{
+  "$comment": "slate/vault-key-copies-own-memory reviewed exceptions: vault files whose one-argument Buffer.from copies hold no key material. Only shrinks.",
+  "packages/desktop/src/main/vault/remoteVault.ts": "Buffer.from(r.stdout): git's stdout bytes (refs, file lists, the public vault header) decoded to text; never key material."
+}

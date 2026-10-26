@@ -1,11 +1,20 @@
 import { useState } from 'react'
-import { DEFAULT_PALETTE, type PaletteToken, type ThemeSpec } from '../../../shared/theme/spec'
+import { DEFAULT_PALETTE, SURFACES, SURFACE_TOKEN, type PaletteToken, type ThemeSpec } from '../../../shared/theme/spec'
 
-const SWATCHES: PaletteToken[] = ['bg', 'sidebar-bg', 'page', 'text', 'accent', 'link']
+const SWATCHES: PaletteToken[] = ['bg', 'sidebar-bg', 'toolbar-bg', 'page', 'text', 'accent', 'link']
+
+/** A swatch's look: the surface's gradient where the theme gives the sidebar or toolbar one, else its colour. */
+function swatch(spec: ThemeSpec, token: PaletteToken): string {
+  const colour = (t: PaletteToken): string => spec.palette[t] ?? DEFAULT_PALETTE[t]
+  const surface = SURFACES.find((s) => SURFACE_TOKEN[s] === token)
+  const g = surface === undefined ? undefined : spec.surfaces?.[surface]?.gradient
+  return g === undefined ? colour(token) : `linear-gradient(${String(Math.round(g.angle))}deg, ${colour(g.from)}, ${colour(g.to)})`
+}
 
 function describe(spec: ThemeSpec): string {
   const parts: string[] = []
-  if (spec.material === 'glass') parts.push('Glass')
+  if (spec.material === 'glass') parts.push('Liquid glass')
+  if (spec.surfaces !== undefined) parts.push('Styled sidebar')
   if (spec.texture !== 'none') parts.push(`${spec.texture[0]!.toUpperCase()}${spec.texture.slice(1)} texture`)
   if (spec.effects.some((e) => e.kind === 'gradient-drift')) parts.push('Drift')
   if (spec.effects.some((e) => e.kind === 'grain')) parts.push('Grain')
@@ -36,7 +45,7 @@ export function ThemeGrid({ all, activeId, onChoose, onDuplicate, onRename, onDe
             <span className="theme-swatches" aria-hidden="true">
               {SWATCHES.map((s) => (
                 // A colour Slate re-serialised (validate.ts), set as a style value.
-                <span key={s} className="theme-swatch" style={{ background: t.spec.palette[s] ?? DEFAULT_PALETTE[s] }} />
+                <span key={s} className="theme-swatch" data-swatch={s} style={{ background: swatch(t.spec, s) }} />
               ))}
             </span>
             {renaming === t.id ? (

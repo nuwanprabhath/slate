@@ -45,6 +45,12 @@ describe('OneDriveClient', () => {
     expect(page.items.every((i) => i.id !== '' && i.eTag !== '' && !i.deleted)).toBe(true)
   })
 
+  it('reports each file size from the delta item', async () => {
+    await client.upload('blobs/a.png', new Uint8Array(321))
+    const page = await client.delta(null)
+    expect(page.items.find((i) => i.path === 'blobs/a.png')?.size).toBe(321)
+  })
+
   it('lists only later changes from a returned cursor', async () => {
     await client.upload('docs/page_x/dev1/00000001.chunk', bytes(1))
     const first = await client.delta(null)

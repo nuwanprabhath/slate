@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { redact, redactString } from '../../shared/redact'
 import { filesToPrune, shouldRotate, type LogFile } from './rotation'
@@ -26,7 +26,15 @@ export interface LoggerOptions {
   home?: string
 }
 
-export type LogFields = Record<string, unknown>
+/**
+ * A number that is not a key handle: a handle (`KeyHandle` from @slate/native, branded `__keyHandle`)
+ * names a key in the module and holds no key bytes, but a key is still not a log field (red team final F-1).
+ */
+type LogNumber = number & { readonly __keyHandle?: never }
+
+/** What a log field may hold: plain data. Bytes (a Buffer, a Uint8Array) and key handles do not type-check (audit Z-2). */
+export type LogValue = string | LogNumber | boolean | null | undefined | readonly LogValue[] | { readonly [key: string]: LogValue }
+export type LogFields = Readonly<Record<string, LogValue>>
 
 /** What a service is handed to log with. Never pass note content. */
 export interface ScopedLog {
@@ -40,6 +48,8 @@ export const noLog: ScopedLog = { info() {}, warn() {}, error() {} }
 const ACTIVE = 'slate.log'
 const PREFIX = 'slate'
 const SUFFIX = '.log'
+const DIR_MODE = 0o700
+const FILE_MODE = 0o600
 
 export class Logger {
   private opts: LoggerOptions = { enabled: false, dir: '', maxSizeMb: 20 }
@@ -71,7 +81,13 @@ export class Logger {
 
   private prepare(): void {
     if (this.ready) return
-    mkdirSync(this.opts.dir, { recursive: true })
+    mkdirSync(this.opts.dir, { recursive: true, mode: DIR_MODE })
+    // Owner-only whatever the umask, and also for a folder or file an older build made looser: the security
+    // log records when the vault was unlocked and by which method, on plaintext installs too.
+    chmodSync(this.opts.dir, DIR_MODE)
+    for (const f of this.listFiles()) {
+      try { chmodSync(join(this.opts.dir, f.name), FILE_MODE) } catch { /* gone since the listing */ }
+    }
     this.activeBytes = this.sizeOf(ACTIVE)
     this.ready = true
   }
@@ -127,7 +143,7 @@ export class Logger {
       const line = `${new Date().toISOString()} ${level.padEnd(5)} [${scope}] ${redactString(message, { home }).replace(/\s*\n\s*/g, ' ')}${tail}\n`
       const bytes = Buffer.byteLength(line)
       if (shouldRotate(this.activeBytes, bytes, this.budgetBytes)) this.rotate()
-      appendFileSync(this.file, line)
+      appendFileSync(this.file, line, { mode: FILE_MODE })
       this.activeBytes += bytes
     } catch {
       // Logging must never break the app.
@@ -170,3 +186,10 @@ export class Logger {
 
 /** The app's logger: inert until startup calls `configure`, so a test that never does writes no files. */
 export const log = new Logger()
+
+/**
+ * The security audit events (AU-2) are kept here whether or not the diagnostic log is on: a small rotating file of
+ * their own (`<userData>/security-log/slate.log`, see `configureSecurityLog`), written through the same redacting
+ * logger. Nothing but `securityEvents.ts` writes to it.
+ */
+export const securityLog = new Logger()

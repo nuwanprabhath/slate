@@ -1,6 +1,6 @@
 {
   "name": "@slate/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "private": true,
   "productName": "Slate",
@@ -20,30 +20,32 @@
     "e2e": "electron-vite build && playwright test",
     "dist": "electron-vite build && electron-builder --publish never",
     "dist:dir": "electron-vite build && electron-builder --dir --publish never",
+    "dist:e2e": "electron-vite build --mode e2e && electron-builder --dir --publish never --config electron-builder.e2e.cjs",
     "dist:mac:arm64": "electron-vite build && electron-builder --mac --arm64 --publish never",
     "dist:mac:x64": "electron-vite build && electron-builder --mac --x64 --publish never",
     "dist:linux": "electron-vite build && electron-builder --linux --publish never",
+    "e2e:fips": "electron-vite build && cross-env SLATE_TEST_PROFILE=fips-140-3 playwright test encryption.spec.ts",
     "e2e:packaged": "playwright test --config e2e-packaged/playwright.config.ts",
     "screenshots": "node scripts/readme-screenshots.cjs"
   },
   "dependencies": {
     "@azure/msal-node": "^7.1.0",
-    "better-sqlite3": "^13.0.3",
-    "electron-updater": "^6.8.9",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/source-serif-4": "^5.3.1",
+    "electron-updater": "6.8.9",
     "loro-crdt": "^1.16.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.2.1",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@playwright/test": "^1.64.1",
     "@slate/core": "*",
     "@slate/editor": "*",
     "@slate/importer": "*",
     "@slate/mcp": "*",
+    "@slate/native": "*",
     "@slate/sync": "*",
-    "@types/better-sqlite3": "^9.6.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
@@ -51,6 +53,7 @@
     "electron": "^45.0.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
+    "hash-wasm": "4.12.0",
     "vite": "^8.3.5",
     "vite-plugin-wasm": "^3.6.0"
   }

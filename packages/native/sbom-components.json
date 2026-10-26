@@ -1,0 +1,34 @@
+[
+  {
+    "name": "openssl",
+    "version": "3.5.9",
+    "description": "libcrypto, linked statically into slate_native.node",
+    "licenses": [{ "license": { "id": "Apache-2.0" } }],
+    "purl": "pkg:generic/openssl@3.5.9?download_url=https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+    "hashes": [{ "alg": "SHA-256", "content": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a" }]
+  },
+  {
+    "name": "openssl-fips-provider",
+    "version": "3.1.2",
+    "description": "OpenSSL FIPS Provider (CMVP #4985), shipped as resources/fips",
+    "licenses": [{ "license": { "id": "Apache-2.0" } }],
+    "purl": "pkg:generic/openssl@3.1.2?download_url=https://github.com/openssl/openssl/releases/download/openssl-3.1.2/openssl-3.1.2.tar.gz",
+    "hashes": [{ "alg": "SHA-256", "content": "a0ce69b8b97ea6a35b96875235aa453b966ba3cba8af2de23657d8b6767d6539" }]
+  },
+  {
+    "name": "sqlcipher",
+    "version": "4.19.0",
+    "description": "SQLCipher community edition amalgamation, compiled into slate_native.node (one patch: cipher_fips_status)",
+    "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+    "purl": "pkg:github/sqlcipher/sqlcipher@v4.19.0",
+    "hashes": [{ "alg": "SHA-256", "content": "7075f96cbabe45b4ecfc2e6b1745a625f856f695b0827a5506ce9ed85b906aa0" }]
+  },
+  {
+    "name": "better-sqlite3-multiple-ciphers",
+    "version": "13.0.3",
+    "description": "C++ binding and JavaScript layer vendored into packages/native (src/sqlite, sqlite/), modified for key handles",
+    "licenses": [{ "license": { "id": "MIT" } }],
+    "purl": "pkg:npm/better-sqlite3-multiple-ciphers@13.0.3",
+    "hashes": [{ "alg": "SHA-512", "content": "51869b33cdabd49f384cb59cfd2b33a07b3a5e8a56a65ff61c283736e8b52546855e0fd52ecc3390fa306224612bfe027ed23c760b62930c9941e70c95dac6c5" }]
+  }
+]

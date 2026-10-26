@@ -89,7 +89,7 @@ function addMarks(base: Mark[], extra: Mark[]): Mark[] {
   for (const m of extra) {
     const at = out.findIndex((o) => o.type === m.type)
     if (at < 0) out.push({ ...m })
-    else if (m.type === 'textStyle') out[at] = { type: 'textStyle', attrs: { ...out[at].attrs, ...m.attrs } }
+    else if (m.type === 'textStyle') out[at] = { type: 'textStyle', attrs: { ...out[at]!.attrs, ...m.attrs } }
     else if (m.type === 'link' || m.type === 'highlight') out[at] = { ...m }
   }
   return out
@@ -145,20 +145,20 @@ function mergeCodeParagraphs(blocks: PMJSON[]): PMJSON[] {
   const isMono = (b: PMJSON): boolean => b.type === 'paragraph' && b.attrs?.[MONO_MARKER] === true
   const out: PMJSON[] = []
   for (let i = 0; i < blocks.length; i++) {
-    if (!isMono(blocks[i])) {
-      out.push(blocks[i])
+    if (!isMono(blocks[i]!)) {
+      out.push(blocks[i]!)
       continue
     }
     let end = i
-    while (end < blocks.length && isMono(blocks[end])) end++
+    while (end < blocks.length && isMono(blocks[end]!)) end++
     const run = blocks.slice(i, end)
     if (run.length >= 2) {
       const code = run.map((p) => plainOf(p.content)).join('\n')
       out.push({ type: 'codeBlock', attrs: { language: 'plaintext' }, ...(code !== '' ? { content: [{ type: 'text', text: code }] } : {}) })
-    } else out.push(paragraph(run[0].content ?? []))
+    } else out.push(paragraph(run[0]!.content ?? []))
     i = end - 1
   }
-  return out.filter((b, i) => !(isEmptyParagraph(b) && i > 0 && isEmptyParagraph(out[i - 1])))
+  return out.filter((b, i) => !(isEmptyParagraph(b) && i > 0 && isEmptyParagraph(out[i - 1]!)))
 }
 
 const isEmptyParagraph = (b: PMJSON): boolean => b.type === 'paragraph' && !b.content

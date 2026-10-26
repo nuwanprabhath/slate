@@ -31,8 +31,10 @@ export const BUILTIN_THEMES: BuiltinTheme[] = [
   {
     id: 'builtin:glass',
     spec: theme({
-      name: 'Glass',
+      // The id predates the name: users who chose Glass keep it.
+      name: 'Liquid Glass',
       material: 'glass',
+      glass: { saturation: 1.6, highlight: 0.7, refraction: 0.45 },
       palette: {
         'bg': '#141a2bff', 'page': '#12182acc', 'panel': '#1e2538d9', 'panel-2': '#ffffff4d',
         'toolbar-bg': '#1a2134b3', 'sidebar-bg': '#1a2134b3', 'popover': '#1e2538f5', 'overlay': '#0000006b',
@@ -50,6 +52,7 @@ export const BUILTIN_THEMES: BuiltinTheme[] = [
       name: 'Paper',
       texture: 'paper',
       font: 'serif',
+      surfaces: { sidebar: { texture: 'paper' }, toolbar: { texture: 'paper' } },
       palette: {
         'bg': '#ece3cfff', 'page': '#f6efdfff', 'panel': '#eee5d1ff', 'panel-2': '#e3d8bfff',
         'toolbar-bg': '#efe6d2ff', 'sidebar-bg': '#e9dfc8ff', 'popover': '#f8f2e4ff', 'overlay': '#2b241838',
@@ -87,6 +90,46 @@ export const BUILTIN_THEMES: BuiltinTheme[] = [
         'accent': '#88c0d0ff', 'accent-contrast': '#2e3440ff', 'link': '#8fbcbbff', 'selection': '#88c0d04d',
         'hover': '#434c5eff', 'selected': '#4c566aff', 'danger': '#e08890ff', 'warning': '#ebcb8bff', 'control-bg': '#434c5eff',
         'code-keyword': '#b48eadff', 'code-string': '#a3be8cff', 'code-number': '#d08770ff', 'code-comment': '#9aa5b8ff', 'code-title': '#88c0d0ff',
+      },
+    }),
+  },
+  {
+    // An editorial look: warm ivory, hairline borders, a clay accent and a text serif.
+    id: 'builtin:folio',
+    spec: theme({
+      name: 'Folio',
+      texture: 'vellum',
+      font: 'source-serif',
+      uiFont: 'inter',
+      surfaces: { sidebar: { gradient: { from: 'sidebar-bg', to: 'bg', angle: 180 } } },
+      palette: {
+        'bg': '#faf9f5ff', 'page': '#faf9f5ff', 'panel': '#f0eee6ff', 'panel-2': '#e8e6dcff',
+        'toolbar-bg': '#faf9f5ff', 'sidebar-bg': '#f3f1eaff', 'popover': '#ffffffff', 'overlay': '#14141333',
+        'box-border': '#e8e6dcff', 'border': '#e8e6dcff', 'text': '#141413ff', 'muted': '#5e5d59ff',
+        // Clay a shade deeper than Folio Dark's, so it still reads at 3:1 on ivory.
+        'accent': '#c15c39ff', 'accent-contrast': '#0a0a09ff', 'link': '#a8482bff', 'selection': '#d9775740',
+        'hover': '#efede5ff', 'selected': '#e8e6dcff', 'danger': '#b3361fff', 'warning': '#8a6200ff', 'control-bg': '#faf9f5ff',
+        'find-match': '#d9775759', 'find-current': '#d97757b3', 'scrollbar-thumb': '#14141326',
+        'code-keyword': '#8a3f9eff', 'code-string': '#4f6b1fff', 'code-number': '#a8482bff', 'code-comment': '#6f6d66ff', 'code-title': '#2f5f8aff',
+      },
+    }),
+  },
+  {
+    id: 'builtin:folio-dark',
+    spec: theme({
+      name: 'Folio Dark',
+      texture: 'vellum',
+      font: 'source-serif',
+      uiFont: 'inter',
+      surfaces: { sidebar: { gradient: { from: 'sidebar-bg', to: 'bg', angle: 180 } } },
+      palette: {
+        'bg': '#262624ff', 'page': '#262624ff', 'panel': '#30302eff', 'panel-2': '#3a3a37ff',
+        'toolbar-bg': '#262624ff', 'sidebar-bg': '#1f1e1dff', 'popover': '#30302eff', 'overlay': '#00000066',
+        'box-border': '#3e3e3aff', 'border': '#3e3e3aff', 'text': '#faf9f5ff', 'muted': '#a6a39aff',
+        'accent': '#d97757ff', 'accent-contrast': '#141413ff', 'link': '#e8a085ff', 'selection': '#d977574d',
+        'hover': '#34342fff', 'selected': '#3d3c37ff', 'danger': '#ec8a74ff', 'warning': '#d9ad55ff', 'control-bg': '#30302eff',
+        'find-match': '#d9775766', 'find-current': '#d97757cc', 'scrollbar-thumb': '#faf9f533',
+        'code-keyword': '#d0a1e0ff', 'code-string': '#b5cf86ff', 'code-number': '#eba183ff', 'code-comment': '#9a978dff', 'code-title': '#8fb8e0ff',
       },
     }),
   },

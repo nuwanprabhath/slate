@@ -1,0 +1,10 @@
+{
+  "themeId": "builtin:dark",
+  "motion": "auto",
+  "systemTitleBar": false,
+  "idleMinutes": 42,
+  "lockOnSleep": true,
+  "lockOnScreenLock": true,
+  "quickUnlock": false,
+  "mac": "m4SZKUeoa27SWfuY8QhL2rfifx9CLYcIaZQincL79k8="
+}

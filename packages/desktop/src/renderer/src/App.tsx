@@ -71,6 +71,9 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
           case 'show-settings':
             openSettings(command.section)
             break
+          case 'find-in-notes':
+            // The search plugin listens for this one (plugins/usePlugins.ts).
+            break
         }
       }),
     [setSettings, onShowAiActivity, onShowImport, onShowConnectAgents, onShowBackupImport],
@@ -205,7 +208,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
   useSyncExternalStore(library.subscribe, library.getVersion)
   const [selection, setSelection] = useState<Selection>(loadSelection)
   const notebooks = library.notebooks()
-  const entry = notebooks.find((n) => n.id === selection.notebookId) ?? notebooks[0]
+  const entry = notebooks.find((n) => n.id === selection.notebookId) ?? notebooks[0]!
   const items = entry.doc.items()
   const sectionCandidate = findItem(items, selection.sectionId)
   const section = sectionCandidate?.kind === 'section' ? sectionCandidate : firstOfKind(items, 'section')
@@ -215,6 +218,9 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
   useEffect(() => {
     saveSelection({ notebookId: entry.id, sectionId: section?.id ?? null, pageId: page?.id ?? null })
   }, [entry.id, section?.id, page?.id])
+
+  useEffect(() => void window.slate.sync.opened(entry.id), [entry.id])
+  useEffect(() => window.slate.sync.onOpenNotebook((id) => setSelection({ notebookId: id, sectionId: null, pageId: null })), [])
 
   useEffect(
     () =>
@@ -318,7 +324,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
   )
   const showView = useCallback((id: string) => setLayout((l) => ({ ...l, activeTool: id, panelOpen: true })), [])
   const tools = toolsFromViews(usePlugins({ library, notebookId: entry.id, setSelection, libraryPanel }, showView))
-  const activeTool = tools.find((t) => t.id === layout.activeTool) ?? tools[0]
+  const activeTool = tools.find((t) => t.id === layout.activeTool) ?? tools[0]!
 
   return (
     <div className="app-shell">

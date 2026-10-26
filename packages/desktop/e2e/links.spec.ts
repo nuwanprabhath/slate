@@ -3,7 +3,7 @@ import { createBoxAt, expect, MOD, test } from './fixtures'
 
 const editor = (page: Page) => page.locator('[data-testid="box-editor"]:focus')
 const writeText = (app: ElectronApplication, text: string) => app.evaluate(({ clipboard }, t) => clipboard.writeText(t), text)
-const paste = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.paste())
+const paste = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.paste())
 
 async function boxWith(page: Page, text: string) {
   await createBoxAt(page, 120, 120)
@@ -19,8 +19,18 @@ async function selectLast(page: Page, n: number) {
     for (let i = 0; i < count; i++) sel?.modify('extend', 'backward', 'character')
   }, n)
   await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().length)).toBe(n)
-  // ProseMirror learns of a DOM selection change on selectionchange; let it settle before keys.
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  // ProseMirror learns of a DOM selection change on selectionchange, which a loaded machine delivers late:
+  // wait until the editor's own state holds the selection (TipTap keeps its editor on the view's DOM node),
+  // or a paste lands on a collapsed caret.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const dom = document.activeElement as (Element & { editor?: { state: { selection: { from: number; to: number } } } }) | null
+        const sel = dom?.editor?.state.selection
+        return sel ? sel.to - sel.from : -1
+      }),
+    )
+    .toBe(n)
 }
 
 test('Mod+K links the selected word, prefills on edit and removes', async ({ page }) => {

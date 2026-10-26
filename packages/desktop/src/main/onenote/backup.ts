@@ -1,3 +1,4 @@
+import { env } from '../testHooks'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -60,7 +61,8 @@ export function scanBackup(paths: string[]): BackupSection[] {
 
 /** The converter to run: `SLATE_ONE2HTML`, else the binary shipped with (or built next to) the app. */
 export function converterPath(resourcesDirs: string[]): string {
-  if (process.env.SLATE_ONE2HTML) return process.env.SLATE_ONE2HTML
+  const override = env('SLATE_ONE2HTML')
+  if (override) return override
   const file = `one2html-${process.platform}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`
   return resourcesDirs.map((d) => join(d, file)).find((p) => existsSync(p)) ?? join(resourcesDirs[0] ?? '.', file)
 }

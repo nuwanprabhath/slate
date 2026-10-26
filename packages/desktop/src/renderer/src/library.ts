@@ -75,7 +75,7 @@ export class Library {
   async deleteNotebook(id: string): Promise<void> {
     const index = this.entries.findIndex((e) => e.id === id)
     if (index < 0) return
-    const [entry] = this.entries.splice(index, 1)
+    const entry = this.entries.splice(index, 1)[0]!
     entry.detach()
     const pageIds = entry.doc.allPageIds()
     if (this.entries.length === 0) this.createNotebook('My Notebook')

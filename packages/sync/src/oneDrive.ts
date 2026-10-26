@@ -12,6 +12,7 @@ interface DriveItem {
   eTag?: string
   deleted?: unknown
   file?: unknown
+  size?: number
   parentReference?: { path?: string }
 }
 
@@ -128,6 +129,7 @@ function toItem(it: DriveItem, root: string): RemoteItem {
     path: decodeURIComponent(path),
     eTag: it.eTag ?? '',
     deleted: it.deleted !== undefined,
-    isFile: it.file !== undefined || (it.deleted !== undefined && it.name?.includes('.') === true)
+    isFile: it.file !== undefined || (it.deleted !== undefined && it.name?.includes('.') === true),
+    ...(typeof it.size === 'number' ? { size: it.size } : {})
   }
 }

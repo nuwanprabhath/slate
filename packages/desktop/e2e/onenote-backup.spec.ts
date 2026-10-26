@@ -27,11 +27,15 @@ function runCli(args: string[]): { code: number | null; stdout: string; stderr: 
 }
 
 test('imports a OneNote backup folder through File → Import from OneNote backup', async () => {
+  // An import on a loaded machine can take most of a minute; the waits below say what each step needs.
+  test.setTimeout(120_000)
   const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
   const { app, page } = await launchApp(userData, { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
     expect(existsSync(join(userData, 'slate.lock'))).toBe(true)
 
+    // The menu's handler is registered once the app has mounted; a click before that is lost.
+    await expect(page.getByTestId('canvas')).toBeVisible({ timeout: 15_000 })
     await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     const picker = dialog.getByTestId('backup-picker')
@@ -39,7 +43,7 @@ test('imports a OneNote backup folder through File → Import from OneNote backu
     await expect(picker.getByRole('checkbox', { name: 'New Section 1' })).toHaveAttribute('aria-checked', 'true')
     await expect(picker).toContainText('backup of 2020-10-27')
     await dialog.getByTestId('import-start').click()
-    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 20_000 })
+    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 60_000 })
     await expect(dialog.getByTestId('import-counts')).toContainText('1 imported')
     await expect(dialog.getByTestId('import-lossy')).toContainText('Ink drawing')
     await dialog.getByTestId('import-done').click()

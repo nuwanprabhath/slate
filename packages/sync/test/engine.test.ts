@@ -118,6 +118,35 @@ describe('SyncEngine', () => {
     expect(boxText(new PageDoc(c.local.doc(PAGE)), id)).toHaveLength(51)
   })
 
+  it('forgetPushed: the next sync pushes every doc whole again, remote ops included (a re-cloned remote, C9)', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    const b = device(remote, 'B')
+    const id = editPage(a.local, PAGE, (p) => addTextBox(p, 'from A'))
+    await a.engine.syncOnce()
+    await b.engine.syncOnce()
+    expect((await b.engine.syncOnce()).pushed).toBe(0)
+    await b.engine.forgetPushed()
+    expect((await b.engine.syncOnce()).pushed).toBeGreaterThan(0)
+    // What B pushed carries A's box: a device that only reads B's files gets it.
+    const onlyB = memoryDrive()
+    for (const [path, bytes] of remote.files) {
+      const parsed = parseRemotePath(path)
+      if ((parsed.kind === 'chunk' || parsed.kind === 'snapshot') && parsed.deviceId === 'B') await onlyB.upload(path, bytes)
+    }
+    const c = device(onlyB, 'C')
+    await c.engine.syncOnce()
+    expect(boxText(new PageDoc(c.local.doc(PAGE)), id)).toBe('from A')
+  })
+
+  it('its device record carries the capabilities it is given (C9: key epochs)', async () => {
+    const remote = memoryDrive()
+    const engine = new SyncEngine({ local: memoryLocal(), remote, deviceId: 'A', deviceName: 'A', appVersion: '0.2.0', capabilities: { epochs: 1 } })
+    await engine.syncOnce()
+    const record = JSON.parse(new TextDecoder().decode(remote.files.get('devices/A.json')!)) as Record<string, unknown>
+    expect(record).toMatchObject({ name: 'A', appVersion: '0.2.0', epochs: 1 })
+  })
+
   it('uploads each blob once', async () => {
     const remote = memoryDrive()
     const a = device(remote, 'A')
@@ -189,5 +218,133 @@ describe('SyncEngine', () => {
     const engine = new SyncEngine({ local, remote: drive, deviceId: 'A', deviceName: 'A' })
     editPage(local, PAGE, (p) => addTextBox(p, 'x'))
     expect(await engine.syncOnce()).toMatchObject({ status: 'signed-out' })
+  })
+})
+
+describe('SyncEngine hardening', () => {
+  const unverifiable = () => Object.assign(new Error('bad file'), { unverifiable: true })
+
+  it('skips an unverifiable file with one notice, marks it seen, and keeps syncing', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    const b = device(remote, 'B')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'bad'))
+    await a.engine.syncOnce()
+    const badPath = filesOf(remote, 'A', 'chunk')[0]!
+    const other = 'page:22222222-2222-4222-8222-222222222222'
+    const good = editPage(a.local, other, (p) => addTextBox(p, 'good'))
+    await a.engine.syncOnce()
+    const download = remote.download.bind(remote)
+    let fetched = 0
+    remote.download = async (path) => {
+      if (path === badPath) {
+        fetched++
+        throw unverifiable()
+      }
+      return download(path)
+    }
+    expect(await b.engine.syncOnce()).toMatchObject({ status: 'idle-synced', pulled: 1 })
+    expect(b.local.notes).toEqual(['1 synced files could not be verified and were ignored'])
+    expect(boxText(new PageDoc(b.local.doc(other)), good)).toBe('good')
+    expect(b.local.docs.has(PAGE)).toBe(false)
+    // Marked seen: listing everything again does not fetch it again.
+    await b.local.setMeta('deltaCursor', '0')
+    await b.engine.syncOnce()
+    expect(fetched).toBe(1)
+  })
+
+  it('skips a downloaded file Loro cannot import, marks it seen, and keeps syncing', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    const b = device(remote, 'B')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'bad'))
+    await a.engine.syncOnce()
+    const badPath = filesOf(remote, 'A', 'chunk')[0]!
+    await remote.upload(badPath, new TextEncoder().encode('not a loro update at all'))
+    const other = 'page:22222222-2222-4222-8222-222222222222'
+    const good = editPage(a.local, other, (p) => addTextBox(p, 'good'))
+    await a.engine.syncOnce()
+    expect(await b.engine.syncOnce()).toMatchObject({ status: 'idle-synced', pulled: 1 })
+    expect(b.local.notes).toEqual(['1 synced files could not be verified and were ignored'])
+    expect(boxText(new PageDoc(b.local.doc(other)), good)).toBe('good')
+    expect(await b.engine.syncOnce()).toMatchObject({ status: 'idle-synced' })
+  })
+
+  it('never downloads an item over 64 MiB', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    const b = device(remote, 'B')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'huge'))
+    await a.engine.syncOnce()
+    const delta = remote.delta.bind(remote)
+    remote.delta = async (cursor) => {
+      const page = await delta(cursor)
+      return { ...page, items: page.items.map((i) => ({ ...i, size: 64 * 1024 * 1024 + 1 })) }
+    }
+    const downloads: string[] = []
+    const download = remote.download.bind(remote)
+    remote.download = async (path) => (downloads.push(path), download(path))
+    expect(await b.engine.syncOnce()).toMatchObject({ status: 'idle-synced', pulled: 0 })
+    expect(downloads).toEqual([])
+    expect(b.local.notes).toEqual(['1 synced files could not be verified and were ignored'])
+  })
+
+  it('awaits beforeUpload before any upload, and its throw aborts with nothing uploaded', async () => {
+    const remote = memoryDrive()
+    const local = memoryLocal()
+    const calls: string[] = []
+    const upload = remote.upload.bind(remote)
+    remote.upload = async (path, bytes) => (calls.push('upload'), upload(path, bytes))
+    let fail = true
+    const engine = new SyncEngine({
+      local,
+      remote,
+      deviceId: 'A',
+      deviceName: 'A',
+      beforeUpload: async () => {
+        calls.push('check')
+        if (fail) throw new Error('vault changed')
+      }
+    })
+    editPage(local, PAGE, (p) => addTextBox(p, 'x'))
+    local.blobs.set('abc.png', new Uint8Array([1]))
+    expect(await engine.syncOnce()).toMatchObject({ status: 'error', message: 'vault changed' })
+    expect(calls).toEqual(['check'])
+    expect(remote.files.size).toBe(0)
+    fail = false
+    expect((await engine.syncOnce()).status).toBe('idle-synced')
+    expect(calls.slice(1, 3)).toEqual(['check', 'upload'])
+    expect(calls.filter((c) => c === 'check')).toHaveLength(2)
+  })
+
+  it('does not rewrite an unchanged device record', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    await a.engine.syncOnce()
+    const uploads: string[] = []
+    const upload = remote.upload.bind(remote)
+    remote.upload = async (path, bytes) => (uploads.push(path), upload(path, bytes))
+    await a.engine.syncOnce()
+    expect(uploads).toEqual([])
+    const renamed = new SyncEngine({ local: a.local, remote, deviceId: 'A', deviceName: 'A2' })
+    await renamed.syncOnce()
+    expect(uploads).toEqual(['devices/A.json'])
+  })
+
+  it('re-pushes its own snapshot when the remote lost it', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A', 1)
+    const id = editPage(a.local, PAGE, (p) => addTextBox(p, 'one'))
+    await a.engine.syncOnce()
+    editPage(a.local, PAGE, (p) => appendText(p, id, ' two'))
+    await a.engine.syncOnce()
+    const [snapshot] = filesOf(remote, 'A', 'snapshot')
+    expect(snapshot).toBeTruthy()
+    await remote.remove(snapshot!)
+    await a.engine.syncOnce()
+    await a.engine.syncOnce()
+    const fresh = device(remote, 'C')
+    await fresh.engine.syncOnce()
+    expect(boxText(new PageDoc(fresh.local.doc(PAGE)), id)).toBe('one two')
   })
 })

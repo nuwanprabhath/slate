@@ -1,9 +1,6 @@
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 import { NETWORK_TIMEOUT_MS, type GitRunner } from '@slate/sync'
 import type { DeviceCode, GitCheck } from '../../../shared/api'
-import type { SecretStorage } from '../../onenote/auth'
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code'
 const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token'
@@ -11,31 +8,6 @@ const REPOS_URL = 'https://api.github.com/user/repos'
 const GH_TIMEOUT_MS = 10_000
 
 const signedOut = (message: string) => Object.assign(new Error(message), { status: 401 })
-
-/** One token in one file, encrypted with the OS keychain; never stored in plain text. */
-export function secretFile(file: string, storage: SecretStorage) {
-  return {
-    get(): string | undefined {
-      if (!existsSync(file) || !storage.isEncryptionAvailable()) return undefined
-      try {
-        return storage.decryptString(readFileSync(file)) || undefined
-      } catch {
-        // A keychain reset makes the file unreadable: sign in again.
-        return undefined
-      }
-    },
-    set(token: string): void {
-      if (!storage.isEncryptionAvailable()) throw new Error('This computer cannot encrypt the token, so Slate will not store it')
-      mkdirSync(dirname(file), { recursive: true })
-      writeFileSync(file, storage.encryptString(token), { mode: 0o600 })
-    },
-    clear(): void {
-      rmSync(file, { force: true })
-    },
-  }
-}
-
-export type SecretFile = ReturnType<typeof secretFile>
 
 /** The GitHub CLI's current token, read fresh each time and never stored. */
 export function ghToken(ghPath = 'gh'): Promise<string> {

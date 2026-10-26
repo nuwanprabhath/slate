@@ -79,6 +79,19 @@ export class NotebookDoc {
     return (this.doc.getMap('meta').get('name') as string | undefined) ?? 'Untitled notebook'
   }
 
+  /**
+   * When each device last opened this notebook, so a newly synced device can open the one the
+   * user works in. Keyed by device id, so devices never write the same key and merges are clean.
+   */
+  openOn(): Record<string, number> {
+    return this.doc.getMap('openOn').toJSON() as Record<string, number>
+  }
+
+  markOpen(deviceId: string, at: number): void {
+    this.doc.getMap('openOn').set(deviceId, at)
+    this.doc.commit()
+  }
+
   rename(name: string): void {
     this.doc.getMap('meta').set('name', name)
     this.doc.commit()
@@ -97,7 +110,7 @@ export class NotebookDoc {
     return this.create('sectionGroup', parent, { title })
   }
 
-  addSection(title: string, parent?: TreeID, color: string = SECTION_COLORS[0]): TreeID {
+  addSection(title: string, parent?: TreeID, color: string = SECTION_COLORS[0]!): TreeID {
     return this.create('section', parent, { title, color })
   }
 

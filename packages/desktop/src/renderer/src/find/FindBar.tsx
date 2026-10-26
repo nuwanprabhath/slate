@@ -95,7 +95,7 @@ export function FindBar({ session }: { session: PageSession }) {
     const target = findBar.get().target
     if (!target || target.pageId !== session.pageId || matches.length === 0) return
     const inBox = matches.flatMap((m, i) => (m.boxId === target.boxId ? [i] : []))
-    if (inBox.length > 0) setCurrent(inBox[Math.min(target.occurrence, inBox.length - 1)])
+    if (inBox.length > 0) setCurrent(inBox[Math.min(target.occurrence, inBox.length - 1)]!)
     update({ target: null })
   }, [session, matches])
   const index = matches.length === 0 ? -1 : Math.min(current, matches.length - 1)

@@ -60,7 +60,7 @@ describe('writeContent marks in the editor schema', () => {
     const node = createNodeFromLoroObj(schema, root as unknown as LoroNode, new Map())
     const para = node.child(0)
     expect(para.child(0).marks.map((m) => m.type.name)).toEqual(['bold'])
-    expect(para.child(1).marks[0].attrs.href).toBe('https://x.dev')
+    expect(para.child(1).marks[0]!.attrs.href).toBe('https://x.dev')
   })
 })
 

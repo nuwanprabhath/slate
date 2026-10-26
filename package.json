@@ -1,6 +1,6 @@
 {
   "name": "slate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "author": "Nuwan Munasinghe <nuwanprabhath@gmail.com>",
   "homepage": "https://github.com/nuwanprabhath/slate",
@@ -18,17 +18,28 @@
     "build:one2html": "node scripts/build-one2html.mjs",
     "dist": "npm run dist -w @slate/desktop",
     "dist:dir": "npm run dist:dir -w @slate/desktop",
+    "dist:e2e": "npm run dist:e2e -w @slate/desktop",
     "dist:mac:arm64": "npm run dist:mac:arm64 -w @slate/desktop",
     "dist:mac:x64": "npm run dist:mac:x64 -w @slate/desktop",
     "dist:linux": "npm run dist:linux -w @slate/desktop",
     "e2e:packaged": "npm run e2e:packaged -w @slate/desktop",
-    "postinstall": "electron-rebuild -f -o better-sqlite3",
+    "postinstall": "npm run -w @slate/native build:addon -- --if-deps && npm ci --prefix tools/lint --no-audit --no-fund",
     "test": "vitest run",
     "test:main": "npm run test -w @slate/desktop",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p packages/core/tsconfig.json && tsc -p packages/editor/tsconfig.json && tsc -p tsconfig.json",
+    "lint": "npm run lint:js && npm run lint:arch",
+    "lint:js": "tools/lint/node_modules/.bin/eslint . --max-warnings 0",
+    "lint:arch": "tools/lint/node_modules/.bin/depcruise packages --config .dependency-cruiser.cjs --output-type err",
+    "lint:changed": "node tools/lint/changed.mjs",
+    "lint:prune": "tools/lint/node_modules/.bin/eslint . --prune-suppressions",
+    "guards": "vitest run --config tools/guards/vitest.config.mts",
+    "new:channel": "node scripts/new-channel.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "fast-check": "4.10.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   }

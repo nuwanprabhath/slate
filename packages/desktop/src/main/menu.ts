@@ -1,5 +1,6 @@
 import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
-import type { MenuCommand } from '../shared/api'
+import type { MenuCommand, Settings } from '../shared/api'
+import { DEFAULT_SETTINGS } from '../shared/settings/schema'
 import { CH } from '../shared/ipc'
 import { DEFAULT_THEME_ID } from '../shared/theme/builtins'
 import { onSettingsWritten, readSettings, writeSettings } from './settings'
@@ -10,9 +11,29 @@ function send(command: MenuCommand): void {
   win?.webContents.send(CH.menu, command)
 }
 
-/** "Check for Updates…" sits in the app menu on macOS and in Help elsewhere. */
-export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void {
+export interface MenuOptions {
+  /** The open notes' store, or null while the vault is locked; read at build and at click time. */
+  store: () => DocStore | null
+  onCheckForUpdates: () => void
+  /** Present for an unlocked encrypted vault: enables "Lock Slate". */
+  onLock?: () => void
+}
+
+/**
+ * "Check for Updates…" sits in the app menu on macOS and in Help elsewhere. Rebuilt whenever the
+ * vault locks or unlocks, so items that need notes are disabled while locked (§6.3).
+ */
+export function buildMenu({ store: open, onCheckForUpdates, onLock }: MenuOptions): void {
   const isMac = process.platform === 'darwin'
+  const notes = open() !== null
+  const settings = (() => {
+    const s = open()
+    return s ? readSettings(s) : DEFAULT_SETTINGS
+  })()
+  const write = (patch: Partial<Settings>) => {
+    const s = open()
+    if (s) writeSettings(s, patch)
+  }
   const checkUpdates: MenuItemConstructorOptions = { id: 'check-updates', label: 'Check for Updates…', click: onCheckForUpdates }
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
@@ -23,7 +44,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
               { role: 'about' as const },
               checkUpdates,
               { type: 'separator' as const },
-              { id: 'settings', label: 'Settings…', accelerator: 'Cmd+,', click: () => send({ cmd: 'show-settings' }) },
+              { id: 'settings', label: 'Settings…', accelerator: 'Cmd+,', enabled: notes, click: () => send({ cmd: 'show-settings' }) },
               { type: 'separator' as const },
               { role: 'services' as const },
               { type: 'separator' as const },
@@ -39,10 +60,13 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
     {
       label: 'File',
       submenu: [
-        { id: 'import-onenote', label: 'Import from OneNote…', click: () => send({ cmd: 'show-import' }) },
-        { id: 'import-onenote-backup', label: 'Import from OneNote backup…', click: () => send({ cmd: 'show-import-backup' }) },
+        { id: 'import-onenote', label: 'Import from OneNote…', enabled: notes, click: () => send({ cmd: 'show-import' }) },
+        { id: 'import-onenote-backup', label: 'Import from OneNote backup…', enabled: notes, click: () => send({ cmd: 'show-import-backup' }) },
         { type: 'separator' },
-        ...(isMac ? [] : [{ id: 'settings', label: 'Settings…', accelerator: 'Ctrl+,', click: () => send({ cmd: 'show-settings' }) }, { type: 'separator' as const }]),
+        // The key is handled in before-input-event (main/index.ts), which also sees it in a hidden window.
+        { id: 'lock', label: 'Lock Slate', accelerator: 'CmdOrCtrl+Shift+L', registerAccelerator: false, enabled: !!onLock, click: () => onLock?.() },
+        { type: 'separator' },
+        ...(isMac ? [] : [{ id: 'settings', label: 'Settings…', accelerator: 'Ctrl+,', enabled: notes, click: () => send({ cmd: 'show-settings' }) }, { type: 'separator' as const }]),
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
     },
@@ -61,7 +85,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
         { type: 'separator' },
         { label: 'Insert Link…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, click: () => send({ cmd: 'link' }) },
         { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => send({ cmd: 'find' }) },
-        { id: 'find-in-notes', label: 'Find in Notes…', accelerator: 'CmdOrCtrl+Shift+F', click: () => send({ cmd: 'find-in-notes' }) },
+        { id: 'find-in-notes', label: 'Find in Notes…', accelerator: 'CmdOrCtrl+Shift+F', enabled: notes, click: () => send({ cmd: 'find-in-notes' }) },
       ],
     },
     {
@@ -71,19 +95,21 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
           id: 'markdown-shortcuts',
           label: 'Markdown Shortcuts',
           type: 'checkbox',
-          checked: readSettings(store).markdownShortcuts,
-          click: (item) => void writeSettings(store, { markdownShortcuts: item.checked }),
+          enabled: notes,
+          checked: settings.markdownShortcuts,
+          click: (item) => write({ markdownShortcuts: item.checked }),
         },
         {
           id: 'auto-bullets',
           label: 'Auto Bullets',
           type: 'checkbox',
-          checked: readSettings(store).autoBullets,
-          click: (item) => void writeSettings(store, { autoBullets: item.checked }),
+          enabled: notes,
+          checked: settings.autoBullets,
+          click: (item) => write({ autoBullets: item.checked }),
         },
-        { id: 'ai-activity', label: 'AI Activity…', click: () => send({ cmd: 'show-ai-activity' }) },
+        { id: 'ai-activity', label: 'AI Activity…', enabled: notes, click: () => send({ cmd: 'show-ai-activity' }) },
         // The way back from a theme that makes the window hard to use.
-        { id: 'reset-theme', label: 'Reset Theme', accelerator: 'CmdOrCtrl+Alt+Shift+T', click: () => void writeSettings(store, { themeId: DEFAULT_THEME_ID, followSystem: false }) },
+        { id: 'reset-theme', label: 'Reset Theme', accelerator: 'CmdOrCtrl+Alt+Shift+T', enabled: notes, click: () => write({ themeId: DEFAULT_THEME_ID, followSystem: false }) },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
@@ -97,7 +123,7 @@ export function buildMenu(store: DocStore, onCheckForUpdates: () => void): void 
     {
       role: 'help',
       submenu: [
-        { id: 'connect-agents', label: 'Connect AI agents…', click: () => send({ cmd: 'show-connect-agents' }) },
+        { id: 'connect-agents', label: 'Connect AI agents…', enabled: notes, click: () => send({ cmd: 'show-connect-agents' }) },
         ...(isMac ? [] : [checkUpdates]),
       ],
     },

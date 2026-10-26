@@ -37,17 +37,46 @@ function launchable(app: string): string | null {
 }
 
 const built = findExecutable()
-test.skip(!built || !existsSync(built.exe), 'run `npm run dist:dir` first')
+test.skip(!built || !existsSync(built.exe), 'run `npm run dist:e2e` first')
 const unverified = built && existsSync(built.exe) ? launchable(built.app) : null
+// A build that cannot be launched here (unsigned on this Mac, say) says why in `unverified`.
 test.skip(unverified !== null, unverified ?? '')
 
-async function launch(userData: string) {
+async function launch(userData: string, extraEnv: Record<string, string> = {}) {
   const { ELECTRON_RUN_AS_NODE: _ignored, ...inherited } = process.env
   return electron.launch({
     executablePath: built!.exe,
-    env: { ...(inherited as Record<string, string>), SLATE_E2E: '1', SLATE_USER_DATA: userData },
+    // Never save or restore window state (see e2e/fixtures.ts).
+    args: process.platform === 'darwin' ? ['-ApplePersistenceIgnoreState', 'YES'] : [],
+    env: { ...(inherited as Record<string, string>), SLATE_E2E: '1', SLATE_USER_DATA: userData, ...extraEnv },
   })
 }
+
+test('T-B-07: the fuses are the configured ones, file:// has no extra privileges', () => {
+  // This build comes from electron-builder.e2e.cjs (--inspect on for Playwright); the release
+  // workflow runs the same check against electron-builder.cjs, where --inspect is off.
+  const out = execFileSync('node', [join(desktop, '..', '..', 'scripts', 'check-fuses.mjs'), process.platform === 'darwin' ? built!.app : built!.exe, join(desktop, 'electron-builder.e2e.cjs')], { encoding: 'utf8' })
+  expect(out).toContain('GrantFileProtocolExtraPrivileges: Disabled')
+  expect(out).toContain('EnableNodeCliInspectArguments: Enabled')
+})
+
+test('T-POST-13: a packaged app ignores the self-test corruption hook', async () => {
+  const app = await launch(mkdtempSync(join(tmpdir(), 'slate-packaged-')), { SLATE_TEST_SELFTEST_CORRUPT: 'POST-AES-GCM-ENC', SLATE_FAKE_UPDATE: 'deb', SLATE_FAKE_AUTH: '1' })
+  try {
+    const page = await app.firstWindow()
+    await expect(page.getByTestId('notebook-picker')).toContainText('My Notebook')
+    const seen = await app.evaluate(() => [process.env.SLATE_TEST_SELFTEST_CORRUPT ?? null, process.env.SLATE_FAKE_UPDATE ?? null, process.env.SLATE_FAKE_AUTH ?? null])
+    expect(seen).toEqual([null, null, null])
+    // C12 N2: this e2e build (dist:e2e, --mode e2e) keeps SLATE_E2E, so the window stays hidden; a release scrubs it.
+    expect(await app.evaluate(() => process.env.SLATE_E2E ?? null)).toBe('1')
+    expect(page.url()).toMatch(/^app:\/\/slate\/index\.html/)
+    // C6: a real KAT id, which an unpackaged e2e run obeys (e2e/selftest.spec.ts), and still the notes, not the error screen.
+    expect(page.url()).not.toContain('selftest-failed')
+    expect((await page.evaluate(() => window.slate.vault.status())).selfTest).toMatchObject({ passed: true, failed: [] })
+  } finally {
+    await app.close().catch(() => undefined)
+  }
+})
 
 test('the packaged app opens its database and keeps text across a relaunch', async () => {
   const userData = mkdtempSync(join(tmpdir(), 'slate-packaged-'))
@@ -79,6 +108,21 @@ test('the packaged app has a visible Check for Updates menu item', async () => {
     await app.firstWindow()
     const visible = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('check-updates')!.visible)
     expect(visible).toBe(true)
+  } finally {
+    await app.close().catch(() => undefined)
+  }
+})
+
+test('the packaged app runs @slate/native with the bundled FIPS provider in approved mode (audit C2)', async () => {
+  expect(existsSync(join(built!.resources, 'fips', 'fipsmodule.cnf'))).toBe(true)
+  const userData = mkdtempSync(join(tmpdir(), 'slate-packaged-'))
+  const app = await launch(userData)
+  try {
+    const page = await app.firstWindow()
+    const status = await page.evaluate(() => window.slate.vault.moduleStatus())
+    expect(status).toMatchObject({ available: true, approvedMode: true, errorState: false, problem: null, version: '3.1.2', cmvp: 4985 })
+    // The runtime config is written under userData, never next to the read-only provider.
+    expect(existsSync(join(userData, 'fips', 'openssl-fips.cnf'))).toBe(true)
   } finally {
     await app.close().catch(() => undefined)
   }

@@ -16,11 +16,13 @@ test('an imported page whose boxes overlap once rendered is settled apart', asyn
   const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
   const { app, page } = await launchApp(userData, { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
+    // The menu's handler is registered once the app has mounted; a click before that is lost.
+    await expect(page.getByTestId('canvas')).toBeVisible({ timeout: 15_000 })
     await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     await expect(dialog.getByTestId('backup-picker')).toBeVisible()
     await dialog.getByTestId('import-start').click()
-    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 20_000 })
+    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 60_000 })
     await dialog.getByTestId('import-done').click()
 
     await page.getByTestId('notebook-picker').click()

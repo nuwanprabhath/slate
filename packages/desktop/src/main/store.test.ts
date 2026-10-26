@@ -83,7 +83,7 @@ describe('DocStore', () => {
     store.appendAudit({ tool: 'search', target: 'q', outcome: 'denied' })
     const rows = store.listAudit()
     expect(rows.map((r) => r.tool)).toEqual(['search', 'read_page'])
-    expect(rows[0].ts).toBeGreaterThan(0)
+    expect(rows[0]!.ts).toBeGreaterThan(0)
     store.close()
   })
 

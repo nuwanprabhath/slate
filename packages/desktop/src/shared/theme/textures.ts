@@ -7,7 +7,7 @@ import type { Texture } from './spec'
  * theme's text colour, never above `TEXTURE_MAX_OPACITY`, which readability.ts allows for.
  */
 
-export const TEXTURES = ['paper', 'linen', 'dots'] as const satisfies ReadonlyArray<Exclude<Texture, 'none'>>
+export const TEXTURES = ['paper', 'linen', 'dots', 'vellum'] as const satisfies ReadonlyArray<Exclude<Texture, 'none'>>
 export const TEXTURE_MAX_OPACITY = 0.12
 export const TEXTURE_TILE = 192
 
@@ -28,6 +28,13 @@ export function drawTexture(kind: Exclude<Texture, 'none'>, ctx: Ctx2D, size: nu
       ctx.fillRect(0, i, size, 1)
       ctx.globalAlpha = 0.03 + hash(i, 12) * 0.04
       ctx.fillRect(i, 0, 1, size)
+    }
+  } else if (kind === 'vellum') {
+    // Fine paper: single faint specks only, a third as many as paper and lighter, felt more than seen.
+    const count = Math.round((size * size) / 40)
+    for (let i = 0; i < count; i += 1) {
+      ctx.globalAlpha = 0.015 + hash(i, 96) * 0.03
+      ctx.fillRect(hash(i, 97) * size, hash(i, 98) * size, 1, 1)
     }
   } else {
     // A dot grid, like a bullet-journal page.

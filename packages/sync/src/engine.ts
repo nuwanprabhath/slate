@@ -12,7 +12,27 @@ export interface SyncEngineOptions {
   platform?: string
   /** This device's chunk count per doc above which it uploads a snapshot instead. */
   compactAfter?: number
+  /** Written into the device record. */
+  appVersion?: string
+  /** What this build can read, written into its device record (C9: `epochs` for key epochs), so others can check. */
+  capabilities?: Record<string, number>
+  /** Awaited once per sync before anything is written to the drive; a throw aborts the run. */
+  beforeUpload?: () => Promise<void>
 }
+
+/** Larger remote files are refused without being downloaded (§5.5). */
+const MAX_FILE_BYTES = 64 * 1024 * 1024
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Thrown by `syncOnce` when its signal aborts: a quiet stop, not a sync failure. */
+export class SyncAborted extends Error {
+  override name = 'AbortError'
+  constructor() {
+    super('Sync stopped')
+  }
+}
+
+export const unverifiedMessage = (n: number) => `${n} synced files could not be verified and were ignored`
 
 type Counts = Pick<SyncReport, 'pushed' | 'pulled' | 'conflicts'>
 
@@ -41,6 +61,8 @@ const META = {
   stale: (docId: string) => `stale:${docId}`,
   /** The doc's version when this device last finished a sync: later local edits are "mine". */
   base: (docId: string) => `base:${docId}`,
+  /** The device record last written, and when. */
+  device: 'deviceRecord',
   cursor: 'deltaCursor'
 }
 
@@ -71,6 +93,10 @@ export class SyncEngine {
   private readonly deviceName: string
   private readonly platform: string
   private readonly compactAfter: number
+  private readonly appVersion: string | undefined
+  private readonly capabilities: Record<string, number>
+  private readonly beforeUpload: (() => Promise<void>) | undefined
+  private signal: AbortSignal | undefined
 
   constructor(opts: SyncEngineOptions) {
     this.local = opts.local
@@ -79,12 +105,22 @@ export class SyncEngine {
     this.deviceName = opts.deviceName
     this.platform = opts.platform ?? ''
     this.compactAfter = opts.compactAfter ?? 50
+    this.appVersion = opts.appVersion
+    this.capabilities = opts.capabilities ?? {}
+    this.beforeUpload = opts.beforeUpload
   }
 
-  /** Never throws: every failure becomes the report's status. */
-  async syncOnce(): Promise<SyncReport> {
+  /**
+   * Every failure becomes the report's status, except an abort through `signal`, which throws
+   * `SyncAborted`. It is checked before each transfer and an aborted transfer is abandoned, so
+   * the bookkeeping after it is never written.
+   */
+  async syncOnce(opts: { signal?: AbortSignal } = {}): Promise<SyncReport> {
     const counts: Counts = { pushed: 0, pulled: 0, conflicts: 0 }
+    this.signal = opts.signal
     try {
+      // Every write below (uploads and removals alike) comes after this.
+      await this.beforeUpload?.()
       const pushedAt = new Map<string, VersionVector>()
       for (const docId of await this.local.docIds()) pushedAt.set(docId, await this.pushDoc(docId, counts))
       await this.pushBlobs()
@@ -94,8 +130,23 @@ export class SyncEngine {
       await this.remote.flush?.()
       return { status: 'idle-synced', ...counts, at: Date.now() }
     } catch (err) {
+      if (err instanceof SyncAborted || opts.signal?.aborted) throw new SyncAborted()
       return { status: statusOf(err), message: err instanceof Error ? err.message : String(err), ...counts, at: Date.now() }
     }
+  }
+
+  /** Rejects as soon as the signal aborts, leaving `work` to finish unobserved. */
+  private transfer<T>(work: () => Promise<T>): Promise<T> {
+    const signal = this.signal
+    if (!signal) return work()
+    if (signal.aborted) return Promise.reject(new SyncAborted())
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(new SyncAborted())
+      signal.addEventListener('abort', onAbort, { once: true })
+      work()
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener('abort', onAbort))
+    })
   }
 
   private async load(docId: string): Promise<LoroDoc> {
@@ -125,7 +176,7 @@ export class SyncEngine {
 
     const seq = Number((await this.local.getMeta(META.seq(docId))) ?? 0) + 1
     const path = chunkPath(docId, this.deviceId, seq)
-    await this.remote.upload(path, doc.export({ mode: 'update', from: pushed }))
+    await this.transfer(() => this.remote.upload(path, doc.export({ mode: 'update', from: pushed })))
     const chunks = [...(await this.jsonMeta<string[]>(META.chunks(docId), [])), path]
     await this.local.setMeta(META.seq(docId), String(seq))
     await this.local.setMeta(META.chunks(docId), JSON.stringify(chunks))
@@ -142,7 +193,7 @@ export class SyncEngine {
    */
   private async compact(docId: string, doc: LoroDoc, seq: number, chunks: string[]): Promise<void> {
     const path = snapshotPath(docId, this.deviceId, seq)
-    await this.remote.upload(path, doc.export({ mode: 'snapshot' }))
+    await this.transfer(() => this.remote.upload(path, doc.export({ mode: 'snapshot' })))
     const previous = await this.local.getMeta(META.snapshot(docId))
     const stale = [...(await this.jsonMeta<string[]>(META.stale(docId), [])), ...chunks, ...(previous ? [previous] : [])]
     await this.local.setMeta(META.seq(docId), String(seq))
@@ -156,7 +207,7 @@ export class SyncEngine {
   private async removeStale(docId: string): Promise<void> {
     const stale = await this.jsonMeta<string[]>(META.stale(docId), [])
     while (stale.length > 0) {
-      await this.remote.remove(stale[0]!)
+      await this.transfer(() => this.remote.remove(stale[0]!))
       stale.shift()
       await this.local.setMeta(META.stale(docId), JSON.stringify(stale))
     }
@@ -165,14 +216,30 @@ export class SyncEngine {
   private async pushBlobs(): Promise<void> {
     for (const name of await this.local.blobNames()) {
       if (await this.local.blobSynced(name)) continue
-      await this.remote.upload(`blobs/${name}`, await this.local.readBlob(name))
+      const bytes = await this.local.readBlob(name)
+      await this.transfer(() => this.remote.upload(`blobs/${name}`, bytes))
       await this.local.markBlobSynced(name)
     }
   }
 
+  /**
+   * Forgets what was pushed of every doc, so the next sync pushes each doc whole, other devices' ops included: after
+   * a remote's history was replaced and its clone dropped (what was only in that clone is gone), or when a key
+   * rotation must re-push notes pulled under the old keys (C9).
+   */
+  async forgetPushed(): Promise<void> {
+    for (const docId of await this.local.docIds()) await this.local.setBytesMeta(META.pushed(docId), new VersionVector(null).encode())
+  }
+
   private async writeDevice(): Promise<void> {
-    const record = { name: this.deviceName, platform: this.platform, lastSeen: Date.now() }
-    await this.remote.upload(`devices/${this.deviceId}.json`, new TextEncoder().encode(JSON.stringify(record)))
+    // A rewrite per sync would be a commit per sync on git, so lastSeen is refreshed daily.
+    const content = JSON.stringify({ ...this.capabilities, name: this.deviceName, platform: this.platform, appVersion: this.appVersion })
+    const last = await this.jsonMeta<{ content: string; at: number } | null>(META.device, null)
+    const now = Date.now()
+    if (last && last.content === content && now - last.at < DAY_MS) return
+    const record = { ...(JSON.parse(content) as object), lastSeen: now }
+    await this.transfer(() => this.remote.upload(`devices/${this.deviceId}.json`, new TextEncoder().encode(JSON.stringify(record))))
+    await this.local.setMeta(META.device, JSON.stringify({ content, at: now }))
   }
 
   private async pullState(docId: string): Promise<PullState> {
@@ -246,19 +313,37 @@ export class SyncEngine {
   }
 
   private async pull(counts: Counts, pushedAt: Map<string, VersionVector>): Promise<void> {
-    const page = await this.remote.delta((await this.local.getMeta(META.cursor)) ?? null)
+    const cursor = (await this.local.getMeta(META.cursor)) ?? null
+    const page = await this.transfer(() => this.remote.delta(cursor))
     const states = new Map<string, PullState>()
+    const ownDeleted = new Set<string>()
+    const ownPresent = new Set<string>()
+    let unverified = 0
     for (const item of page.items) {
-      if (item.deleted || !item.isFile) continue
+      if (!item.isFile) continue
       const parsed = parseRemotePath(item.path)
-      if ((parsed.kind !== 'chunk' && parsed.kind !== 'snapshot') || parsed.deviceId === this.deviceId) continue
-      if (await this.local.seen(item.id, item.eTag)) continue
+      if (parsed.kind !== 'chunk' && parsed.kind !== 'snapshot') continue
+      if (parsed.deviceId === this.deviceId) {
+        ;(item.deleted ? ownDeleted : ownPresent).add(item.path)
+        continue
+      }
+      if (item.deleted || (await this.local.seen(item.id, item.eTag))) continue
+      if (item.size !== undefined && item.size > MAX_FILE_BYTES) {
+        await this.local.markSeen(item.id, item.eTag)
+        unverified++
+        continue
+      }
       let bytes: Uint8Array
       try {
-        bytes = await this.remote.download(item.path)
+        bytes = await this.transfer(() => this.remote.download(item.path))
       } catch (err) {
         // Compacted away since the listing; the snapshot that replaced it is in this delta too.
         if ((err as { status?: unknown }).status === 404) continue
+        if ((err as { unverifiable?: unknown }).unverifiable === true) {
+          await this.local.markSeen(item.id, item.eTag)
+          unverified++
+          continue
+        }
         throw err
       }
       let state = states.get(parsed.docId)
@@ -266,8 +351,15 @@ export class SyncEngine {
         state = await this.pullState(parsed.docId)
         states.set(parsed.docId, state)
       }
-      this.detect(state, bytes, parsed.deviceId)
-      state.doc.import(bytes)
+      try {
+        this.detect(state, bytes, parsed.deviceId)
+        state.doc.import(bytes)
+      } catch {
+        // Bytes that are not a Loro update (a hostile or damaged remote) are skipped like unverifiable ones.
+        await this.local.markSeen(item.id, item.eTag)
+        unverified++
+        continue
+      }
       await this.local.appendRemote(parsed.docId, bytes)
       await this.local.markSeen(item.id, item.eTag)
       counts.pulled++
@@ -285,6 +377,22 @@ export class SyncEngine {
       if (!stored || stored.length !== bytes.length || stored.some((b, i) => b !== bytes[i])) {
         await this.local.setBytesMeta(META.base(docId), bytes)
       }
+    }
+    await this.selfCheck([...pushedAt.keys()], ownDeleted, cursor === null ? ownPresent : undefined)
+    if (unverified > 0) await this.local.notify(unverifiedMessage(unverified))
+  }
+
+  /**
+   * §5.5: a file of ours that the remote lost (deleted, or absent from a full listing) is pushed
+   * again by forgetting what was pushed, so the next push uploads the whole doc.
+   */
+  private async selfCheck(docIds: string[], deleted: Set<string>, present: Set<string> | undefined): Promise<void> {
+    if (deleted.size === 0 && present === undefined) return
+    for (const docId of docIds) {
+      const snapshot = await this.local.getMeta(META.snapshot(docId))
+      const believed = [...(await this.jsonMeta<string[]>(META.chunks(docId), [])), ...(snapshot ? [snapshot] : [])]
+      if (!believed.some((p) => deleted.has(p) || (present !== undefined && !present.has(p)))) continue
+      await this.local.setBytesMeta(META.pushed(docId), new VersionVector(null).encode())
     }
   }
 

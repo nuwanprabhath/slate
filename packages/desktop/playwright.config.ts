@@ -1,3 +1,3 @@
 import { defineConfig } from '@playwright/test'
 
-export default defineConfig({ testDir: 'e2e', timeout: 30_000, workers: 1, reporter: 'list' })
+export default defineConfig({ testDir: 'e2e', timeout: 30_000, workers: 1, reporter: 'list', globalSetup: './e2e/tmpRoot.ts' })

@@ -1,0 +1,4 @@
+{
+  "$comment": "slate/vault-json-reads-capped reviewed exceptions: vault files that parse JSON that is not read from a local file. Only shrinks.",
+  "packages/desktop/src/main/vault/remoteVault.ts": "Parses the remote vault header, which is size-checked against MAX_HEADER_BYTES (64 KiB) before it is fetched and parsed."
+}

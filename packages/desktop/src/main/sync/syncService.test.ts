@@ -1,17 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { SCHEDULE_V1 } from '../vault/suite'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PageDoc } from '@slate/core'
+import { NotebookDoc, PageDoc } from '@slate/core'
 import { parseRemotePath } from '@slate/sync'
 import { startFakeDrive, type FakeDrive } from '../../../../sync/test/fakeDrive'
 import { addTextBox, boxText } from '../../../../sync/test/memoryLocal'
 import type { GitAuthMode, SyncState } from '../../shared/api'
-import { BlobStore } from '../blobs'
+import { FileBlobStore, type BlobStore } from '../blobs'
 import { createAuthService } from '../onenote/auth'
 import { writeSettings } from '../settings'
 import { DocStore } from '../store'
+import { importKey } from '../../../test/vaultKeys'
+import { KeyRing } from '../vault/keyring'
 import { SyncService } from './syncService'
 
 const PAGE = 'page:11111111-1111-4111-8111-111111111111'
@@ -22,26 +25,28 @@ interface Device {
   service: SyncService
   states: SyncState[]
   notices: string[]
+  opened: string[]
 }
 
 const secrets = {
-  isEncryptionAvailable: () => true,
-  encryptString: (s: string) => Buffer.from(`enc:${s}`),
-  decryptString: (b: Buffer) => b.toString().slice(4),
+  available: async () => true,
+  seal: async (s: string) => Buffer.from(`enc:${s}`),
+  open: async (b: Buffer) => ({ plain: b.toString().slice(4), rewrite: false }),
 }
 
 let dir: string
 let drive: FakeDrive
 const devices: Device[] = []
 
-async function device(name: string, opts: { enabled?: boolean; signedIn?: boolean } = {}): Promise<Device> {
+async function device(name: string, opts: { enabled?: boolean; signedIn?: boolean; keyRing?: KeyRing } = {}): Promise<Device> {
   const dbFile = join(dir, `${name}.db`)
   const store = new DocStore(dbFile)
-  const blobs = new BlobStore(join(dir, `${name}-blobs`))
+  const blobs = new FileBlobStore(join(dir, `${name}-blobs`))
   const auth = createAuthService({ clientId: null, cacheFile: join(dir, `${name}.bin`), openBrowser: async () => {}, fake: true })
   if (opts.signedIn !== false) await auth.signIn()
   const states: SyncState[] = []
   const notices: string[] = []
+  const opened: string[] = []
   const service = new SyncService({
     dbFile,
     blobs,
@@ -53,11 +58,13 @@ async function device(name: string, opts: { enabled?: boolean; signedIn?: boolea
     intervalMs: 0,
     emitStatus: (s) => states.push(s),
     emitNotice: (m) => notices.push(m),
+    emitOpenNotebook: (id) => opened.push(id),
+    keyRing: opts.keyRing,
   })
   // setEnabled signs in when needed, so a signed-out device has the setting written directly.
   if (opts.enabled !== false && opts.signedIn === false) writeSettings(store, { syncProvider: 'onedrive' })
   else if (opts.enabled !== false) await service.setEnabled(true)
-  const d = { store, blobs, service, states, notices }
+  const d = { store, blobs, service, states, notices, opened }
   devices.push(d)
   return d
 }
@@ -152,6 +159,48 @@ describe('SyncService', () => {
     expect(boxText(PageDoc.fromUpdates(a.store.load(PAGE)), boxId)).toBe('their text')
     expect(await a.service.conflicts(PAGE)).toEqual([])
   })
+
+  it('with a key ring, writes only e2ee files and still delivers pages and blobs', async () => {
+    const mk = Buffer.alloc(32, 7)
+    const a = await device('A', { keyRing: new KeyRing(importKey(mk, 'master'), undefined, SCHEDULE_V1) })
+    const b = await device('B', { keyRing: new KeyRing(importKey(mk, 'master'), undefined, SCHEDULE_V1) })
+    const boxId = writePage(a.store, 'sealed from A')
+    const name = a.blobs.put(new Uint8Array([4, 5, 6]), 'image/png').split('/').pop()!
+    expect((await a.service.now()).status).toBe('idle-synced')
+    expect((await b.service.now()).status).toBe('idle-synced')
+    expect(boxText(PageDoc.fromUpdates(b.store.load(PAGE)), boxId)).toBe('sealed from A')
+    expect(await b.service.ensureBlob(name)).toBe(true)
+    expect([...b.blobs.read(name)]).toEqual([4, 5, 6])
+    expect([...drive.files.keys()].every((p) => p.startsWith('e2ee/'))).toBe(true)
+  })
+
+  it('stop() abandons a download that never finishes instead of waiting for it', async () => {
+    const a = await device('A')
+    const b = await device('B')
+    writePage(a.store, 'from A')
+    await a.service.now()
+    const realFetch = globalThis.fetch
+    let hung = false
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes(':/content') && (init?.method ?? 'GET') === 'GET') {
+        hung = true
+        return new Promise<Response>(() => {})
+      }
+      return realFetch(input, init)
+    }) as typeof fetch
+    try {
+      const syncing = b.service.now()
+      await expect.poll(() => hung).toBe(true)
+      const started = Date.now()
+      await b.service.stop()
+      expect(Date.now() - started).toBeLessThan(1000)
+      // Quiet: the abandoned run is no error, and nothing was recorded as pulled.
+      expect((await syncing).status).not.toBe('error')
+      expect(b.states.map((s) => s.status)).not.toContain('error')
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
 })
 
 describe('SyncService over git', { timeout: 30_000 }, () => {
@@ -180,6 +229,37 @@ describe('SyncService over git', { timeout: 30_000 }, () => {
     expect(drive.files.size).toBe(0)
   })
 
+  it('shows a plaintext device whose remote was replaced by an encrypted orphan as join-needed', async () => {
+    const a = await device('A', { enabled: false })
+    await a.service.configure({ provider: 'git', git: gitSettings() })
+    writePage(a.store, 'plaintext')
+    expect((await a.service.now()).status).toBe('idle-synced')
+    const g = (args: string[], input?: string) => execFileSync('git', ['--git-dir', bare, ...args], input === undefined ? {} : { input }).toString().trim()
+    const vault = g(['mktree', '-z'], `100644 blob ${g(['hash-object', '-w', '--stdin'], '{}')}\tvault.json\0`)
+    const orphan = g(['-c', 'user.name=x', '-c', 'user.email=x@x', 'commit-tree', g(['mktree', '-z'], `040000 tree ${vault}\te2ee\0`), '-m', 'slate: encrypted'])
+    g(['update-ref', 'refs/heads/main', orphan])
+    writePage(a.store, 'more plaintext')
+    expect((await a.service.now()).status).toBe('error')
+    expect(await a.service.status()).toMatchObject({ vaultProblem: 'join-needed' })
+    expect(g(['rev-parse', 'main'])).toBe(orphan)
+  })
+
+  it('with a key ring, commits under a neutral author and message', async () => {
+    const mk = Buffer.alloc(32, 9)
+    const a = await device('A', { enabled: false, keyRing: new KeyRing(importKey(mk, 'master'), undefined, SCHEDULE_V1) })
+    const b = await device('B', { enabled: false, keyRing: new KeyRing(importKey(mk, 'master'), undefined, SCHEDULE_V1) })
+    await a.service.configure({ provider: 'git', git: gitSettings() })
+    await b.service.configure({ provider: 'git', git: gitSettings() })
+    const boxId = writePage(a.store, 'sealed over git')
+    expect((await a.service.now()).status).toBe('idle-synced')
+    expect((await b.service.now()).status).toBe('idle-synced')
+    expect(boxText(PageDoc.fromUpdates(b.store.load(PAGE)), boxId)).toBe('sealed over git')
+    const lines = gitLog().trim().split('\n')
+    expect(lines.every((l) => l === 'Slate|slate: sync' || l === 'Slate|slate: initialise')).toBe(true)
+    const email = execFileSync('git', ['--git-dir', bare, 'log', '--format=%ae %ce', 'main']).toString()
+    expect(email.trim().split('\n').every((l) => l === 'slate@invalid slate@invalid')).toBe(true)
+  })
+
   it('is signed out in token mode until a token is saved, and keeps the token out of settings', async () => {
     const a = await device('A', { enabled: false })
     await a.service.configure({ provider: 'git', git: gitSettings('token') })
@@ -204,5 +284,54 @@ describe('SyncService over git', { timeout: 30_000 }, () => {
     await a.service.configure({ provider: null })
     expect((await a.service.now()).status).toBe('disabled')
     expect(await a.service.status()).toMatchObject({ provider: null, enabled: false })
+  })
+
+  describe('the notebook to open after the first sync', () => {
+    function writeNotebook(store: DocStore, id: string, text?: string): void {
+      const nb = NotebookDoc.create(id)
+      const { pageId } = nb.addPage(nb.addSection('S'))
+      store.append(`notebook:${id}`, nb.doc.export({ mode: 'update' }))
+      if (text === undefined) return
+      const page = new PageDoc()
+      addTextBox(page, text)
+      store.append(`page:${pageId}`, page.doc.export({ mode: 'update' }))
+    }
+
+    async function other(): Promise<void> {
+      const a = await device('A')
+      writeNotebook(a.store, 'work', 'notes')
+      a.service.recordOpen('work')
+      await a.service.now()
+    }
+
+    it('opens the notebook another device has open instead of an empty default, on the first pull only', async () => {
+      await other()
+      const b = await device('B', { enabled: false })
+      writeNotebook(b.store, 'default')
+      b.service.recordOpen('default')
+      await b.service.setEnabled(true)
+      expect(b.opened).toEqual(['work'])
+      await b.service.now()
+      expect(b.opened).toEqual(['work'])
+    })
+
+    it('keeps a notebook that has content', async () => {
+      await other()
+      const b = await device('B', { enabled: false })
+      writeNotebook(b.store, 'mine', 'my own')
+      b.service.recordOpen('mine')
+      await b.service.setEnabled(true)
+      expect(b.opened).toEqual([])
+    })
+
+    it('records openings in the synced notebook doc, once per notebook in a while', async () => {
+      const a = await device('A', { enabled: false })
+      writeNotebook(a.store, 'work')
+      a.service.recordOpen('work')
+      const updates = a.store.load('notebook:work').length
+      a.service.recordOpen('work')
+      expect(a.store.load('notebook:work')).toHaveLength(updates)
+      expect(Object.keys(NotebookDoc.fromUpdates(a.store.load('notebook:work')).openOn())).toEqual([a.service.deviceId])
+    })
   })
 })

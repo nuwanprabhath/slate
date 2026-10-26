@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { nodeGitRunner } from '@slate/sync'
-import { createPrivateRepo, githubDeviceFlow, secretFile, testConnection } from './auth'
+import { createSecretStorage, secretFile } from '../../secretStorage'
+import { createPrivateRepo, githubDeviceFlow, testConnection } from './auth'
 
 const dirs: string[] = []
 function temp(): string {
@@ -96,26 +97,34 @@ describe('testConnection', () => {
   })
 })
 
-describe('secretFile', () => {
-  const storage = {
-    isEncryptionAvailable: () => true,
-    encryptString: (s: string) => Buffer.from(`enc:${s}`),
-    decryptString: (b: Buffer) => b.toString().slice(4)
-  }
+describe('the git token file (src/main/secretStorage.ts)', () => {
+  const storage = (backend: 'gnome_libsecret' | 'basic_text' = 'gnome_libsecret') =>
+    createSecretStorage(
+      {
+        isAsyncEncryptionAvailable: async () => true,
+        encryptStringAsync: async (s: string) => Buffer.from(`enc:${s}`),
+        decryptStringAsync: async (b: Buffer) => ({ result: b.toString().slice(4), shouldReEncrypt: false }),
+        getSelectedStorageBackend: () => backend,
+      },
+      'linux',
+    )
 
-  it('keeps the token encrypted on disk', () => {
+  it('keeps the token encrypted on disk', async () => {
     const file = join(temp(), 'token.bin')
-    const secret = secretFile(file, storage)
-    expect(secret.get()).toBeUndefined()
-    secret.set('ghp_x')
+    const secret = secretFile(file, storage())
+    expect(await secret.get()).toBeUndefined()
+    await secret.set('ghp_x')
     expect(readFileSync(file, 'utf8')).toBe('enc:ghp_x')
-    expect(secret.get()).toBe('ghp_x')
-    secret.clear()
-    expect(secret.get()).toBeUndefined()
+    expect(await secret.get()).toBe('ghp_x')
+    await secret.clear()
+    expect(await secret.get()).toBeUndefined()
   })
 
-  it('refuses to store a token without encryption', () => {
-    const secret = secretFile(join(temp(), 't.bin'), { ...storage, isEncryptionAvailable: () => false })
-    expect(() => secret.set('ghp_x')).toThrow(/encrypt/)
+  it('never writes a token without a real keyring (basic_text): it lasts this session only', async () => {
+    const file = join(temp(), 't.bin')
+    const secret = secretFile(file, storage('basic_text'))
+    await secret.set('ghp_x')
+    expect(existsSync(file)).toBe(false)
+    expect(await secret.get()).toBe('ghp_x')
   })
 })

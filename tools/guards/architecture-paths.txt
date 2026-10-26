@@ -1,0 +1,10 @@
+# Architecture review tier: main-process code outside security-paths.txt. A branch that changes
+# any of these (test files aside) with no risky line needs the architecture-reviewer agent
+# (.claude/agents/architecture-reviewer.md): merge-wp wants .agent-reports/reviews/<branch with / as ->.architecture.md
+# (or a security review, which covers it). Globs from the repo root.
+packages/desktop/src/main/**
+packages/desktop/src/shared/**
+packages/desktop/src/mcp/**
+packages/sync/src/**
+packages/mcp/src/**
+packages/importer/src/**

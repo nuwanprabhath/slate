@@ -22,7 +22,7 @@ export function parseColor(input: string): RGBA | null {
   const s = input.trim()
   let m = HEX.exec(s)
   if (m !== null) {
-    let h = m[1]
+    let h = m[1]!
     if (h.length <= 4) h = [...h].map((c) => c + c).join('')
     const n = (i: number): number => parseInt(h.slice(i, i + 2), 16)
     return { r: n(0), g: n(2), b: n(4), a: h.length === 8 ? n(6) / 255 : 1 }

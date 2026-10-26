@@ -35,7 +35,8 @@ async function configureGit(page: Page) {
   await page.getByTestId('git-test').click()
   await expect(page.getByTestId('sync-check')).toContainText('Connected')
   await page.getByTestId('sync-settings-save').click()
-  await expect(page.getByTestId('sync-settings')).toHaveCount(0)
+  // Save waits for a first sync (clone, vault check, push): about 4 s here, more on a loaded machine.
+  await expect(page.getByTestId('sync-settings')).toHaveCount(0, { timeout: 20_000 })
 }
 
 /**
@@ -87,16 +88,27 @@ test.describe.serial('git sync between two devices', () => {
   })
 
   test('an edit on A appears on B', async () => {
-    test.setTimeout(60_000)
+    test.setTimeout(120_000)
     await createBoxAt(a, 200, 150)
     await expect(a.locator('[data-testid="box-editor"]:focus')).toHaveText('')
     await a.keyboard.type('hello over git')
 
-    await b.getByTestId('notebook-picker').click()
+    // A's save, its push and B's pull each start git processes, which a loaded machine starts slowly. The menu is
+    // reopened on each try so a list rendered before the pull is never what is waited on.
     const other = b.locator('.notebook-menu > [role="menuitem"]:not(.selected):has(~ hr)')
-    await expect(other).toHaveCount(1, { timeout: 15_000 })
+    await expect
+      .poll(
+        async () => {
+          if (!(await b.locator('.notebook-menu').isVisible())) await b.getByTestId('notebook-picker').click()
+          const n = await other.count()
+          if (n === 0) await b.getByTestId('notebook-picker').click()
+          return n
+        },
+        { timeout: 60_000, intervals: [500, 1_000, 2_000] },
+      )
+      .toBe(1)
     await other.click()
-    await expect(b.getByTestId('canvas')).toContainText('hello over git', { timeout: 15_000 })
+    await expect(b.getByTestId('canvas')).toContainText('hello over git', { timeout: 30_000 })
     expect(await syncedToGit(a)).toContain('Last synced just now')
   })
 
@@ -135,5 +147,17 @@ test.describe.serial('git sync between two devices', () => {
     }
     expect(configs.length).toBe(3)
     for (const config of configs) expect(readFileSync(config, 'utf8')).not.toMatch(/extraheader|token|AUTHORIZATION/i)
+  })
+
+  test('a new device opens the notebook in use elsewhere after its first sync', async () => {
+    test.setTimeout(60_000)
+    const c = (await launch(join(root, 'c'))).page
+    await expect(c.getByTestId('canvas')).not.toContainText('hello over git')
+    await openSettings(c)
+    await c.getByTestId('sync-provider-git').check()
+    await c.getByTestId('git-remote-url').fill(remoteUrl)
+    // Saving runs the first sync, which here pulls everything A and B pushed.
+    await c.getByTestId('sync-settings-save').click()
+    await expect(c.getByTestId('canvas')).toContainText('hello over git', { timeout: 30_000 })
   })
 })

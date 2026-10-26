@@ -75,6 +75,40 @@ test('Paper sets the paper texture; Glass sets glass and keeps body text at 4.5:
   expect(await textContrast(page, '.slate-box-content')).toBeGreaterThanOrEqual(4.5)
 })
 
+test('Liquid Glass, Folio and Paper paint the sidebar and toolbar; Folio notes are in Source Serif', async ({ page }) => {
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await createBoxAt(page, 200, 160)
+  await page.keyboard.type('Folio text')
+  await openAppearance(page)
+  const pseudo = (sel: string, which: '::before' | '::after', prop: string) =>
+    page.evaluate(([s, w, p]) => getComputedStyle(document.querySelector(s!)!, w).getPropertyValue(p!), [sel, which, prop])
+  const style = (sel: string, prop: string) => page.evaluate(([s, p]) => getComputedStyle(document.querySelector(s!)!).getPropertyValue(p!), [sel, prop])
+
+  await card(page, 'builtin:glass').click()
+  await expect(card(page, 'builtin:glass')).toContainText('Liquid Glass')
+  await expect.poll(() => rootAttr(page, 'data-material')).toBe('glass')
+  for (const sel of ['.sidebar', '.toolbar']) {
+    await expect.poll(() => pseudo(sel, '::before', 'background-image'), { message: sel }).toContain('linear-gradient')
+    await expect.poll(() => pseudo(sel, '::after', 'box-shadow'), { message: sel }).toContain('inset')
+  }
+  await expect.poll(() => style('.page-view', 'background-image')).toContain('linear-gradient')
+
+  await card(page, 'builtin:folio').click()
+  await expect.poll(() => rootAttr(page, 'data-sidebar-surface')).toBe('painted')
+  await expect.poll(() => style('.sidebar', 'background-image')).toContain('linear-gradient')
+  await expect.poll(() => style('.activity-bar', 'background-image')).toContain('linear-gradient')
+  await expect.poll(() => style('.slate-box-content', 'font-family')).toMatch(/^"?Source Serif 4 Variable/)
+  await expect.poll(() => style('.page-view', 'background-image')).toContain('data:image/png')
+  // The serif face loads on first use; check() is false until it has.
+  await expect.poll(() => page.evaluate(() => document.fonts.check('16px "Source Serif 4 Variable"'))).toBe(true)
+
+  await card(page, 'builtin:paper').click()
+  await expect.poll(() => rootAttr(page, 'data-toolbar-surface')).toBe('painted')
+  await expect.poll(() => style('.sidebar', 'background-image')).toContain('data:image/png')
+  await expect.poll(() => style('.toolbar', 'background-image')).toContain('data:image/png')
+  await expect.poll(() => style('.title-bar', 'background-image')).toContain('data:image/png')
+})
+
 test('Animations Off sets reduced motion and the effects canvas stops drawing', async ({ page }) => {
   await openAppearance(page)
   await card(page, 'builtin:glass').click()
@@ -109,6 +143,8 @@ test('a theme generated with (fake) Claude is previewed, then saved to the grid'
 })
 
 test('imported black text is readable in Dark and stays black in Paper', async () => {
+  // An import on a loaded machine can take most of a minute; the waits below say what each step needs.
+  test.setTimeout(120_000)
   const scratch = mkdtempSync(join(tmpdir(), 'slate-e2e-colors-'))
   const backupDir = join(scratch, 'Notes Fixture Book')
   mkdirSync(backupDir)
@@ -116,18 +152,21 @@ test('imported black text is readable in Dark and stays black in Paper', async (
   const converter = writeFakeConverter(scratch, join(__dirname, '../../importer/test/fixtures/one2html-colors'))
   const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
+    // The menu's handler is registered once the app has mounted; a click before that is lost.
+    await expect(page.getByTestId('canvas')).toBeVisible({ timeout: 15_000 })
     await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     await expect(dialog.getByTestId('backup-picker')).toBeVisible()
     await dialog.getByTestId('import-start').click()
-    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 20_000 })
+    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 60_000 })
     await dialog.getByTestId('import-done').click()
     await page.getByTestId('notebook-picker').click()
     await page.getByRole('menuitem', { name: 'Fixture Book' }).click()
     await page.getByTestId('section-item').filter({ hasText: 'New Section 1' }).click()
     await page.getByTestId('page-item').filter({ hasText: 'Test Page' }).click()
     const black = page.locator('span[data-color]', { hasText: 'DB restore' }).first()
-    await expect(black).toBeVisible()
+    // The first open of a freshly imported page can take longer than 5 s on a loaded machine.
+    await expect(black).toBeVisible({ timeout: 15_000 })
     await black.evaluate((el) => el.setAttribute('data-sample', ''))
     expect(await textContrast(page, '[data-sample]')).toBeGreaterThanOrEqual(3)
 

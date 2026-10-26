@@ -58,7 +58,7 @@ function blockLines(node: PMJSON, indent: string): string[] {
       const rows = (node.content ?? []).map((row) => (row.content ?? []).map((cell) => (cell.content ?? []).map((c) => inline(c.content)).join(' ').replace(/\|/g, '\\|')))
       if (rows.length === 0) return []
       const line = (cells: string[]) => `${indent}| ${cells.join(' | ')} |`
-      return [line(rows[0]), line(rows[0].map(() => '---')), ...rows.slice(1).map(line)]
+      return [line(rows[0]!), line(rows[0]!.map(() => '---')), ...rows.slice(1).map(line)]
     }
     default:
       return (node.content ?? []).flatMap((c) => blockLines(c, indent))
@@ -79,22 +79,22 @@ export function markdownToBlocks(md: string): PMJSON[] {
   const lines = md.replace(/\r\n?/g, '\n').split('\n')
   const blocks: PMJSON[] = []
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+    const line = lines[i]!
     const fence = /^```(\S*)\s*$/.exec(line)
     if (fence) {
       const code: string[] = []
-      for (i++; i < lines.length && !/^```\s*$/.test(lines[i]); i++) code.push(lines[i])
+      for (i++; i < lines.length && !/^```\s*$/.test(lines[i]!); i++) code.push(lines[i]!)
       blocks.push({ type: 'codeBlock', attrs: { language: fence[1] || 'plaintext' }, content: text(code.join('\n')) })
       continue
     }
     const heading = /^(#{1,3})\s+(.*)$/.exec(line)
     if (heading) {
-      blocks.push({ type: 'heading', attrs: { level: heading[1].length }, content: text(heading[2]) })
+      blocks.push({ type: 'heading', attrs: { level: heading[1]!.length }, content: text(heading[2]!) })
       continue
     }
     if (/^[-*]\s+/.test(line)) {
       const items: PMJSON[] = []
-      for (; i < lines.length && /^[-*]\s+/.test(lines[i]); i++) items.push(item(lines[i].replace(/^[-*]\s+/, '')))
+      for (; i < lines.length && /^[-*]\s+/.test(lines[i]!); i++) items.push(item(lines[i]!.replace(/^[-*]\s+/, '')))
       i--
       blocks.push({ type: 'bulletList', content: items })
       continue
@@ -102,7 +102,7 @@ export function markdownToBlocks(md: string): PMJSON[] {
     const numbered = /^(\d+)\.\s+/.exec(line)
     if (numbered) {
       const items: PMJSON[] = []
-      for (; i < lines.length && /^\d+\.\s+/.test(lines[i]); i++) items.push(item(lines[i].replace(/^\d+\.\s+/, '')))
+      for (; i < lines.length && /^\d+\.\s+/.test(lines[i]!); i++) items.push(item(lines[i]!.replace(/^\d+\.\s+/, '')))
       i--
       blocks.push({ type: 'orderedList', attrs: { start: Number(numbered[1]) }, content: items })
       continue

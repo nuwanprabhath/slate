@@ -114,8 +114,8 @@ describe('mapOneNotePage', () => {
       '<p>a​b</p><p>&nbsp;</p><p></p><p>c</p></div></body></html>'
     const page = mapOneNotePage(html)
     expect(page.title).toBe('T')
-    expect(page.boxes[0].blocks).toEqual([para(text('ab')), para(), para(text('c'))])
-    expect(page.boxes[0].width).toBe(480)
+    expect(page.boxes[0]!.blocks).toEqual([para(text('ab')), para(), para(text('c'))])
+    expect(page.boxes[0]!.width).toBe(480)
   })
 
   it('converts pt sizes and flags external and ink images', () => {

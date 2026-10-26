@@ -93,12 +93,88 @@ describe('validateTheme', () => {
   })
 })
 
+describe('glass parameters and surfaces', () => {
+  it('keeps glass parameters in range and drops them on solid', () => {
+    const { spec, report } = validateTheme({ material: 'glass', glass: { saturation: 9, highlight: -1, refraction: 0.4, evil: 'x' } })
+    expect(spec.glass).toEqual({ saturation: 2, highlight: 0, refraction: 0.4 })
+    expect(report.clamped).toBe(2)
+    expect(validateTheme({ material: 'solid', glass: { saturation: 1, highlight: 1, refraction: 1 } }).spec.glass).toBeUndefined()
+    expect(validateTheme({ material: 'glass' }).spec.glass).toBeUndefined()
+  })
+
+  it('accepts palette-token gradients and allowlisted textures on the sidebar and toolbar', () => {
+    const { spec, report } = validateTheme({
+      surfaces: {
+        sidebar: { texture: 'paper', gradient: { from: 'sidebar-bg', to: 'panel', angle: 400 } },
+        toolbar: { texture: 'marble' },
+        footer: { texture: 'paper' },
+      },
+    })
+    expect(spec.surfaces).toEqual({ sidebar: { texture: 'paper', gradient: { from: 'sidebar-bg', to: 'panel', angle: 360 } } })
+    expect(report.clamped).toBe(1)
+    expect(report.unknown).toBeGreaterThanOrEqual(1)
+  })
+
+  it('refuses raw colours in a gradient', () => {
+    const { spec, report } = validateTheme({ surfaces: { sidebar: { gradient: { from: '#ff0000', to: 'url(x)', angle: 90 } } } })
+    expect(spec.surfaces).toBeUndefined()
+    expect(report.unknown).toBeGreaterThanOrEqual(1)
+  })
+
+  it('makes sidebar text readable against both ends of its gradient', () => {
+    const { spec } = validateTheme({
+      palette: { 'bg': '#ffffff', 'sidebar-bg': '#ffffff', 'page': '#ffffff', 'panel': '#ffffff', 'border': '#b0b0b0', 'text': '#6a6a6a', 'muted': '#888888' },
+      surfaces: { sidebar: { gradient: { from: 'sidebar-bg', to: 'border', angle: 180 } } },
+    })
+    const text = rgba(spec.palette.text!)
+    const ends = [rgba(spec.palette['sidebar-bg']!), rgba(spec.palette.border!)]
+    for (const end of ends) expect(contrastRatio(text, end)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('turns glass and surfaces into allowlisted CSS', () => {
+    const vars = themeToCssVars(builtinTheme('builtin:glass')!.spec)
+    expect(vars['--glass-rim']).toContain('inset')
+    expect(vars['--glass-sheen']).toContain('linear-gradient')
+    const folio = themeToCssVars(builtinTheme('builtin:folio')!.spec)
+    expect(folio['--sidebar-gradient']).toMatch(/^linear-gradient\(\d+deg, #[0-9a-f]{8}, #[0-9a-f]{8}\)$/)
+    for (const k of [...Object.keys(vars), ...Object.keys(folio)]) expect(ALL_THEME_VARS).toContain(k)
+  })
+
+  it('tells the generator about surfaces and glass', () => {
+    const schema = JSON.stringify(THEME_JSON_SCHEMA)
+    expect(schema).toContain('surfaces')
+    expect(schema).toContain('refraction')
+    expect(buildThemePrompt({ request: 'x', current: null })).toContain('surfaces')
+  })
+})
+
 describe('built-in themes', () => {
   it('has Dark (the default), Light, Glass, Paper and two more', () => {
     expect(DEFAULT_THEME_ID).toBe('builtin:dark')
-    expect(BUILTIN_THEMES.map((b) => b.id)).toEqual(['builtin:dark', 'builtin:light', 'builtin:glass', 'builtin:paper', 'builtin:solarized-light', 'builtin:nord'])
+    expect(BUILTIN_THEMES.map((b) => b.id)).toEqual(['builtin:dark', 'builtin:light', 'builtin:glass', 'builtin:paper', 'builtin:solarized-light', 'builtin:nord', 'builtin:folio', 'builtin:folio-dark'])
     expect(builtinTheme('builtin:glass')?.spec.material).toBe('glass')
     expect(builtinTheme('builtin:paper')?.spec.texture).toBe('paper')
+  })
+
+  it('ships Liquid Glass under the old Glass id, with lens parameters', () => {
+    const glass = builtinTheme('builtin:glass')!.spec
+    expect(glass.name).toBe('Liquid Glass')
+    expect(glass.glass?.highlight).toBeGreaterThan(0)
+    expect(glass.glass?.refraction).toBeGreaterThan(0)
+    expect(glass.glass?.saturation).toBeGreaterThan(1)
+  })
+
+  it('gives Paper a paper sidebar and Folio a serif, Inter and a soft sidebar gradient', () => {
+    expect(builtinTheme('builtin:paper')!.spec.surfaces?.sidebar?.texture).toBe('paper')
+    for (const id of ['builtin:folio', 'builtin:folio-dark']) {
+      const folio = builtinTheme(id)!.spec
+      expect(folio.font).toBe('source-serif')
+      expect(folio.uiFont).toBe('inter')
+      expect(folio.surfaces?.sidebar?.gradient).toBeDefined()
+    }
+    expect(builtinTheme('builtin:folio')!.spec.palette.bg).toBe('#faf9f5ff')
+    expect(builtinTheme('builtin:folio')!.spec.palette.accent).toBe('#c15c39ff')
+    expect(builtinTheme('builtin:folio-dark')!.spec.palette.accent).toBe('#d97757ff')
   })
 
   for (const b of BUILTIN_THEMES) {

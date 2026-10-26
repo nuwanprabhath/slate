@@ -1,0 +1,18 @@
+{
+  "$comment": "Environment variables src/main reads that a packaged app still obeys (APP_ENV_VARS in src/main/testHooks.ts, plus platform variables). The test hooks a packaged app ignores are TEST_HOOK_VARS there and need no entry. tools/guards/envVars.test.ts fails on a read of any other name. Only shrinks.",
+  "SLATE_E2E": "Marks an e2e run: keeps windows hidden and enables the e2e fakes. Scrubbed from a packaged release (E2E_BUILD_VARS in src/main/testHooks.ts); only the packaged e2e build (a build-time define, electron-vite --mode e2e) obeys it.",
+  "SLATE_E2E_SHOW": "Shows the hidden e2e window on CI's virtual display; only read when SLATE_E2E=1, and scrubbed from a packaged release like SLATE_E2E.",
+  "SLATE_USER_DATA": "Moves the data folder (e2e and the MCP/import CLIs point at a scratch folder). Any local user can already choose where the app reads its data.",
+  "SLATE_MS_CLIENT_ID": "A Microsoft app registration id for OneNote import; public, not a secret.",
+  "SLATE_SYNC_INTERVAL_MS": "Shortens the background sync interval; changes timing only.",
+  "SLATE_GITHUB_CLIENT_ID": "A GitHub OAuth app id for device sign-in; public, not a secret.",
+  "SLATE_SAFE_THEME": "Starts with the built-in theme, to recover from a theme that makes the app unreadable.",
+  "SLATE_ONE2HTML": "Path of the one2html converter for OneNote backups, for development builds that have not bundled it.",
+  "ELECTRON_RENDERER_URL": "Set by electron-vite in development only: the dev server the window loads.",
+  "SHELL": "The user's login shell, to find the claude CLI for theme generation.",
+  "VITEST": "Set by the test runner; lets crash injection run in unit tests.",
+  "APPDATA": "Windows' per-user config folder (paths.ts).",
+  "XDG_CONFIG_HOME": "Linux's per-user config folder (paths.ts).",
+  "XDG_RUNTIME_DIR": "Linux's per-user runtime folder, where the MCP socket lives (mcp/socketPath.ts).",
+  "APPIMAGE": "Set by the AppImage runtime; tells the updater the app runs as an AppImage (update/capability.ts)."
+}

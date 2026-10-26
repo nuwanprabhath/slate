@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PageDoc } from '@slate/core'
+import { PageDoc, contentToJSON } from '@slate/core'
 import { writeContent } from '../src/content'
 import { PageSession, pageDocId, type DocPersistence } from '../src/PageSession'
 
@@ -119,6 +119,17 @@ describe('PageSession', () => {
     expect(session.page.getBox(empty)).toBeUndefined()
     session.redo()
     expect(session.page.getBox(empty)).toBeUndefined()
+    session.close()
+  })
+
+  it('deleting a box is an undo step that brings its text back', async () => {
+    const session = await PageSession.open('p-del', memoryPersistence())
+    const id = session.createBoxWithContent(0, 0, [{ type: 'paragraph', content: [{ type: 'text', text: 'keep me' }] }])
+    session.deleteBox(id) // straight after the edit: still its own undo step
+    expect(session.page.getBox(id)).toBeUndefined()
+    expect(session.undo()).toBe(true)
+    expect(session.page.getBox(id)).toBeDefined()
+    expect(JSON.stringify(contentToJSON(session.page.contentMap(id)!))).toContain('keep me')
     session.close()
   })
 

@@ -4,6 +4,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { loroSyncPluginKey } from 'loro-prosemirror'
 import type { BoxState } from '@slate/core'
 import { activeEditor } from './activeEditor'
+import { SlateCaret } from './caret'
 import { currentTheme, onThemeChange } from './colorContrast'
 import { cleanPastedHtml, makeClipboardSerializer, serializeSliceAsText } from './clipboard'
 import { buildExtensions, schema } from './extensions'
@@ -15,6 +16,7 @@ import { isSingleUrl, pastePlainOrLink } from './links'
 import { LoroBinding } from './loroBinding'
 import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
+import { editorRuleOptions } from './inputRules'
 
 const clipboardSerializer = makeClipboardSerializer(schema)
 
@@ -35,11 +37,10 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         ...buildExtensions({ autoBullets: services.autoBullets }),
         LoroBinding.configure({ doc: session.doc, containerId: box.contentId }),
         SlateKeymap.configure({ session, services }),
+        SlateCaret,
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
       ],
-      // Markdown Shortcuts turns on every rule; otherwise only the "* " bullet rule may run.
-      enableInputRules: services.markdownShortcuts ? true : services.autoBullets ? ['autoBullets'] : false,
-      enablePasteRules: false,
+      ...editorRuleOptions(services),
       autofocus: autoFocus ? 'end' : false,
       editorProps: {
         attributes: {

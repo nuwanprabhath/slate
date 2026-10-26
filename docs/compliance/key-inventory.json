@@ -1,0 +1,587 @@
+{
+  "$comment": "docs/compliance/key-inventory.json: every key Slate creates, derives or holds (SC-12). Generated from audit SLATE-CA-2026-10-23; C10 keeps it in sync with the code: `keyName` ties an entry to a KeyRing name, `gcmCallSites` lists the files that seal with AES-GCM (T-STATIC-03 and T-GCM-01 in packages/desktop/src/main/static.test.ts). `uses` lists the other files that take the key from the key ring (`keyRing.get('<keyName>')`), so a new use of an existing key is recorded here (T-STATIC-03).",
+  "format": "slate-key-inventory",
+  "version": 1,
+  "asOf": "2026-10-24",
+  "keys": [
+    {
+      "id": "PW",
+      "name": "Password",
+      "kind": "csp",
+      "bits": null,
+      "algorithm": "input to KEK_pw derivation",
+      "generation": "user",
+      "derivation": null,
+      "storage": "renderer <input> until submit; Uint8Array over IPC; native buffer until the KDF returns",
+      "protectedBy": null,
+      "cryptoperiod": "user-controlled",
+      "destruction": "renderer process destroyed after unlock (Z-6); IPC Uint8Array zeroed (Z-5); native OPENSSL_cleanse after KDF",
+      "evidence": [
+        "T-ZERO-04",
+        "T-ZERO-05"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/unlock.ts"
+    },
+    {
+      "id": "KEK_pw",
+      "name": "Password key-encryption key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "AES-256-GCM (wraps MK)",
+      "generation": "derived",
+      "derivation": {
+        "standard": "Argon2id(NFC(PW), salt, m=262144 KiB, t=4, p=1, 32) in g_std_ctx",
+        "fips-140-3": "PBKDF2-HMAC-SHA-512(NFC(PW), salt[32], c>=600000, 32) per SP 800-132 §5.4 option 2"
+      },
+      "storage": "native secure heap (handle)",
+      "protectedBy": null,
+      "cryptoperiod": "until the next password change",
+      "destruction": "keyDestroy right after the MK wrap is opened or sealed",
+      "gcmInvocationsPerKey": "1 per password set (changePassword re-derives with the same salt and seals once)",
+      "evidence": [
+        "T-ZERO-01",
+        "T-ZERO-04"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/header.ts",
+      "gcmCallSites": [
+        "vault/header.ts"
+      ]
+    },
+    {
+      "id": "RK",
+      "name": "Recovery key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "input to KEK_rc",
+      "generation": "module DRBG (RAND_priv_bytes_ex, 256-bit strength)",
+      "derivation": null,
+      "storage": "shown once; never stored by Slate",
+      "protectedBy": null,
+      "cryptoperiod": "until 'New recovery key' or a key rotation (R-1)",
+      "destruction": "native buffer cleansed after encoding / after KEK_rc derivation",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/recovery.ts"
+    },
+    {
+      "id": "KEK_rc",
+      "name": "Recovery key-encryption key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "AES-256-GCM (wraps MK)",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF-SHA-256(RK, salt=vaultId, info='slate/v1/recovery')",
+        "suite-0x02": "KBKDF(RK, 'slate/v2/recovery', vid)"
+      },
+      "storage": "native secure heap (handle)",
+      "protectedBy": null,
+      "cryptoperiod": "as RK",
+      "destruction": "keyDestroy after one wrap/unwrap",
+      "gcmInvocationsPerKey": "1 per recovery key",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/header.ts",
+      "gcmCallSites": [
+        "vault/header.ts"
+      ]
+    },
+    {
+      "id": "QU",
+      "name": "Quick-unlock secret",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "input to KEK_qu",
+      "generation": "module DRBG",
+      "derivation": null,
+      "storage": "quick-unlock.bin, sealed by safeStorage (OS keychain / libsecret / KWallet)",
+      "protectedBy": "OS keychain",
+      "cryptoperiod": "until 'Forget quick unlock', a join or a rotation",
+      "destruction": "file deleted; in memory the base64 string handed to safeStorage cannot be zeroed (Z-12)",
+      "evidence": [
+        "T-POL-06"
+      ],
+      "profiles": [
+        "standard"
+      ],
+      "owner": "vault/quickUnlock.ts"
+    },
+    {
+      "id": "KEK_qu",
+      "name": "Quick-unlock key-encryption key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "AES-256-GCM (wraps MK)",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF-SHA-256(QU, salt='', info='slate/v1/quick')",
+        "suite-0x02": "KBKDF(QU, 'slate/v2/quick', vid || deviceId)"
+      },
+      "storage": "native secure heap (handle)",
+      "protectedBy": null,
+      "cryptoperiod": "as QU",
+      "destruction": "keyDestroy after one wrap/unwrap",
+      "gcmInvocationsPerKey": "1 per enable",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard"
+      ],
+      "owner": "vault/quickUnlock.ts",
+      "gcmCallSites": [
+        "vault/header.ts"
+      ]
+    },
+    {
+      "id": "MK",
+      "name": "Master key (per key epoch)",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "KBKDF input key / HKDF IKM (suite 0x01)",
+      "generation": "module DRBG (RAND_priv_bytes_ex, 256-bit strength)",
+      "derivation": null,
+      "storage": "vault.json wraps (password, recovery), quick-unlock.bin wrap, history[] of the next epoch; in memory: native secure heap",
+      "protectedBy": "KEK_pw, KEK_rc, KEK_qu; K_hist of the next epoch once rotated",
+      "cryptoperiod": "originator usage <= 2 years (SP 800-57 Pt 1 r5 Table 1); 'Keys are due for rotation' shown at 730 days in fips-140-3 (R-4)",
+      "destruction": "KeyRing.close() at every lock (verified count, Z-4); history entry removed once no file of that epoch remains (R-2)",
+      "evidence": [
+        "T-ZERO-01",
+        "T-ZERO-02",
+        "T-ZERO-04"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/keyring.ts",
+      "keyName": "mk",
+      "uses": [
+        "vault/migration.ts",
+        "vault/unlock.ts",
+        "vault/vaultCheck.ts"
+      ]
+    },
+    {
+      "id": "K_hist",
+      "name": "Key-history wrapping key (per earlier epoch)",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "AES-256-GCM (wraps MK_e in history[])",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x02": "KBKDF(MK_current, 'slate/v2/history', vid || uint32be(e)), derived inside @slate/native for each historySeal/historyRewrap/historyOpen call, never a handle"
+      },
+      "storage": "transient: native secure heap for the length of one call (OPENSSL_secure_clear_free)",
+      "protectedBy": null,
+      "cryptoperiod": "as MK_current",
+      "destruction": "cleansed before each history call returns; history entries are dropped once no file of their epoch remains (R-2), and emptied by a conversion to fips-140-3 (R-3)",
+      "gcmInvocationsPerKey": "1 per history entry written (a rotation seals the old MK, rewraps at most 3 older entries)",
+      "evidence": [
+        "T-ZERO-01",
+        "C9 kat.c history block",
+        "native/test/history.test.ts",
+        "vault/rotation.test.ts"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/header.ts"
+    },
+    {
+      "id": "K_sync",
+      "name": "Remote envelope key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "KBKDF input (file keys)",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF(MK, '', 'slate/v1/sync')",
+        "suite-0x02": "KBKDF(MK, 'slate/v2/sync', vid)"
+      },
+      "storage": "native secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "as MK",
+      "destruction": "KeyRing.close()",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/keyring.ts",
+      "keyName": "sync",
+      "uses": [
+        "sync/encryptingDrive.ts"
+      ]
+    },
+    {
+      "id": "K_file",
+      "name": "Per-file key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "AES-256-GCM",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF(K_sync, salt16, 'slate/v1/remote-file')",
+        "suite-0x02": "KBKDF(K_sync, 'slate/v2/remote-file', salt16)"
+      },
+      "storage": "native secure heap for the duration of one seal/open",
+      "protectedBy": null,
+      "cryptoperiod": "one file",
+      "destruction": "keyDestroy in finally (sealSle2With / openEnvelope)",
+      "gcmInvocationsPerKey": "exactly 1",
+      "evidence": [
+        "T-ZERO-01",
+        "T-GCM-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/envelope.ts",
+      "gcmCallSites": [
+        "vault/envelope.ts"
+      ]
+    },
+    {
+      "id": "K_name",
+      "name": "Blob-name MAC key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "HMAC-SHA-256",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF(MK, '', 'slate/v1/name')",
+        "suite-0x02": "KBKDF(MK, 'slate/v2/name', vid)"
+      },
+      "storage": "native secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "as MK",
+      "destruction": "KeyRing.close()",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/names.ts",
+      "keyName": "name",
+      "uses": [
+        "sync/encryptingDrive.ts"
+      ]
+    },
+    {
+      "id": "K_name_enc",
+      "name": "Remote-name encryption key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": {
+        "suite-0x01": "AES-256 single block (ECB, read-only legacy)",
+        "suite-0x02": "AES-256-CTR with SIV"
+      },
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF(MK, '', 'slate/v1/name-enc')",
+        "suite-0x02": "KBKDF(MK, 'slate/v2/name-enc', vid)"
+      },
+      "storage": "native secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "as MK",
+      "destruction": "KeyRing.close()",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/names.ts",
+      "keyName": "nameEnc",
+      "uses": [
+        "sync/encryptingDrive.ts"
+      ]
+    },
+    {
+      "id": "K_name_mac",
+      "name": "Remote-name SIV key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "HMAC-SHA-256 (truncated to 128 bits as the SIV)",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x02": "KBKDF(MK, 'slate/v2/name-mac', vid)"
+      },
+      "storage": "native secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "as MK",
+      "destruction": "KeyRing.close()",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/names.ts",
+      "keyName": "nameMac",
+      "uses": [
+        "sync/encryptingDrive.ts"
+      ]
+    },
+    {
+      "id": "K_check",
+      "name": "Vault-header MAC key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "HMAC-SHA-256",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF(MK, '', 'slate/v1/check')",
+        "suite-0x02": "KBKDF(MK, 'slate/v2/check', vid)"
+      },
+      "storage": "native secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "as MK",
+      "destruction": "KeyRing.close(); the audited computeCheck leak (Z-a) is removed in C1",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/header.ts",
+      "keyName": "check"
+    },
+    {
+      "id": "K_prefs",
+      "name": "Pre-unlock MAC key (settings, profile floor, unlock throttle)",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "HMAC-SHA-256",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF(MK, '', 'slate/v1/prefs')",
+        "suite-0x02": "KBKDF(MK, 'slate/v2/prefs', vid)"
+      },
+      "storage": "native secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "as MK",
+      "destruction": "KeyRing.close()",
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/preunlock.ts",
+      "keyName": "prefs",
+      "uses": [
+        "index.ts",
+        "vault/migration.ts",
+        "vault/preunlockSync.ts",
+        "vault/profileFloor.ts",
+        "vault/unlock.ts",
+        "vault/unlockThrottle.ts"
+      ]
+    },
+    {
+      "id": "K_localwrap",
+      "name": "Local database-key wrapping key",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "AES-256-GCM (wraps LK)",
+      "generation": "derived",
+      "derivation": {
+        "suite-0x01": "HKDF(MK, '', 'slate/v1/local-wrap')",
+        "suite-0x02": "KBKDF(MK, 'slate/v2/local-wrap', vid)"
+      },
+      "storage": "native secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "as MK",
+      "destruction": "KeyRing.close()",
+      "gcmInvocationsPerKey": "1 per local-keys.json write (create, rejoin, rotation)",
+      "evidence": [
+        "T-ZERO-01",
+        "T-GCM-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/localKeys.ts",
+      "keyName": "localwrap",
+      "gcmCallSites": [
+        "vault/localKeys.ts"
+      ]
+    },
+    {
+      "id": "LK",
+      "name": "Local database key (per device)",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "SQLCipher 4 raw key (AES-256-CBC pages, HMAC-SHA-512 page MAC)",
+      "generation": "module DRBG",
+      "derivation": null,
+      "storage": "local-keys.json wrapped under K_localwrap; in memory: native secure heap and SQLCipher's codec context",
+      "protectedBy": "K_localwrap",
+      "cryptoperiod": "the device's lifetime; replaced on standard -> fips-140-3 conversion (R-3)",
+      "destruction": "KeyRing.close() + closing every SQLCipher connection (SQLCipher wipes its codec context on close)",
+      "evidence": [
+        "T-ZERO-01",
+        "T-ZERO-04",
+        "T-DB-02"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "services.ts / db/openDatabase.ts",
+      "keyName": "lk",
+      "uses": [
+        "vault/migration.ts",
+        "vault/testVault.ts"
+      ]
+    },
+    {
+      "id": "SQLCIPHER_HMAC",
+      "name": "SQLCipher page-HMAC key",
+      "kind": "csp",
+      "bits": 512,
+      "algorithm": "HMAC-SHA-512",
+      "generation": "derived inside SQLCipher",
+      "derivation": {
+        "all": "PBKDF2-HMAC-SHA-512(LK, page-1 salt XOR 0x3a, 2 iterations) — SQLCipher internal (L-5)"
+      },
+      "storage": "SQLCipher codec context (native)",
+      "protectedBy": null,
+      "cryptoperiod": "as LK",
+      "destruction": "connection close",
+      "evidence": [
+        "T-DB-02"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "SQLCipher"
+    },
+    {
+      "id": "DRBG",
+      "name": "Module DRBG state",
+      "kind": "csp",
+      "bits": null,
+      "algorithm": "SP 800-90A DRBG of the OpenSSL FIPS provider",
+      "generation": "module (seeded from the OS entropy source)",
+      "derivation": null,
+      "storage": "OpenSSL secure heap",
+      "protectedBy": null,
+      "cryptoperiod": "module-managed reseeding",
+      "destruction": "process exit; enterErrorState() stops all use",
+      "evidence": [
+        "T-POST-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "OpenSSL FIPS provider"
+    },
+    {
+      "id": "RELEASE_SIGNING",
+      "name": "Release-manifest signing key",
+      "kind": "psp+csp",
+      "bits": null,
+      "algorithm": "Ed25519 now; hybrid ML-DSA-65 + Ed25519 once the toolchain supports it (CNSA 2.0 software signing: exclusive by 2030)",
+      "generation": "offline, maintainer hardware token",
+      "derivation": null,
+      "storage": "private: offline (never in CI or the repo); public: pinned in the main bundle",
+      "protectedBy": "hardware token",
+      "cryptoperiod": "2 years; the pinned set holds the current and the next public key",
+      "destruction": "token reset after rotation",
+      "evidence": [
+        "T-UPD-01",
+        "T-UPD-02"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "update/signature.ts"
+    },
+    {
+      "id": "POST_PROBE",
+      "name": "Self-test probe keys",
+      "kind": "csp",
+      "bits": 256,
+      "algorithm": "AES-256-GCM (round trip of the module's wrap and seal)",
+      "generation": "module DRBG",
+      "derivation": null,
+      "storage": "native secure heap (handle)",
+      "protectedBy": null,
+      "cryptoperiod": "one self-test",
+      "destruction": "keyDestroy before the self-test returns",
+      "gcmInvocationsPerKey": "1 per self-test",
+      "gcmCallSites": [
+        "native/cryptoModule.ts"
+      ],
+      "evidence": [
+        "T-ZERO-01"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "native/cryptoModule.ts"
+    },
+    {
+      "id": "POST_KAT",
+      "name": "Power-up self-test known-answer keys",
+      "kind": "public-test-vector",
+      "bits": 256,
+      "algorithm": "KBKDF, RFC 5869 HKDF, HMAC-SHA-256, AES-256-ECB/CTR/GCM, PBKDF2 and Argon2id over fixed public vectors (audit §5.2)",
+      "generation": "derived from a published secret: KEK_t = KBKDF(00..1f, \"slate/post/transport\", vid) unwraps a published MK; the production key schedule derives the rest",
+      "derivation": null,
+      "storage": "native secure heap (handle)",
+      "protectedBy": null,
+      "cryptoperiod": "one self-test run (C6: at start-up, on demand, before every vault change)",
+      "destruction": "keyDestroy before the self-test returns, checked by POST-ZEROIZE",
+      "gcmInvocationsPerKey": "1 seal per self-test run (POST-AES-GCM-ENC), under a key that protects no data",
+      "gcmCallSites": [
+        "vault/selftest/post.ts"
+      ],
+      "evidence": [
+        "T-POST-01",
+        "T-POST-02"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "vault/selftest/post.ts"
+    }
+  ]
+}

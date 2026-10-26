@@ -5,6 +5,8 @@ export interface RemoteItem {
   eTag: string
   deleted: boolean
   isFile: boolean
+  /** Bytes, when the drive reports it: the engine refuses oversized files without fetching them. */
+  size?: number
 }
 
 export interface DeltaPage {
@@ -29,6 +31,34 @@ export class OfflineError extends Error {
   constructor(message = 'Offline', options?: { cause?: unknown }) {
     super(message, options)
     this.name = 'OfflineError'
+  }
+}
+
+/** A remote file that did not authenticate, or is too large to try; the engine skips it. */
+export class UnverifiableFileError extends Error {
+  readonly unverifiable = true
+
+  constructor(message = 'This synced file could not be verified', options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'UnverifiableFileError'
+  }
+}
+
+/**
+ * The remote branch shares no history with this clone (another device replaced it, as encrypting
+ * does), or became encrypted under a plaintext clone. Replaying local commits onto it would publish
+ * them, so the drive stops instead.
+ */
+export class UnrelatedHistoryError extends Error {
+  readonly unrelatedHistory = true
+
+  constructor(readonly encryptedRemote: boolean) {
+    super(
+      encryptedRemote
+        ? 'The sync folder is now encrypted by another device; join it before syncing again'
+        : 'The sync folder was replaced and shares no history with this device; Slate will not sync to it',
+    )
+    this.name = 'UnrelatedHistoryError'
   }
 }
 

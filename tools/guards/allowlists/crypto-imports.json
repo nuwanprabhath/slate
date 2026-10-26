@@ -1,0 +1,36 @@
+{
+  "$comment": "Files that may import node:crypto (lint rule slate/crypto-stays-in-the-vault). One entry per file with what it uses and why. Only shrinks (tools/guards/ratchet.test.ts). Since C4, main/vault, main/sync and main/db have no entry and import no node:crypto at all (audit §4.0 invariant 1, T-STATIC-02): cryptography there runs in @slate/native. Each entry names the imports that file may use (red team 4d): a new primitive in an allowlisted file is still an error.",
+  "packages/desktop/src/main/blobs.ts": {
+    "names": [
+      "createHash"
+    ],
+    "reason": "createHash('sha256') names an image by its content: an identifier, not a security function (audit §4.0 invariant 1)."
+  },
+  "packages/desktop/src/main/update/electronBackend.ts": {
+    "names": [
+      "createHash"
+    ],
+    "reason": "createHash('sha512') checks a downloaded installer against the digest in the release manifest."
+  },
+  "packages/desktop/src/main/update/signature.ts": {
+    "names": [
+      "createHash",
+      "createPublicKey",
+      "verify"
+    ],
+    "reason": "Ed25519 verification of the signed update feed and artefacts against the pinned public keys (C12, audit F-NIST-06); public-key operations only, no secret in the app."
+  },
+  "packages/desktop/src/main/update/fakeBackend.ts": {
+    "names": [
+      "generateKeyPairSync",
+      "sign"
+    ],
+    "reason": "The e2e fake update feed signs with a key pair it generates for the run (SLATE_FAKE_UPDATE, a test hook scrubbed when packaged)."
+  },
+  "packages/desktop/src/main/theme/themeStore.ts": {
+    "names": [
+      "randomUUID"
+    ],
+    "reason": "randomUUID for a saved theme's id."
+  }
+}

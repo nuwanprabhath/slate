@@ -70,6 +70,7 @@ const converters: Array<[string, () => string | undefined]> = [
 ]
 describe.each(converters)('BackupSource with the %s', (label, getConverter) => {
   const skip = label === 'real converter' && !converter
+  // The real converter is built by `npm run build:one2html`; the fake converter case always runs.
   it.skipIf(skip)('converts the fixture section into pages with content and an image', async () => {
     const file = join(dir, 'Fixture Book', 'New Section 1 (On 27-10-2020).one')
     mkdirSync(join(file, '..'), { recursive: true })

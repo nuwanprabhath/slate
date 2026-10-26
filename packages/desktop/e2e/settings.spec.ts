@@ -10,13 +10,29 @@ async function openWithShortcut(page: Page) {
   await expect(page.getByTestId('settings-dialog')).toBeVisible()
 }
 
-test('Cmd/Ctrl+, opens Settings with Autocorrect, Appearance, Sync, General, Updates and Diagnostics; Escape closes it', async ({ page }) => {
+test('Cmd/Ctrl+, opens Settings with Autocorrect, Appearance, Sync, General, Security, Updates and Diagnostics; Escape closes it', async ({ page }) => {
   await expect(page.getByTestId('canvas')).toBeVisible()
   await openWithShortcut(page)
-  await expect(page.locator('.settings-nav-item')).toHaveText(['Autocorrect', 'Appearance', 'Sync', 'General', 'Updates', 'Diagnostics'])
+  await expect(page.locator('.settings-nav-item')).toHaveText(['Autocorrect', 'Appearance', 'Sync', 'General', 'Security', 'Updates', 'Diagnostics'])
   await expect(page.getByTestId('settings-heading')).toHaveText('Autocorrect')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('settings-dialog')).toHaveCount(0)
+})
+
+test('Settings → Security shows the cryptographic module, its CMVP certificate and approved mode (audit C2, F-FIPS-08)', async ({ page }) => {
+  await openWithShortcut(page)
+  await page.locator('.settings-nav-item', { hasText: 'Security' }).click()
+  const group = page.getByTestId('security-module')
+  await expect(group).toBeVisible()
+  await expect(group.getByTestId('security-module-validation')).toHaveText('ValidationFIPS 140-3, CMVP certificate #4985')
+  const moduleRow = group.getByTestId('security-module-module')
+  await expect(moduleRow).toHaveText(/^Module(OpenSSL FIPS Provider 3\.1\.2|Not available)$/)
+  // A checkout with the addon and provider built (npm run -w @slate/native build) runs in approved mode.
+  if ((await moduleRow.textContent())?.includes('3.1.2')) {
+    await expect(group.getByTestId('security-module-approved-mode')).toHaveText('Approved modeOn')
+    await expect(group.getByTestId('security-module-self-test-at-launch')).toHaveText(/^Self-test at launchPassed in \d+ ms$/)
+    await expect(group.getByTestId('security-module-library')).toHaveText(/^LibraryOpenSSL 3\.5\.\d+/)
+  }
 })
 
 test('the activity bar gear opens Settings, and the close button closes it', async ({ page }) => {
@@ -32,12 +48,12 @@ test('typing in the search filters the sections', async ({ page }) => {
   await expect(page.locator('.settings-nav-item')).toHaveText(['Sync'])
   await expect(page.getByTestId('settings-heading')).toHaveText('Sync')
   await page.getByTestId('settings-search').fill('')
-  await expect(page.locator('.settings-nav-item')).toHaveCount(6)
+  await expect(page.locator('.settings-nav-item')).toHaveCount(7)
 })
 
 test('show-settings with a section opens that section', async ({ app, page }) => {
   await expect(page.getByTestId('canvas')).toBeVisible()
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu:command', { cmd: 'show-settings', section: 'sync' }))
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send('menu:command', { cmd: 'show-settings', section: 'sync' }))
   await expect(page.getByTestId('settings-heading')).toHaveText('Sync')
   await expect(page.getByTestId('sync-settings')).toBeVisible()
 })

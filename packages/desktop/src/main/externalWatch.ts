@@ -23,7 +23,7 @@ export function createExternalWatch(
     version = now
     const rows = store.updatesSince(lastId)
     if (rows.length === 0) return
-    lastId = rows[rows.length - 1].id
+    lastId = rows[rows.length - 1]!.id
     const byDoc = new Map<string, Uint8Array[]>()
     for (const row of rows) byDoc.set(row.docId, [...(byDoc.get(row.docId) ?? []), row.data])
     log.info('external updates', { docs: byDoc.size, updates: rows.length })

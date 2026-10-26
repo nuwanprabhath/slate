@@ -1,0 +1,39 @@
+name: Compliance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/compliance/**'
+      - 'scripts/validate-oscal.mjs'
+      - '.github/workflows/compliance.yml'
+  pull_request:
+    paths:
+      - 'docs/compliance/**'
+      - 'scripts/validate-oscal.mjs'
+      - '.github/workflows/compliance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compliance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oscal:
+    name: OSCAL 1.2.3 schema validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      # ajv and ajv-formats are root devDependencies (audit C10). No lifecycle scripts: this job only validates JSON.
+      - run: npm ci --ignore-scripts
+      # Downloads oscal_component_schema.json from the NIST OSCAL v1.2.3 release and refuses it unless its SHA-256 is
+      # the one pinned in scripts/validate-oscal.mjs; then validates every document under docs/compliance/oscal.
+      - run: node scripts/validate-oscal.mjs

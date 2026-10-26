@@ -1,0 +1,97 @@
+name: Nightly
+
+# Audit §6.1 layers that are too slow for every push (C11): the fuzz soak, and the Linux memory evidence with its
+# scan report kept as an artefact. Also on release tags. release.yml does not wait for this workflow, so nothing
+# blocks a release automatically: a red run on a tag is for the maintainer to act on (audit §6.1 asks for a block).
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz-soak:
+    name: Fuzz soak (T-FUZZ, 200,000 runs)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Electron's system libraries (it runs the main-process tests as Node)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libasound2t64
+      - run: npm ci
+      - name: Build @slate/native (libcrypto, SQLCipher, addon)
+        run: |
+          npm run -w @slate/native build:openssl -- --only openssl
+          npm run -w @slate/native build:sqlcipher
+          npm run -w @slate/native build:addon
+      # A new seed every night (the run number), so the soak explores beyond CI's fixed 0x51a7e; a failure prints
+      # the seed and fast-check's shrunk counterexample, which becomes a fixed case in the same file.
+      - name: Fuzz soak
+        run: npm run test:main -- src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
+        env:
+          SLATE_FUZZ_RUNS: 200000
+          SLATE_FUZZ_SEED: ${{ github.run_number }}
+
+  memory-evidence:
+    name: Memory evidence (T-ZERO-04, T-ZERO-06, Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Electron's system libraries and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libasound2t64 libxss1 libxshmfence1
+      # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox uses.
+      - name: Allow Electron's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: npm ci
+      - name: Build @slate/native (libcrypto, SQLCipher, addon)
+        run: |
+          npm run -w @slate/native build:openssl -- --only openssl
+          npm run -w @slate/native build:sqlcipher
+          npm run -w @slate/native build:addon
+      - name: Build the app
+        run: npm run build -w @slate/desktop
+      # memscan reads /proc/<pid>/mem through passwordless sudo; the app runs as this user. A crash must leave no
+      # core file although the shell allows one.
+      - name: Memory evidence
+        working-directory: packages/desktop
+        run: |
+          sudo sysctl -w kernel.core_pattern=/tmp/slate-core.%p
+          ulimit -c unlimited
+          xvfb-run --auto-servernum npx playwright test --config playwright.linux.config.ts
+          test -z "$(ls /tmp/slate-core.* 2>/dev/null)"
+        env:
+          SLATE_E2E_SHOW: 1
+      # Uploaded pass or fail: the report is the evidence (what each scan looked for and found).
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: memscan-report
+          # memscan/report.json, plus Playwright's traces when a step failed.
+          path: packages/desktop/test-results/
+          if-no-files-found: error
+          retention-days: 90

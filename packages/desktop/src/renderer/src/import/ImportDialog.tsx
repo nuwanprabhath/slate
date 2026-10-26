@@ -7,7 +7,7 @@ type Stage =
   | { kind: 'loading' }
   | { kind: 'backup'; pick: BackupPick | null }
   | { kind: 'not-configured' }
-  | { kind: 'signed-out' }
+  | { kind: 'signed-out'; sessionOnly: boolean }
   | { kind: 'picker'; account?: string; tree: OneNoteNotebook[] | null }
   | { kind: 'running' }
   | { kind: 'report'; result: ImportProgress }
@@ -62,7 +62,7 @@ export function ImportDialog({ onClose, initial = 'graph' }: { onClose: () => vo
     try {
       const status: OneNoteStatus = await window.slate.onenote.status()
       if (!status.configured) return setStage({ kind: 'not-configured' })
-      if (!status.signedIn) return setStage({ kind: 'signed-out' })
+      if (!status.signedIn) return setStage({ kind: 'signed-out', sessionOnly: status.remembered === false })
       setStage({ kind: 'picker', account: status.account, tree: null })
       const tree = await window.slate.onenote.tree()
       setStage({ kind: 'picker', account: status.account, tree })
@@ -133,6 +133,11 @@ export function ImportDialog({ onClose, initial = 'graph' }: { onClose: () => vo
         {stage.kind === 'signed-out' && (
           <div className="import-body">
             <p>Slate reads your notebooks through Microsoft Graph. Nothing in OneNote is changed.</p>
+            {stage.sessionOnly && (
+              <p className="muted" data-testid="import-session-only">
+                This computer has no system keyring Slate can use, so Slate keeps your Microsoft sign-in only until you quit. You sign in again each time you open Slate.
+              </p>
+            )}
             <button
               type="button"
               className="primary"

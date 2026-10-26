@@ -24,8 +24,80 @@ html:not([data-texture='none']) .page-view { background-image: var(--texture-ima
 /* Note text: the theme's font or the user's override (shared/theme/fonts.ts). A run with its own font mark keeps it. */
 .slate-box-content { font-family: var(--font-note); }
 
-/* Glass: a faint rim on the panes, so translucent chrome still reads as an edge. */
-html[data-material='glass'] :is(.sidebar, .toolbar, .activity-bar) { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0 0 1px rgb(255 255 255 / 0.04); }
+/*
+ * A theme's own sidebar and toolbar surfaces (spec `surfaces`): a texture tile and/or a gradient
+ * between two palette colours, over the surface colour. The title bar takes the toolbar's look and
+ * the activity bar the sidebar's, so each reads as one band.
+ */
+html[data-sidebar-surface='painted'] :is(.sidebar, .activity-bar) {
+  background-color: var(--sidebar-bg);
+  background-image: var(--sidebar-texture, none), var(--sidebar-gradient, none);
+}
+html[data-toolbar-surface='painted'] :is(.toolbar, .title-bar) {
+  background-color: var(--toolbar-bg);
+  background-image: var(--toolbar-texture, none), var(--toolbar-gradient, none);
+}
+
+/*
+ * Liquid glass, as Apiary draws it. Each pane's own background goes transparent and a pane is drawn
+ * behind its content instead (::before: the sheen over the tint), with the rim and lens-edge
+ * highlight over it (::after, inset only, so it never covers text). There is no backdrop-filter:
+ * what shows through is only the window colour and the effects canvas, which ThemeEffects already
+ * draws blurred (at 1/8 resolution) and saturated, while a live backdrop filter re-runs on every
+ * change underneath and made hovering and typing lag without a GPU.
+ */
+html[data-material='glass'] :is(.sidebar, .activity-bar, .toolbar, .title-bar) {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  --glass-tint: var(--sidebar-bg);
+}
+html[data-material='glass'] :is(.toolbar, .title-bar) { --glass-tint: var(--toolbar-bg); }
+html[data-material='glass'] :is(.sidebar, .activity-bar, .toolbar, .title-bar)::before,
+html[data-material='glass'] :is(.sidebar, .activity-bar, .toolbar, .title-bar)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+html[data-material='glass'] :is(.sidebar, .activity-bar, .toolbar, .title-bar)::before {
+  z-index: -1;
+  background: var(--glass-sheen), var(--sidebar-texture, none), var(--sidebar-gradient, none), var(--glass-tint);
+}
+html[data-material='glass'] :is(.toolbar, .title-bar)::before {
+  background: var(--glass-sheen), var(--toolbar-texture, none), var(--toolbar-gradient, none), var(--glass-tint);
+}
+html[data-material='glass'] :is(.sidebar, .activity-bar, .toolbar, .title-bar)::after { z-index: 1; box-shadow: var(--glass-rim); }
+/* Popovers float over text, not over the canvas: their thick tint, with the sheen and rim on top. */
+html[data-material='glass'] :is(.palette-popover, .style-menu, .font-combo-list, .notebook-menu, .context-menu, .sync-popover) {
+  background: var(--glass-sheen), var(--popover);
+  box-shadow: var(--glass-rim), 0 8px 24px rgb(0 0 0 / 0.3);
+}
+/*
+ * The reading surface: the page's tint over the opaque window colour, full strength under the notes
+ * and thinning towards the left and right edges, so the glass still shows at the sides without a
+ * hard line, while the text sits on what ensureReadable checked it against. A plain background:
+ * nothing here repaints with what is underneath.
+ */
+html[data-material='glass'] .page-view {
+  --reading-feather: 44px;
+  --reading-edge: color-mix(in srgb, var(--bg) 40%, transparent);
+  background:
+    linear-gradient(var(--page), var(--page)),
+    linear-gradient(to right, var(--reading-edge), var(--bg) var(--reading-feather), var(--bg) calc(100% - var(--reading-feather)), var(--reading-edge));
+}
+html[data-material='glass']:not([data-texture='none']) .page-view {
+  background:
+    var(--texture-image, none),
+    linear-gradient(var(--page), var(--page)),
+    linear-gradient(to right, var(--reading-edge), var(--bg) var(--reading-feather), var(--bg) calc(100% - var(--reading-feather)), var(--reading-edge));
+}
+
+/* Folio-style themes (an Inter UI font): pill-shaped buttons and dropdowns with a hairline border. */
+html[data-ui-font='inter'] :is(.toolbar button, .toolbar select, .title-bar button) { border-radius: 999px; }
+html[data-ui-font='inter'] .toolbar select { border: 1px solid var(--border); }
+html[data-ui-font='inter'] .slate-box-content { line-height: 1.6; }
 
 /* Animations: Off (or automatic with the OS asking for less motion, or no GPU). */
 html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-motion='reduced'] *::after {

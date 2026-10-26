@@ -6,7 +6,7 @@
 // it may stop, but `<git dir>/slate-not-done` keeps the failures for whoever reviews the branch.
 // Adapted from Apiary's hook; each check there came from an agent that claimed done when it wasn't.
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { testsFailOnBase } from './testsFailOnBase.mjs'
 
@@ -22,8 +22,10 @@ const git = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).st
 const gitDir = git(['rev-parse', '--absolute-git-dir']).trim()
 const blocksFile = gitDir ? join(gitDir, 'slate-stop-blocks') : ''
 const notDoneFile = gitDir ? join(gitDir, 'slate-not-done') : ''
+let notice = ''
 const passed = () => {
   for (const f of [blocksFile, notDoneFile]) if (f && existsSync(f)) rmSync(f)
+  if (notice) process.stdout.write(JSON.stringify({ systemMessage: notice }))
   process.exit(0)
 }
 
@@ -34,7 +36,27 @@ const changed = [...new Set([
   ...git(['diff', '--name-only', 'HEAD']).split('\n'),
   ...git(['ls-files', '--others', '--exclude-standard']).split('\n'),
 ])].filter((f) => f !== '' && existsSync(join(root, f)))
-const code = changed.filter((f) => /^packages\//.test(f) || /\.(ts|tsx|mjs|css)$/.test(f))
+// Security-sensitive paths (tools/guards/security-paths.txt): a reviewer looks before the merge.
+// The same rules merge-wp applies (scripts/agents/review-gate.mjs): paths, allowlisted files, risky lines.
+try {
+  const gate = await import(join(root, 'scripts/agents/review-gate.mjs'))
+  const list = join(root, 'tools/guards/security-paths.txt')
+  const allowDir = join(root, 'tools/guards/allowlists')
+  const allowlisted = existsSync(allowDir)
+    ? readdirSync(allowDir).filter((f) => f.endsWith('.json')).flatMap((f) => Object.keys(JSON.parse(readFileSync(join(allowDir, f), 'utf8'))))
+    : []
+  const text = (f) => (existsSync(f) ? readFileSync(f, 'utf8') : '')
+  const t = gate.reviewTier({ changed, diff: base ? git(['diff', base]) : '', security: text(list), architecture: text(join(root, 'tools/guards/architecture-paths.txt')), allowlisted })
+  if (t.tier === 'security') {
+    const what = [t.sensitive.length ? `security paths (${t.sensitive.slice(0, 6).join(', ')}${t.sensitive.length > 6 ? ', …' : ''})` : '', t.risky.length ? `risky changes (${t.risky.map((r) => r.why).join(', ')})` : ''].filter(Boolean).join(' and ')
+    notice = `This branch has ${what}: the lead must run the security-reviewer agent before merging (docs/review/REVIEW.md).`
+  } else if (t.tier === 'architecture') {
+    notice = `This branch changes main-process code (${t.structural.slice(0, 6).join(', ')}): the lead runs the architecture-reviewer agent before merging (docs/review/REVIEW.md).`
+  }
+} catch {
+  // A branch from before the review gate existed: nothing to announce.
+}
+const code = changed.filter((f) => /^(packages|tools)\//.test(f) || /\.(ts|tsx|mjs|cjs|css)$/.test(f) || /(^|\/)(package(-lock)?\.json|eslint-suppressions\.json)$/.test(f))
 if (code.length === 0) passed()
 
 const problems = []
@@ -42,7 +64,10 @@ const run = (label, cmd, args) => {
   const r = spawnSync(cmd, args, { cwd: root, encoding: 'utf8' })
   if (r.status !== 0) problems.push(`── ${label} ──\n${`${r.stdout}${r.stderr}`.split('\n').slice(-60).join('\n')}`)
 }
-run('typecheck', 'npx', ['--no', '--', 'tsc', '-p', 'tsconfig.json'])
+run('typecheck', 'npm', ['run', 'typecheck', '--silent'])
+// The lint rules and guard tests: the files this branch changed, and the whole-repo guards.
+run('lint (npm run lint:changed)', 'npm', ['run', 'lint:changed', '--silent'])
+run('guards (npm run guards)', 'npm', ['run', 'guards', '--silent'])
 
 // Every unit test, not only the changed ones: core and editor are fast, and a change in core can
 // break the editor's tests.
@@ -57,7 +82,7 @@ const trailer = (key) => (base ? git(['log', `--format=%(trailers:key=${key},val
   const src = changed.filter((f) => /^packages\/[^/]+\/src\//.test(f) && !isTest(f) && !f.endsWith('.css'))
   const tests = changed.filter(isTest)
   if (src.length > 0 && tests.length === 0 && trailer('No-Test-Reason') === '') {
-    problems.push(`── no test ──\nThis branch changes ${String(src.length)} source file(s) (${src.slice(0, 4).join(', ')}) and no test.\nAdd a test in the cheapest layer that proves the change (unit in packages/*/test, e2e in packages/desktop/e2e). If it truly needs none, say why in a commit trailer: \`No-Test-Reason: <why>\`.`)
+    problems.push(`── no test ──\nThis branch changes ${String(src.length)} source file(s) (${src.slice(0, 4).join(', ')}) and no test.\nAdd a test in the cheapest layer that proves the change (unit in packages/*/test, main-process in src/main/*.test.ts, e2e in packages/desktop/e2e). That is the fix.\n(Last resort, only if no test can prove it, e.g. a comment or style change: a commit trailer \`No-Test-Reason: <why>\`. merge-wp prints every trailer and the lead judges it.)`)
   }
 }
 
@@ -100,5 +125,5 @@ if (blocks > MAX_BLOCKS) {
   process.stderr.write(`Stopping with the definition of done still failing; recorded in ${notDoneFile}. Say so in your report: these checks FAIL.\n`)
   process.exit(0)
 }
-process.stderr.write(`Not done yet (blocked ${String(blocks)}/${String(MAX_BLOCKS)}) — the definition of done (CLAUDE.md) fails on this branch:\n\n${problems.join('\n')}\nFix these, then finish. Do not report a check as passing that this hook shows failing.\n`)
+process.stderr.write(`Not done yet (blocked ${String(blocks)}/${String(MAX_BLOCKS)}) — the definition of done (CLAUDE.md) fails on this branch:\n\n${problems.join('\n')}\nFix these, then finish. Do not report a check as passing that this hook shows failing.\n${notice ? `\n${notice}\n` : ''}`)
 process.exit(2)

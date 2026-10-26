@@ -1,5 +1,5 @@
 import { BUILTIN_THEMES } from './builtins'
-import { PALETTE_TOKENS, MATERIALS, TEXTURE_KINDS, EFFECT_KINDS, FONTS, LIMITS, type ThemeSpec, type EffectKind, type Font, type Texture } from './spec'
+import { PALETTE_TOKENS, MATERIALS, TEXTURE_KINDS, EFFECT_KINDS, FONTS, LIMITS, SURFACES, type ThemeSpec, type EffectKind, type Font, type Texture } from './spec'
 
 /**
  * What Claude is asked, and how its answer is read back.
@@ -18,11 +18,31 @@ const TEXTURE_NOTES: Record<Texture, string> = {
   paper: 'a visible paper grain on the page (pair with warm off-white colours)',
   linen: 'a faint woven linen texture on the page',
   dots: 'a dot grid on the page, like a bullet journal',
+  vellum: 'a very fine, barely-there paper grain (for quiet, editorial themes)',
 }
 
 const FONT_NOTES: Record<Font, string> = {
   system: 'the platform UI font', serif: 'a book serif (Charter, Georgia)', humanist: 'a warm humanist sans', mono: 'the platform monospace',
+  'source-serif': 'Source Serif 4, a bundled editorial text serif', inter: 'Inter, a bundled clean geometric sans',
 }
+
+const SURFACE_SCHEMA = {
+  type: 'object',
+  properties: {
+    texture: { type: 'string', enum: TEXTURE_KINDS.filter((t) => t !== 'none') },
+    gradient: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', enum: [...PALETTE_TOKENS] },
+        to: { type: 'string', enum: [...PALETTE_TOKENS] },
+        angle: { type: 'number', minimum: LIMITS.angle.min, maximum: LIMITS.angle.max },
+      },
+      required: ['from', 'to', 'angle'],
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const
 
 export const THEME_JSON_SCHEMA = {
   type: 'object',
@@ -36,6 +56,22 @@ export const THEME_JSON_SCHEMA = {
     material: { type: 'string', enum: [...MATERIALS] },
     texture: { type: 'string', enum: [...TEXTURE_KINDS] },
     font: { type: 'string', enum: [...FONTS] },
+    uiFont: { type: 'string', enum: [...FONTS] },
+    glass: {
+      type: 'object',
+      properties: {
+        saturation: { type: 'number', minimum: LIMITS.saturation.min, maximum: LIMITS.saturation.max },
+        highlight: { type: 'number', minimum: 0, maximum: 1 },
+        refraction: { type: 'number', minimum: 0, maximum: 1 },
+      },
+      required: ['saturation', 'highlight', 'refraction'],
+      additionalProperties: false,
+    },
+    surfaces: {
+      type: 'object',
+      properties: Object.fromEntries(SURFACES.map((s) => [s, SURFACE_SCHEMA])),
+      additionalProperties: false,
+    },
     effects: {
       type: 'array',
       maxItems: LIMITS.maxEffects,
@@ -80,6 +116,11 @@ export function buildThemePrompt({ request, current }: { request: string; curren
     '- material "glass": page, toolbar-bg and sidebar-bg translucent (alpha about 0xa0-0xd0) over a dark or light bg,',
     '  with a gradient-drift effect behind them so the glass has something to show. Popover stays nearly opaque.',
     '- At most 2 effects; keep intensities moderate so notes stay easy to read. Effect "color" names a palette token.',
+    '- glass (optional, only with material "glass"): saturation 0.5-2 of what shows through (liquid glass about 1.4-1.8),',
+    '  highlight 0-1 (bright rim and sheen on pane edges), refraction 0-1 (lens band inside the edge).',
+    '- surfaces (optional): sidebar and toolbar may each have a texture and/or a gradient {from, to, angle 0-360}.',
+    '  from and to name palette tokens (never raw colours); keep the two ends close so text reads on both.',
+    '- uiFont (optional): the font of menus and the sidebar; font is the note text.',
     '- name: a short evocative theme name.',
     '',
     'Textures:', ...TEXTURE_KINDS.map((t) => `- ${t}: ${TEXTURE_NOTES[t]}`),

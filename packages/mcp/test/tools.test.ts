@@ -25,7 +25,7 @@ describe('MCP tools', () => {
     const tree = await listTree(source)
     expect(tree).toHaveLength(1)
     expect(tree[0]).toMatchObject({ notebookId: 'nb1', name: 'Work' })
-    expect(tree[0].items).toEqual([{ id: ops, kind: 'section', title: 'Ops', access: 'read', children: [{ id: deploy.id, kind: 'page', title: 'Deploy', pageId: deploy.pageId, access: 'read', children: [] }] }])
+    expect(tree[0]!.items).toEqual([{ id: ops, kind: 'section', title: 'Ops', access: 'read', children: [{ id: deploy.id, kind: 'page', title: 'Deploy', pageId: deploy.pageId, access: 'read', children: [] }] }])
   })
 
   it('reads a granted page with private boxes omitted', async () => {

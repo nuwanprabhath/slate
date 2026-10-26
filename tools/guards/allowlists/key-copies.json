@@ -1,0 +1,4 @@
+{
+  "$comment": "slate/key-bytes-stay-put reviewed exceptions: files whose matching copies hold no key material. Only shrinks.",
+  "packages/desktop/src/main/vault/names.ts": "block() decrypts one AES block of a remote folder name (an id, not a key) through Buffer.concat; suite 0x02 (C5) replaces it."
+}

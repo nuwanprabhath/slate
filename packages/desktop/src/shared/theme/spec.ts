@@ -25,15 +25,15 @@ export const MATERIALS = ['solid', 'glass'] as const
 export type Material = (typeof MATERIALS)[number]
 
 /** A still tile painted once behind the page area (textures.ts). */
-export const TEXTURE_KINDS = ['none', 'paper', 'linen', 'dots'] as const
+export const TEXTURE_KINDS = ['none', 'paper', 'linen', 'dots', 'vellum'] as const
 export type Texture = (typeof TEXTURE_KINDS)[number]
 
 /** Animated, drawn on one canvas behind the UI (effects/). */
 export const EFFECT_KINDS = ['gradient-drift', 'grain'] as const
 export type EffectKind = (typeof EFFECT_KINDS)[number]
 
-/** Body font stacks, all system or locally installed fonts: no web fonts. */
-export const FONTS = ['system', 'serif', 'humanist', 'mono'] as const
+/** Font stacks: system fonts, or a family Slate bundles (fonts.ts), never one fetched from the web. */
+export const FONTS = ['system', 'serif', 'humanist', 'mono', 'source-serif', 'inter'] as const
 export type Font = (typeof FONTS)[number]
 
 export interface EffectSpec {
@@ -45,6 +45,28 @@ export interface EffectSpec {
   density: number
 }
 
+/** How liquid glass looks. The blur is fixed (ThemeEffects draws the back canvas small); these shape the lens. */
+export interface GlassSpec {
+  /** Saturation of what shows through: 1 is unchanged. */
+  saturation: number
+  /** 0–1: the bright rim and sheen along a pane's edges. */
+  highlight: number
+  /** 0–1: the lens-like band just inside a pane's edge. */
+  refraction: number
+}
+
+/** The sidebar's or toolbar's own look. Gradient ends are palette token *names*, never raw colours. */
+export interface SurfaceSpec {
+  texture?: Exclude<Texture, 'none'>
+  gradient?: { from: PaletteToken; to: PaletteToken; angle: number }
+}
+
+export const SURFACES = ['sidebar', 'toolbar'] as const
+export type Surface = (typeof SURFACES)[number]
+
+/** The palette token each surface is painted with, under its gradient or texture. */
+export const SURFACE_TOKEN: Record<Surface, PaletteToken> = { sidebar: 'sidebar-bg', toolbar: 'toolbar-bg' }
+
 export interface ThemeSpec {
   version: 1
   name: string
@@ -53,9 +75,18 @@ export interface ThemeSpec {
   texture: Texture
   effects: EffectSpec[]
   font: Font
+  /** The app's UI font; absent means the platform's. */
+  uiFont?: Font
+  /** Only with `material: 'glass'`; absent means `DEFAULT_GLASS`. */
+  glass?: GlassSpec
+  surfaces?: Partial<Record<Surface, SurfaceSpec>>
 }
 
+export const DEFAULT_GLASS: GlassSpec = { saturation: 1.4, highlight: 0.5, refraction: 0.3 }
+
 export const LIMITS = {
+  saturation: { min: 0.5, max: 2 },
+  angle: { min: 0, max: 360 },
   maxEffects: 2,
   maxInputChars: 65_536,
   maxNameChars: 60,

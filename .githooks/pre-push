@@ -1,3 +1,8 @@
 #!/bin/sh
+# main leaves this machine only with every new commit merged and signed by merge-wp, or covered
+# by the maintainer's signed confirmation, and every guard-file change confirmed. The check is the
+# main checkout's copy, never the pushing branch's own (red team final F-4).
+main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+node "$main/scripts/agents/check-push.mjs" || exit 1
 # Whole-repo checks too slow for every commit. E2E stays out: run `npm run e2e` before a release.
 npm run typecheck && npm test || exit 1

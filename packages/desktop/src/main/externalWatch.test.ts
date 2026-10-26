@@ -19,7 +19,7 @@ describe('createExternalWatch', () => {
     cli.append('notebook:n', new Uint8Array([3]))
     watch.check()
     expect(seen).toHaveLength(1)
-    expect(seen[0].map((b) => [b.docId, b.updates.map((u) => Array.from(u))])).toEqual([
+    expect(seen[0]!.map((b) => [b.docId, b.updates.map((u) => Array.from(u))])).toEqual([
       ['page:a', [[1], [2]]],
       ['notebook:n', [[3]]],
     ])

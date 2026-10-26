@@ -39,12 +39,12 @@ function writeNode(map: LoroMap, node: PMJSON): void {
   const children = map.setContainer(CHILDREN, new LoroList())
   const content = node.content ?? []
   for (let i = 0; i < content.length; i++) {
-    if (content[i].type !== 'text') {
-      writeNode(children.insertContainer(children.length, new LoroMap()), content[i])
+    if (content[i]!.type !== 'text') {
+      writeNode(children.insertContainer(children.length, new LoroMap()), content[i]!)
       continue
     }
     let end = i
-    while (end + 1 < content.length && content[end + 1].type === 'text') end++
+    while (end + 1 < content.length && content[end + 1]?.type === 'text') end++
     writeTextRuns(children, content.slice(i, end + 1))
     i = end
   }

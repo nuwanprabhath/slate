@@ -1,0 +1,6 @@
+# Downloads, OpenSSL build trees and node-gyp output: rebuilt by scripts/build-openssl.mjs.
+.build/
+build/
+prebuilds/
+# fips.dylib / fips.so and fipsmodule.cnf are generated per platform at build time (L-3).
+fips/

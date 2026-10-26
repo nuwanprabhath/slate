@@ -70,7 +70,7 @@ export async function startFakeDrive(): Promise<FakeDrive> {
       eTag: c.eTag,
       parentReference: { path: APP + dir },
       ...(c.deleted ? { deleted: { state: 'deleted' } } : {}),
-      ...(c.isFile ? { file: { mimeType: 'application/octet-stream' } } : { folder: { childCount: 0 } })
+      ...(c.isFile ? { file: { mimeType: 'application/octet-stream' }, size: files.get(c.path)?.length ?? 0 } : { folder: { childCount: 0 } })
     }
   }
 
@@ -124,13 +124,25 @@ export async function startFakeDrive(): Promise<FakeDrive> {
     if (url.pathname === '/me/drive/special/approot/delta' && req.method === 'GET') {
       return json(200, delta(url.searchParams))
     }
+    if (url.pathname === '/me/drive/special/approot/children' && req.method === 'GET') {
+      return json(200, { value: [...new Set([...files.keys()].map((p) => p.split('/')[0]!))].map((name) => ({ name })) })
+    }
+    const eTagOf = (path: string) => [...log].reverse().find((c) => c.path === path)?.eTag ?? ''
     if (url.pathname.startsWith(ITEM)) {
       const rest = decodeURIComponent(url.pathname.slice(ITEM.length))
       const content = rest.match(/^(.+):\/content$/)
       const session = rest.match(/^(.+):\/createUploadSession$/)
       if (content && req.method === 'PUT') {
+        const exists = files.has(content[1]!)
+        if (url.searchParams.get('@microsoft.graph.conflictBehavior') === 'fail' && exists) return json(409, {})
+        const ifMatch = req.headers['if-match']
+        if (ifMatch !== undefined && (!exists || eTagOf(content[1]!) !== ifMatch)) return json(412, {})
         put(content[1]!, new Uint8Array(await readBody(req)))
         return json(201, { id: idOf(content[1]!) })
+      }
+      if (!content && !session && req.method === 'GET') {
+        const bytes = files.get(rest)
+        return bytes ? json(200, { id: idOf(rest), eTag: eTagOf(rest), size: bytes.length }) : json(404, {})
       }
       if (content && req.method === 'GET') {
         const bytes = files.get(content[1]!)
@@ -145,8 +157,13 @@ export async function startFakeDrive(): Promise<FakeDrive> {
         return json(200, { uploadUrl: `${baseUrl}/upload/${id}` })
       }
       if (req.method === 'DELETE') {
-        if (!files.delete(rest)) return json(404, {})
-        log.push({ id: idOf(rest), path: rest, eTag: `e${log.length + 1}`, deleted: true, isFile: true })
+        // A folder goes with everything in it.
+        const gone = files.has(rest) ? [rest] : [...files.keys()].filter((p) => p.startsWith(`${rest}/`))
+        if (gone.length === 0) return json(404, {})
+        for (const path of gone) {
+          files.delete(path)
+          log.push({ id: idOf(path), path, eTag: `e${log.length + 1}`, deleted: true, isFile: true })
+        }
         res.writeHead(204)
         res.end()
         return

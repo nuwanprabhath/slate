@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { inheritedEnv } from './childEnv'
 
 export interface GitResult {
   code: number
@@ -34,7 +35,7 @@ export function nodeGitRunner(gitPath = 'git'): GitRunner {
     new Promise((resolve, reject) => {
       const child = spawn(gitPath, args, {
         cwd: opts.cwd,
-        env: { ...process.env, ...PROMPT_FREE_ENV, ...opts.env },
+        env: { ...inheritedEnv(), ...PROMPT_FREE_ENV, ...opts.env },
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
         windowsHide: true

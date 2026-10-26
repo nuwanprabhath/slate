@@ -1,7 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ImportProgress } from '@slate/importer'
-import { BlobStore } from '../blobs'
+import { FileBlobStore } from '../blobs'
+import { IMPORT_ENCRYPTED_MESSAGE, vaultExists } from '../db/vaultGate'
 import { runningHolder } from '../lock'
 import { defaultUserDataDir } from '../paths'
 import { converterPath, defaultConverterDirs } from './backup'
@@ -43,6 +44,10 @@ export async function runImportCli(argv: string[], io: CliIo): Promise<number> {
   }
   const dir = args.userData ?? defaultUserDataDir()
   mkdirSync(dir, { recursive: true })
+  if (vaultExists(dir)) {
+    io.err(IMPORT_ENCRYPTED_MESSAGE)
+    return 3
+  }
   const holder = runningHolder(dir)
   if (holder !== null) {
     io.err(`Slate is running (pid ${holder}) and has this data folder open. Quit it, then run the import again.`)
@@ -59,7 +64,7 @@ export async function runImportCli(argv: string[], io: CliIo): Promise<number> {
   let last = ''
   const service = new ImportService({
     dbFile: join(dir, 'slate.db'),
-    blobs: new BlobStore(join(dir, 'blobs')),
+    blobs: new FileBlobStore(join(dir, 'blobs')),
     auth: noAuth,
     graphUrl: '',
     converter: converterPath(defaultConverterDirs()),

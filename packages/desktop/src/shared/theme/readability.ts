@@ -1,6 +1,6 @@
 import { parseColor, toHex8, contrastRatio, nudgeForContrast, composite, type RGBA } from './color'
 import { EFFECTS } from './effects'
-import { DEFAULT_PALETTE, type ThemeSpec, type PaletteToken } from './spec'
+import { DEFAULT_PALETTE, SURFACES, SURFACE_TOKEN, type ThemeSpec, type PaletteToken } from './spec'
 import { TEXTURE_MAX_OPACITY } from './textures'
 
 /**
@@ -75,6 +75,22 @@ function unique(colours: RGBA[]): RGBA[] {
   })
 }
 
+function texturedSurface(spec: ThemeSpec, token: PaletteToken): boolean {
+  if (token === 'page') return spec.texture !== 'none'
+  return SURFACES.some((s) => SURFACE_TOKEN[s] === token && spec.surfaces?.[s]?.texture !== undefined)
+}
+
+/** The palette tokens a gradient on the sidebar or toolbar runs between: their text must read on both ends. */
+function gradientEnds(spec: ThemeSpec, on: PaletteToken[]): PaletteToken[] {
+  const ends: PaletteToken[] = []
+  for (const s of SURFACES) {
+    const g = spec.surfaces?.[s]?.gradient
+    if (g === undefined || !on.includes(SURFACE_TOKEN[s])) continue
+    for (const t of [g.from, g.to]) if (!on.includes(t) && !ends.includes(t)) ends.push(t)
+  }
+  return ends
+}
+
 /**
  * Every opaque colour `token` can end up looking like: itself over each thing it can sit on, down
  * to the window (`under`, the backdrops), and on the page also with the texture's ink over it.
@@ -83,7 +99,7 @@ function looks(spec: ThemeSpec, token: PaletteToken, resolved: (t: PaletteToken)
   if (token === 'bg') return under
   const c = resolved(token)
   const base = c.a >= 1 ? [c] : unique((UNDERLAYS[token] ?? ['bg']).flatMap((u) => looks(spec, u, resolved, under)).map((u) => composite(c, u)))
-  if (token !== 'page' || spec.texture === 'none') return base
+  if (!texturedSurface(spec, token)) return base
   const ink = resolved('text')
   return unique([...base, ...base.map((b) => composite({ ...ink, a: TEXTURE_MAX_OPACITY }, b))])
 }
@@ -104,13 +120,14 @@ export function ensureReadable(spec: ThemeSpec, report: ThemeReport): void {
   const surfaceLooks = (surface: PaletteToken, under: RGBA[]): RGBA[] => looks(spec, surface, resolved, under)
   const fails = (color: RGBA, surface: PaletteToken, min: number): boolean =>
     surfaceLooks(surface, behind).some((bg) => contrastRatio(color, bg) < min)
-  const textured = spec.texture !== 'none'
+  const textured = spec.texture !== 'none' || SURFACES.some((s) => spec.surfaces?.[s]?.texture !== undefined)
   for (const { fg, on: all, min } of PALETTE_CONTRAST) {
     // The surfaces the theme set; a left-out one keeps its Dark default, which a light theme would
     // otherwise pull its text back towards. With none set, the theme's own colour against them all.
     const set = all.filter((s) => spec.palette[s] !== undefined)
-    const on = set.length > 0 ? set : all
-    const touched = textured || spec.effects.length > 0 || spec.palette[fg] !== undefined || set.length > 0
+    const ends = gradientEnds(spec, all)
+    const on = [...(set.length > 0 ? set : all), ...ends]
+    const touched = textured || ends.length > 0 || spec.effects.length > 0 || spec.palette[fg] !== undefined || set.length > 0
     if (!touched) continue
     let color = resolved(fg)
     let changed = false

@@ -32,7 +32,7 @@ test('skipping hides the banner; the updates section says so and Stop skipping b
     await banner.getByRole('button', { name: 'Skip this version' }).click()
     await expect(banner).toHaveCount(0)
 
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu:command', { cmd: 'show-settings', section: 'updates' }))
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send('menu:command', { cmd: 'show-settings', section: 'updates' }))
     const section = page.getByTestId('updates-section')
     await expect(section.getByTestId('update-skipped')).toContainText('Skipping 9.9.9')
     await expect(section.getByTestId('update-version')).toHaveText('Version 0.1.0')
@@ -68,4 +68,18 @@ test('without SLATE_FAKE_UPDATE an e2e run never shows the banner', async ({ pag
   await expect(page.getByTestId('canvas')).toBeVisible()
   await page.waitForTimeout(1000)
   await expect(page.getByTestId('update-banner')).toHaveCount(0)
+})
+
+test('T-UPD-01: a feed signed by a key that is not pinned is never offered', async () => {
+  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-badsig' })
+  try {
+    await expect(page.getByTestId('canvas')).toBeVisible()
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send('menu:command', { cmd: 'show-settings', section: 'updates' }))
+    const section = page.getByTestId('updates-section')
+    await section.getByTestId('update-check-now').click()
+    await expect(section.getByTestId('update-check-result')).toContainText(/Could not check: .*is not pinned/)
+    await expect(page.getByTestId('update-banner')).toHaveCount(0)
+  } finally {
+    await app.close()
+  }
 })

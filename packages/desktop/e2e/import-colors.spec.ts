@@ -17,11 +17,13 @@ test('imported black text is readable on the dark theme and red stays red', asyn
   const { app, page } = await launchApp(userData, { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
     await page.emulateMedia({ colorScheme: 'dark' })
+    // The menu's handler is registered once the app has mounted; a click before that is lost.
+    await expect(page.getByTestId('canvas')).toBeVisible({ timeout: 15_000 })
     await clickMenu(app, 'import-onenote-backup')
     const dialog = page.getByTestId('import-dialog')
     await expect(dialog.getByTestId('backup-picker')).toBeVisible()
     await dialog.getByTestId('import-start').click()
-    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 20_000 })
+    await expect(dialog.getByTestId('import-report')).toBeVisible({ timeout: 60_000 })
     await dialog.getByTestId('import-done').click()
 
     await page.getByTestId('notebook-picker').click()

@@ -15,7 +15,7 @@ interface Props {
 /** Sections on the left, the chosen one's fields on the right. Every change saves at once. */
 export function SettingsDialog({ settings, section, onClose, onShowConnectAgents }: Props) {
   const [query, setQuery] = useState('')
-  const [activeId, setActiveId] = useState(() => SECTIONS.find((s) => s.id === section)?.id ?? SECTIONS[0].id)
+  const [activeId, setActiveId] = useState(() => SECTIONS.find((s) => s.id === section)?.id ?? SECTIONS[0]!.id)
   useEffect(() => {
     if (section && SECTIONS.some((s) => s.id === section)) setActiveId(section)
   }, [section])

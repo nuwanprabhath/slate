@@ -6,6 +6,113 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-24
+
+### Added
+
+- Settings → Security → *Encryption keys*: **Rotate keys** (a new master key and recovery key, your notes
+  re-encrypted here and in the sync folder, the password unchanged), **Upgrade encryption format** (a
+  vault made by 0.1.x moves to format 2) and **Convert to FIPS 140-3** (one way, a new 15-character
+  password). Other devices stop syncing until unlocked again with the password, then follow; files
+  sealed under the old keys leave the sync folder once everything was re-sent, and git users can
+  replace the sync history with one commit. A FIPS 140-3 vault says when its keys are two years old.
+  Every change can be interrupted and resumes. **Update every device before upgrading, converting or
+  rotating**: these are offered only once every device that syncs runs a version that reads format 2.
+
+- A FIPS 140-3 vault now limits password guessing and idle time: three wrong passwords within
+  15 minutes lock password unlock for three hours (the recovery key still works and resets it),
+  the idle lock is at most 15 minutes ("Never" is not offered), and locking on sleep and on screen
+  lock are always on, however the vault was opened. Slate also keeps a small security log
+  (unlock, failed unlock, lock, throttle, header refused) in the data folder, whether or not the
+  diagnostic log is on, never with a password, key or note title.
+- End-to-end encryption, opt-in from Settings → Security → *Encrypt my notes…*: notes and images
+  are encrypted on this computer and in the sync folder (git or OneDrive) under your password, with a
+  recovery key shown once. With sync on, the sync folder's history is replaced by one encrypted
+  commit. Other devices are asked for the password and join; password changes and new recovery keys
+  reach them on their next sync. Settings → Security also sets when Slate locks (idle, sleep, screen
+  lock) and turns on quick unlock with Touch ID (macOS) or the system keyring (Linux). AI agents
+  reach encrypted notes through the running app only while it is unlocked. Update every device
+  before encrypting: older versions cannot read encrypted notes.
+- Settings → Security shows Slate's cryptographic module: the OpenSSL FIPS Provider 3.1.2 (FIPS 140-3,
+  CMVP certificate #4985), whether it runs in approved mode, and how long its start-up self-test took.
+  Builds now bundle the new `@slate/native` module (OpenSSL 3.5 with the FIPS provider); notes move
+  onto it in a later release.
+- The notes database now runs on SQLCipher 4.19 built into `@slate/native`, on the same OpenSSL and
+  FIPS provider: its key goes to SQLCipher only from the module, never as text. Encrypted notes from
+  earlier versions open unchanged. Building from source now needs `npm run -w @slate/native build`.
+- New vaults use the version 2 formats (crypto suite 0x02): SP 800-108r1 key derivation, authenticated remote names
+  (an HMAC synthetic IV with AES-CTR instead of one AES-ECB block), padded and versioned sync files, and a vault
+  header that names its profile and algorithms. Builds with the FIPS module offer a **FIPS 140-3** profile when you
+  encrypt: PBKDF2-HMAC-SHA-512 for the password, 15-character passwords, no Touch ID or keyring unlock, and only
+  approved algorithms for the life of the vault. Existing encrypted vaults are not changed. A device keeps a signed
+  record of its vault's profile and refuses an older or weaker vault header. Older Slate versions cannot open or
+  join a vault created by this one (they call its vault file "damaged"), and a 0.1.x device that changes its
+  password can overwrite it: update every device first. This version never writes over a vault file it cannot
+  read. Joining another vault now re-encrypts this device's notes under a new key.
+- Slate tests its cryptography every time it starts, before it opens any note: known-answer tests of every
+  algorithm and of how Slate combines them (key derivation, sync files, remote names, password KDFs). If one
+  fails, Slate shows only an error screen with the failed test, **Quit** and **Copy diagnostic report**, and opens
+  nothing, encrypted or not; your data folder is left as it was. Settings → Security → *Run self-tests* runs them
+  again, and they also run before every vault change. A failure while Slate is open closes every window, the
+  databases and the AI-access socket at once.
+- After its first sync, a new device opens the notebook you last had open on another device instead of an empty one.
+- Folio and Folio Dark themes: warm ivory or charcoal, a clay accent, pill-shaped controls, a fine
+  paper grain, and bundled Source Serif 4 for notes and Inter for the interface (work offline).
+- Themes can give the sidebar and toolbar their own texture or a gradient between palette colours;
+  Paper's sidebar and toolbar now have its paper grain, and generated themes can use it too.
+
+### Security
+
+- The security log and the diagnostic log are readable by your user account only (folder 0700, files
+  0600), on encrypted and plaintext installs alike. Repeated unlock attempts during a FIPS 140-3
+  lockout are recorded once a minute with a count instead of one line each, and setting the computer's
+  clock back no longer makes a lockout last longer than its three hours.
+- Your password and recovery key go from the field you type them in to Slate's cryptographic module as
+  bytes, never as text, and every copy is wiped after use; the recovery key is decoded inside the module.
+  After unlocking, the lock screen's window is replaced by a new one, so the process that saw the
+  password ends. Slate turns off crash dumps of itself (and, on Linux, other programs reading its memory)
+  before any key exists.
+- A Slate window only ever shows Slate itself: a link a note opens, or anything that tries to
+  navigate the window or open a new one, goes to your browser instead (https and mailto only). The
+  app asks for no camera, microphone, notification or location access and refuses it if asked.
+- Remote images in notes no longer load in the built app: a note can no longer tell a third party
+  who opened it and when. Images you paste or import are kept with the note and still show.
+- The Microsoft (OneNote import) and GitHub sign-ins are stored only in the system keychain or
+  keyring. On a computer without one (Linux's basic store) Slate keeps them until you quit and you
+  sign in again next time; the import dialog says so. A plain-text Microsoft token cache an older
+  version left behind on such a computer is deleted.
+- Updates are signed: Slate checks an Ed25519 signature on the release's update feed and on the
+  installer before it offers, downloads or installs an update, and refuses one that does not verify.
+  Each release also carries a CycloneDX software bill of materials.
+- The app's pages load from its own `app://slate/` address instead of `file://`, and release builds
+  refuse Node's `--inspect` flags. Remembered panel widths and the last opened page are reset once.
+- Encryption keys derived while unlocking, changing the password or creating a recovery key are
+  wiped from memory as soon as they are used, and the vault's local files are refused when larger
+  than 64 KiB instead of being read whole.
+- All of the vault's cryptography now runs inside `@slate/native` (OpenSSL with the FIPS provider):
+  the password derivation, the master and database keys, sync encryption and remote names. Keys live
+  only in the module's locked memory and are destroyed at lock; Slate's own code never holds one.
+  Unlocking no longer pauses the window while the password is checked. Existing encrypted notes,
+  sync folders, recovery keys and quick unlock keep working unchanged.
+
+### Changed
+
+- Glass is now Liquid Glass: panes get a sheen, a bright rim and a lens edge over a blurred,
+  saturated backdrop, and notes sit on a feathered solid reading surface. Its settings are
+  part of the theme (saturation, highlight, refraction).
+- Links open in the browser only when they are `https:` or `mailto:`; an `http:` link (or any other
+  scheme) in a note is no longer handed to the system.
+- The installed app's window runs under a stricter content security policy: it makes no network
+  connections of its own, and images from plain `http:` addresses are no longer shown (`https:`
+  images still are).
+
+### Fixed
+
+- An empty new line in large text shows a caret as tall as that text, not the default size.
+- The text caret is full height with every font (the macOS system font drew it short).
+- A pasted image no longer leaves a blinking underline: the caret moves to a paragraph after the image, and any gap cursor is drawn as a vertical caret.
+- Delete or Backspace on a selected box header deletes the box (undoable) instead of scrolling the page; Escape returns to the canvas.
+
 ## [0.1.0] - 2026-10-22
 
 ### Added

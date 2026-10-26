@@ -32,13 +32,13 @@ agents can read your notes with your permission.
 
   ![Search across notes for "kubectl", with results grouped by page](docs/screenshots/search.png)
 
-- **Themes.** Dark, Light, Glass, Paper (with a real paper texture), Solarized Light and Nord. Or
+- **Themes.** Dark, Light, Liquid Glass, Paper (with a real paper texture), Folio, Folio Dark, Solarized Light and Nord. Or
   describe one and let Claude design it, if you have the `claude` CLI. Animations can be turned
   off. Text from imported notes is always drawn readable on the theme's background.
 
-  | Paper | Glass |
-  | --- | --- |
-  | ![Paper theme with a grain texture and serif text](docs/screenshots/paper.png) | ![Glass theme with translucent boxes over a soft gradient](docs/screenshots/glass.png) |
+  | Paper | Liquid Glass | Folio |
+  | --- | --- | --- |
+  | ![Paper theme with a grain texture and serif text](docs/screenshots/paper.png) | ![Liquid Glass theme with glass panes over a soft gradient](docs/screenshots/glass.png) | ![Folio theme: warm ivory, a clay accent and Source Serif notes](docs/screenshots/folio.png) |
 
   ![Settings, Appearance section: the theme grid, animations and "Describe a theme"](docs/screenshots/themes.png)
 
@@ -97,6 +97,12 @@ It never interrupts with a dialog, and a failed check stays silent.
 *Skip this version* hides that version until you choose *Stop skipping* in Settings → Updates; the
 × hides the banner until the next version.
 
+## Upgrading to 0.2.0
+
+Update **every device** before you encrypt, upgrade, rotate or convert a vault with 0.2.0: 0.1.x shows a
+format-2 vault as damaged and can overwrite it when you change the password. Details are under
+[Security and encryption](#security-and-encryption).
+
 ## AI access
 
 Slate ships an MCP server so AI agents such as Claude Code can read and write your notes. Build first
@@ -108,6 +114,93 @@ claude mcp add slate -- $PWD/bin/slate-mcp
 
 Nothing is shared until you grant access in the sidebar (right-click → AI access). Private boxes are
 never sent to an agent, and every agent read and write is listed in View → AI Activity.
+
+## Security and encryption
+
+Encryption is off until you turn it on in Settings → Security → *Encrypt my notes…*. Design details:
+[the encryption spec](docs/superpowers/specs/2026-10-23-e2ee-design.md).
+
+- **What is encrypted**: your notes and images, on this computer and in the sync folder (git or
+  OneDrive). A copy of a sync folder is unreadable without your password.
+- **Password and recovery key**: you choose a password and get a recovery key, shown once. Either one
+  opens your notes. Keep the recovery key somewhere safe outside Slate. **If you lose both, your notes
+  are gone**: nobody, including the Slate developers, can recover them.
+- **Quick unlock**: Touch ID on macOS, or the system keyring on Linux, can unlock Slate without
+  typing the password. It is convenient but weaker: anyone who can use your logged-in account can
+  open your notes with it. Turn it off in Settings → Security if that matters to you.
+- **When Slate locks**: after 30 minutes without use (change it in Settings → Security), when the
+  computer sleeps, when the screen locks, and from the menu or `Cmd/Ctrl+Shift+L`. On Linux, noticing
+  a screen lock needs `gdbus` (part of GLib, installed on most desktops).
+- **AI access** works only while Slate is open and unlocked. Locked, agents get a "Slate is locked"
+  reply and nothing else.
+- **Sync history**: encrypting with sync on replaces the sync folder's history with one encrypted
+  commit, so old unencrypted versions leave the folder. Copies made elsewhere can still hold them:
+  backups, other clones of the repository, and OneDrive's recycle bin and version history. Delete
+  those yourself. Hosts such as GitHub keep the old commits reachable by their ID until their own
+  garbage collection runs; for a full guarantee, sync to a new repository and delete the old one.
+- **Changing the password or recovery key** stops the old one opening this computer's vault. Anyone
+  holding an older copy of the vault files (a backup, the sync repository's history, OneDrive
+  versions) and the old secret can still read the notes in that copy. To revoke an old secret fully,
+  **rotate the keys** (below): that re-encrypts everything.
+- **Rotating keys** (Settings → Security → *Rotate keys…*) makes a new master key and a new recovery
+  key and re-encrypts your notes here and in the sync folder; your password stays the same. Other
+  devices stop syncing until they are unlocked again with the password, then follow. Files sealed
+  under the old keys are removed from the sync folder once everything was re-sent, and with git you
+  are offered *Replace sync history…*, which leaves one commit of the current files (copies made
+  elsewhere keep the old history; on OneDrive, empty the recycle bin). A FIPS 140-3 vault says when
+  its keys are two years old and due for rotation; nothing rotates by itself.
+- **Update every device first**: older versions of Slate cannot read encrypted notes. Other devices
+  are asked for the password and then join.
+- **Vaults made by this version (format 2)**: Slate 0.1.x cannot open them. It reports the sync
+  folder's vault file as "damaged" and stops syncing, and, worse, if you change the password on a
+  0.1.x device while the sync folder holds a format-2 vault, it writes its old-format vault file over
+  the new one. **Update every device before you encrypt, upgrade or convert a vault, or rotate its
+  keys**: Settings → Security offers these only once every device that syncs with the folder runs a
+  version that reads format 2, and names the devices to update. Vaults made by 0.1.x keep working
+  unchanged until you choose *Upgrade encryption format…*, which moves them to format 2 under new keys
+  (the same password, a new recovery key).
+- **FIPS 140-3 profile**: offered when you encrypt, in builds that ship the validated module. A
+  standard vault can be converted later (Settings → Security → *Convert to FIPS 140-3…*, one way,
+  with a new password of at least 15 characters and new keys); every other device then asks for the
+  new password and follows. Otherwise the profile is fixed: a device whose notes are in a standard
+  vault cannot join a different, FIPS 140-3 vault, or the other way round (export, then join from an
+  unencrypted device). After opening a FIPS 140-3 vault, Slate must be restarted before
+  it can open a standard one.
+- **Keys in memory**: your keys stay inside Slate's cryptographic module, in locked memory that is
+  wiped when Slate locks. The password and recovery key you type go to it as bytes and are wiped
+  after use; the lock screen's window process ends once Slate unlocks, and Slate leaves no crash dump
+  (on Linux other programs cannot read its memory either; for the windows' own processes that protection
+  comes from Chromium's sandbox). What cannot be wiped: the text field you
+  typed into while its window lives, the copy inside the message that carries the password from the
+  window to Slate's main process (freed, but not wiped, by Electron), and a new password while you set
+  it (it is checked against the password rules as text). On macOS, stopping other programs from reading Slate's memory needs a
+  signed build, which this version is not.
+- **Not protected**: malware running in your account while Slate is unlocked, and what the sync
+  folder reveals anyway: how many files there are, their sizes, and when they change.
+
+### What Slate claims about FIPS 140-3
+
+Slate is **not** "FIPS 140-3 validated", and it is not "FedRAMP authorized". Only the cryptographic module it
+embeds holds a certificate. This is the whole claim:
+
+> In the `fips-140-3` profile, every cryptographic operation that protects notes is performed by the OpenSSL FIPS Provider 3.1.2 (CMVP certificate #4985, FIPS 140-3, active, sunset 2030-03-10) in its approved mode. Slate runs a power-up self-test, enters a terminal error state on any failure, and destroys key material at lock.
+
+Where each part is tested (ids are in [`docs/compliance/traceability.yaml`](docs/compliance/traceability.yaml)):
+
+- **Certificate #4985** is recorded in [`docs/compliance/crypto-module.json`](docs/compliance/crypto-module.json); the
+  module's hash is pinned and checked at start (`POST-MODULE-STATUS`, T-POST-04, T-POST-06).
+- **Approved mode, nothing else**: a `fips-140-3` vault never reaches Argon2id, HKDF or AES-ECB
+  (`vault/fipsProfile.test.ts`, SCC_16 in `native/test/suite2.test.ts`, T-POL-05, T-POL-07).
+- **Power-up self-test and terminal error state**: T-POST-01 to T-POST-13.
+- **Keys destroyed at lock**: T-ZERO-01, T-ZERO-04, T-ZERO-05.
+- **Stricter rules in the `fips-140-3` profile**: passwords of at least 15 characters, three wrong passwords in
+  15 minutes lock password unlock for three hours, idle lock at most 15 minutes, no quick unlock.
+
+What this does not cover: the TLS used for sync and sign-in is outside the module (note contents are already
+sealed; credentials are not); the macOS build is not signed with a Developer ID; malware running in your account
+while Slate is unlocked. [`docs/compliance/security-policy.md`](docs/compliance/security-policy.md) lists the
+services, roles, self-tests, error behaviour, per-key wiping and open points;
+[`docs/compliance/poam.md`](docs/compliance/poam.md) lists what is still open.
 
 ## Develop
 

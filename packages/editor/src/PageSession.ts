@@ -94,6 +94,14 @@ export class PageSession {
     return true
   }
 
+  /** A user's delete of a whole box: unlike `deleteIfEmpty` it is an undo step. */
+  deleteBox(boxId: string): void {
+    // A delete right after typing would otherwise merge into that edit, and undo would take both back.
+    this.undoManager.setMergeInterval(0)
+    this.page.deleteBox(boxId)
+    this.undoManager.setMergeInterval(UNDO_MERGE_MS)
+  }
+
   noteLocalEdit(boxId: string): void {
     this.localEdits.add(boxId)
   }

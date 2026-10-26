@@ -1,3 +1,4 @@
+import type { KeyHandle } from '@slate/native'
 import { NotebookDoc, PageDoc, SECTION_COLORS, newId, writeContent, type TreeItem } from '@slate/core'
 import { GraphClient, runImport, selectionToPaths, type GraphSource, type ImportProgress, type ImportSink, type ImportState, type OneNoteNotebook, type SectionPath } from '@slate/importer'
 import type { TreeID } from 'loro-crdt'
@@ -106,6 +107,18 @@ function docStoreSink(store: DocStore, blobs: BlobStore, pageOrder: Map<string, 
   }
 }
 
+export interface ImportServiceDeps {
+  dbFile: string
+  blobs: BlobStore
+  auth: AuthService
+  graphUrl: string
+  emit: (p: ImportProgress) => void
+  converter?: string
+  log?: ScopedLog
+  /** A module key handle for the encrypted database (used to open the connection, not kept). */
+  dbKey?: KeyHandle | null
+}
+
 export class ImportService {
   private readonly store: DocStore
   private readonly sink: ImportSink & ImportState
@@ -118,9 +131,14 @@ export class ImportService {
   private lastPaths: SectionPath[] = []
   private controller: AbortController | null = null
 
-  constructor(private readonly deps: { dbFile: string; blobs: BlobStore; auth: AuthService; graphUrl: string; emit: (p: ImportProgress) => void; converter?: string; log?: ScopedLog }) {
+  private readonly deps: Omit<ImportServiceDeps, 'dbKey'>
+
+  constructor(input: ImportServiceDeps) {
+    // The key opens the connection and is not kept (§15 N9).
+    const { dbKey, ...deps } = input
+    this.deps = deps
     // Never compacts: compaction deletes update rows the watcher has not delivered yet.
-    this.store = new DocStore(deps.dbFile, { compact: false })
+    this.store = new DocStore(deps.dbFile, { compact: false, key: dbKey ?? null })
     const pageOrder = this.pageOrder
     this.sink = docStoreSink(this.store, deps.blobs, pageOrder)
     const client = new GraphClient({ baseUrl: deps.graphUrl, getToken: () => deps.auth.token(SIGN_IN_SCOPES) })

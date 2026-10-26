@@ -1,8 +1,8 @@
-import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { constants, existsSync } from 'node:fs'
+import { lstat, mkdir, open, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, normalize } from 'node:path'
 import { LOCAL_TIMEOUT_MS, NETWORK_TIMEOUT_MS, type GitResult, type GitRunner } from './gitRunner'
-import { OfflineError, type DeltaPage, type RemoteDrive, type RemoteItem } from './types'
+import { OfflineError, UnrelatedHistoryError, UnverifiableFileError, type DeltaPage, type RemoteDrive, type RemoteItem } from './types'
 
 export interface GitDriveOptions {
   run: GitRunner
@@ -15,6 +15,8 @@ export interface GitDriveOptions {
   author: { name: string; email: string }
   /** Named in commit messages; defaults to the author name. */
   deviceName?: string
+  /** Replaces the per-device commit message (encrypted remotes name no device). */
+  commitMessage?: string
 }
 
 export const README = `# Slate notes
@@ -24,6 +26,12 @@ Slate, not here. Each device writes only its own files under \`docs/<notebook>/<
 `
 
 const MAX_PUSH_ATTEMPTS = 5
+/** Present only on an encrypted remote (the desktop's `REMOTE_VAULT_PATH`). */
+const VAULT_PATH = 'e2ee/vault.json'
+// Regular files only: a gitlink (160000) or symlink (120000) is never a sync file.
+const REGULAR = new Set(['100644', '100755'])
+// Closes the gap between lstat and open; Windows has no O_NOFOLLOW (constants leaves it undefined).
+const NOFOLLOW = constants.O_NOFOLLOW ?? 0
 const OFFLINE = /Could not resolve host|Connection refused|unable to access|Network is unreachable|Operation timed out|Connection timed out|Could not resolve hostname/i
 const SIGNED_OUT = /Authentication failed|Permission denied \(publickey|could not read Username|could not read Password|terminal prompts disabled/i
 const REJECTED = /\[rejected\]|non-fast-forward|fetch first|failed to push some refs/i
@@ -60,13 +68,18 @@ export class GitDrive implements RemoteDrive {
     return { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email }
   }
 
-  private async git(args: string[], network = false): Promise<GitResult> {
+  private async git(args: string[], network = false, input?: string): Promise<GitResult> {
     const env = { ...this.identity, ...(network ? await this.opts.authEnv() : {}) }
-    return this.opts.run(args, { cwd: this.dir, env, timeoutMs: network ? NETWORK_TIMEOUT_MS : LOCAL_TIMEOUT_MS })
+    return this.opts.run(args, {
+      cwd: this.dir,
+      env,
+      timeoutMs: network ? NETWORK_TIMEOUT_MS : LOCAL_TIMEOUT_MS,
+      ...(input !== undefined ? { input: new TextEncoder().encode(input) } : {}),
+    })
   }
 
-  private async must(args: string[], network = false): Promise<GitResult> {
-    const r = await this.git(args, network)
+  private async must(args: string[], network = false, input?: string): Promise<GitResult> {
+    const r = await this.git(args, network, input)
     if (r.code !== 0) throw gitError(args, r)
     return r
   }
@@ -97,8 +110,10 @@ export class GitDrive implements RemoteDrive {
     } else {
       await this.must(['remote', 'set-url', 'origin', remoteUrl])
     }
+    // A symlink committed by someone with push access would otherwise point our reads and writes outside the clone.
+    await this.must(['config', 'core.symlinks', 'false'])
     if ((await this.git(['rev-parse', '--verify', '-q', 'HEAD'])).code === 0) return
-    await this.must(['fetch', 'origin'], true)
+    await this.fetch()
     if (await this.hasRemoteBranch()) {
       await this.must(['reset', '--hard', `origin/${branch}`])
       return
@@ -108,6 +123,15 @@ export class GitDrive implements RemoteDrive {
     await this.must(['add', '--', 'README.md'])
     await this.commit('slate: initialise')
     await this.push()
+  }
+
+  /** Only the sync branch, no tags: other branches may hold plaintext history that must not land here. */
+  private async fetch(): Promise<void> {
+    const { branch } = this.opts
+    const args = ['fetch', '-q', '--no-tags', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`]
+    const r = await this.git(args, true)
+    // An empty remote has no such branch yet; `hasRemoteBranch` then finds none.
+    if (r.code !== 0 && !/couldn't find remote ref/i.test(r.stderr)) throw gitError(args, r)
   }
 
   private async hasRemoteBranch(): Promise<boolean> {
@@ -128,13 +152,13 @@ export class GitDrive implements RemoteDrive {
     if (changes.length === 0) return false
     // Every sync rewrites this device's record with a new lastSeen. Alone, that would be a commit
     // per device per sync interval forever, so it only rides along with real changes.
-    if (changes.every((c) => c.startsWith(' M devices/'))) {
+    if (changes.every((c) => c.startsWith(' M devices/') || c.startsWith(' M e2ee/v/'))) {
       await this.must(['checkout', '-q', '--', ...changes.map((c) => c.slice(3))])
       return false
     }
     await this.must(['add', '-A'])
     const n = changes.length
-    await this.commit(`slate: ${this.opts.deviceName ?? this.opts.author.name} (${n} ${n === 1 ? 'file' : 'files'})`)
+    await this.commit(this.opts.commitMessage ?? `slate: ${this.opts.deviceName ?? this.opts.author.name} (${n} ${n === 1 ? 'file' : 'files'})`)
     this.ahead = true
     return true
   }
@@ -151,6 +175,12 @@ export class GitDrive implements RemoteDrive {
   private async rebase(): Promise<string> {
     const { head, remote } = await this.refs()
     if (!remote || remote === head) return head
+    const related = (await this.git(['merge-base', head, remote])).code === 0
+    // One process for both: a missing object prints "<name> missing".
+    const check = await this.must(['cat-file', '--batch-check'], false, `${remote}:${VAULT_PATH}\n${head}:${VAULT_PATH}\n`)
+    const [remoteVault, headVault] = text(check.stdout).split('\n').map((l) => !l.endsWith(' missing'))
+    if (!related) throw new UnrelatedHistoryError(remoteVault === true)
+    if (remoteVault && !headVault) throw new UnrelatedHistoryError(true)
     const r = await this.git(['rebase', '-q', `origin/${this.opts.branch}`])
     if (r.code !== 0) {
       await this.git(['rebase', '--abort'])
@@ -168,7 +198,7 @@ export class GitDrive implements RemoteDrive {
         return
       }
       if (!REJECTED.test(r.stderr) || OFFLINE.test(r.stderr) || SIGNED_OUT.test(r.stderr)) throw gitError(args, r)
-      await this.must(['fetch', 'origin'], true)
+      await this.fetch()
       await this.rebase()
     }
     throw new Error(`git push was rejected ${MAX_PUSH_ATTEMPTS} times; another device keeps pushing`)
@@ -187,23 +217,69 @@ export class GitDrive implements RemoteDrive {
   async upload(path: string, bytes: Uint8Array): Promise<void> {
     await this.ensureClone()
     const file = this.file(path)
+    await this.checkParents(path)
     await mkdir(dirname(file), { recursive: true })
-    await writeFile(file, bytes)
+    await this.checkParents(path)
+    await this.regularOrMissing(path, file)
+    const handle = await open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | NOFOLLOW, 0o644)
+    try {
+      await handle.writeFile(bytes)
+    } finally {
+      await handle.close()
+    }
   }
 
   async download(path: string): Promise<Uint8Array> {
     await this.ensureClone()
+    const file = this.file(path)
+    await this.checkParents(path)
+    let regular: boolean
     try {
-      return new Uint8Array(await readFile(this.file(path)))
+      regular = await this.regularOrMissing(path, file)
     } catch (err) {
-      if ((err as { code?: unknown }).code === 'ENOENT') throw Object.assign(new Error(`404 ${path}`), { status: 404 })
-      throw err
+      // A gitlink checks out as a folder; whatever a remote put there, it is not a file of ours.
+      throw new UnverifiableFileError(err instanceof Error ? err.message : undefined, { cause: err })
+    }
+    if (!regular) throw Object.assign(new Error(`404 ${path}`), { status: 404 })
+    const handle = await open(file, constants.O_RDONLY | NOFOLLOW)
+    try {
+      return new Uint8Array(await handle.readFile())
+    } finally {
+      await handle.close()
     }
   }
 
   async remove(path: string): Promise<void> {
     await this.ensureClone()
-    await rm(this.file(path), { force: true })
+    const file = this.file(path)
+    await this.checkParents(path)
+    if (await this.regularOrMissing(path, file)) await rm(file, { force: true })
+  }
+
+  /** Every existing folder on the way to `path` must be a real folder inside the clone, not a symlink. */
+  private async checkParents(path: string): Promise<void> {
+    const parts = normalize(path).split(/[\\/]/).slice(0, -1)
+    let at = this.dir
+    for (const part of parts) {
+      at = join(at, part)
+      const stat = await lstat(at).catch((err: { code?: string }) => {
+        if (err.code === 'ENOENT') return null
+        throw err
+      })
+      if (stat === null) return
+      if (!stat.isDirectory()) throw new Error(`Refusing ${path}: it leads outside the sync folder`)
+    }
+  }
+
+  /** True for a regular file, false when absent; anything else (a symlink, a folder, a device) is refused. */
+  private async regularOrMissing(path: string, file: string): Promise<boolean> {
+    const stat = await lstat(file).catch((err: { code?: string }) => {
+      if (err.code === 'ENOENT') return null
+      throw err
+    })
+    if (stat === null) return false
+    if (!stat.isFile()) throw new Error(`Refusing ${path}: not a regular file`)
+    return true
   }
 
   /** Commits what was written since the last flush and pushes it, rebasing on rejection. */
@@ -217,33 +293,36 @@ export class GitDrive implements RemoteDrive {
     await this.ensureClone()
     // A clean tree to rebase; the commit goes out with the next flush.
     await this.commitAll()
-    await this.must(['fetch', 'origin'], true)
+    await this.fetch()
     const head = await this.rebase()
     if (cursor === head) return { items: [], cursor: head }
     // A cursor this clone does not have (another remote's, or a re-clone) lists everything.
     const diff = cursor === null ? undefined : await this.git(['diff', '--name-status', '--no-renames', '-z', cursor, head])
     if (!diff || diff.code !== 0) {
-      const items = [...(await this.tree())].map(([path, sha]): RemoteItem => ({ id: path, path, eTag: sha, deleted: false, isFile: true }))
+      const items = [...(await this.tree())].map(([path, { sha, size }]): RemoteItem => ({ id: path, path, eTag: sha, deleted: false, isFile: true, size }))
       return { items, cursor: head }
     }
     const changed = fields(diff.stdout)
-    const blobs = changed.some((s, i) => i % 2 === 0 && s !== 'D') ? await this.tree() : new Map<string, string>()
+    const blobs = changed.some((s, i) => i % 2 === 0 && s !== 'D') ? await this.tree() : new Map<string, { sha: string; size: number }>()
     const items: RemoteItem[] = []
     for (let i = 0; i + 1 < changed.length; i += 2) {
       const path = changed[i + 1]!
       const deleted = changed[i] === 'D'
-      items.push({ id: path, path, eTag: deleted ? '' : (blobs.get(path) ?? ''), deleted, isFile: true })
+      const blob = deleted ? undefined : blobs.get(path)
+      if (!deleted && !blob) continue
+      items.push({ id: path, path, eTag: blob?.sha ?? '', deleted, isFile: true, ...(blob ? { size: blob.size } : {}) })
     }
     return { items, cursor: head }
   }
 
-  /** Every file at HEAD with its blob sha. */
-  private async tree(): Promise<Map<string, string>> {
-    const out = new Map<string, string>()
-    for (const entry of fields((await this.must(['ls-tree', '-r', '-z', 'HEAD'])).stdout)) {
+  /** Every file at HEAD with its blob sha and size. */
+  private async tree(): Promise<Map<string, { sha: string; size: number }>> {
+    const out = new Map<string, { sha: string; size: number }>()
+    for (const entry of fields((await this.must(['ls-tree', '-r', '-l', '-z', 'HEAD'])).stdout)) {
       const tab = entry.indexOf('\t')
-      const [, type, sha] = entry.slice(0, tab).split(' ')
-      if (type === 'blob') out.set(entry.slice(tab + 1), sha!)
+      // `-l` pads the size column with spaces.
+      const [mode, type, sha, size] = entry.slice(0, tab).split(/ +/)
+      if (type === 'blob' && REGULAR.has(mode!)) out.set(entry.slice(tab + 1), { sha: sha!, size: Number(size) })
     }
     return out
   }

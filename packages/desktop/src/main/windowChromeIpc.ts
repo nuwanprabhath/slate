@@ -1,19 +1,20 @@
-import { BrowserWindow, ipcMain, Menu, type KeyboardEvent, type MenuItem, type WebContents } from 'electron'
+import { BrowserWindow, Menu, type KeyboardEvent, type MenuItem, type WebContents } from 'electron'
 import { CH } from '../shared/ipc'
+import type { IpcRegistrar } from './ipcGuard'
 import type { ChromeColors, WindowChrome } from '../shared/windowChrome/chrome'
 import { itemAtPath, serializeMenu, setChromeColors, toggleMaximize } from './windowChrome'
 
-export function registerChromeIpc(chrome: WindowChrome): void {
-  ipcMain.on(CH.chromeKind, (e) => {
+export function registerChromeIpc(ipc: IpcRegistrar, chrome: WindowChrome): void {
+  ipc.on(CH.chromeKind, (e) => {
     e.returnValue = chrome
   })
-  ipcMain.on(CH.chromeSetColors, (e, colors: ChromeColors) => {
+  ipc.on(CH.chromeSetColors, (e, colors: ChromeColors) => {
     if (chrome === 'overlay') setChromeColors(process.platform, BrowserWindow.fromWebContents(e.sender), colors)
   })
-  ipcMain.on(CH.chromeToggleMaximize, (e) => toggleMaximize(BrowserWindow.fromWebContents(e.sender)))
-  ipcMain.handle(CH.chromeMenu, () => serializeMenu(Menu.getApplicationMenu()?.items ?? []))
+  ipc.on(CH.chromeToggleMaximize, (e) => toggleMaximize(BrowserWindow.fromWebContents(e.sender)))
+  ipc.handle(CH.chromeMenu, () => serializeMenu(Menu.getApplicationMenu()?.items ?? []))
   // Clicks the very item the native menu would, so a role (Copy, Quit, Toggle DevTools) behaves as it always did.
-  ipcMain.on(CH.chromeInvokeMenu, (e, path: number[]) => {
+  ipc.on(CH.chromeInvokeMenu, (e, path: number[]) => {
     const item = itemAtPath<MenuItem>(Menu.getApplicationMenu()?.items ?? [], path)
     if (!item || !item.enabled || (item.submenu && item.submenu.items.length > 0)) return
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined

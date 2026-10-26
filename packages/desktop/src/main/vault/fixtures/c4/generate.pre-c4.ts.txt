@@ -1,0 +1,93 @@
+// The generator that wrote fixtures/c4 (audit C4 criterion 2, review C4 L4). It runs only on the pre-C4
+// code, which is the point: the fixtures are what the audited vault/crypto.ts, header.ts, localKeys.ts,
+// names.ts, quickUnlock.ts and preunlock.ts wrote. Kept as .txt so the current typecheck and lint, which no
+// longer have those APIs, do not compile it.
+//
+// To regenerate into a scratch folder (never over the committed fixtures, which it refuses):
+//   git worktree add /tmp/slate-pre-c4 efcbb2d
+//   cd /tmp/slate-pre-c4 && npm install && npm run -w @slate/native build
+//   cp <this file> packages/desktop/src/main/vault/genFixtures.test.ts
+//   SLATE_C4_FIXTURES_OUT=/tmp/c4-out npm test -w @slate/desktop -- src/main/vault/genFixtures.test.ts
+// then compare /tmp/c4-out with fixtures/c4 by behaviour (crossVersion.test.ts), not bytes: every run
+// draws fresh keys, salts and nonces.
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { expect, it } from 'vitest'
+import { DocStore } from '../store'
+import { writeSettings } from '../settings'
+import { sealEnvelope } from './crypto'
+import { KeyRing } from './keyring'
+import { blobRemoteName, encodeId } from './names'
+import { enableQuickUnlock, type QuickUnlockPlatform } from './quickUnlock'
+import { createEncryptedDataDir } from './testVault'
+import { unlockVault } from './unlock'
+
+const COMMITTED = join(__dirname, 'fixtures', 'c4')
+const OUT = process.env.SLATE_C4_FIXTURES_OUT ?? COMMITTED
+const weak = { allowWeakForTests: true }
+const PASSWORD = 'c4 fixture password ✓ ünïcode'
+
+const platform: QuickUnlockPlatform = {
+  platform: 'darwin',
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (s) => Buffer.from('sealed:' + Buffer.from(s).toString('hex')),
+    decryptString: (b) => Buffer.from(b.toString().slice('sealed:'.length), 'hex').toString(),
+  },
+  systemPreferences: { canPromptTouchID: () => true, promptTouchID: async () => {} },
+}
+
+it('generates the C4 cross-version fixtures with the pre-C4 code', async () => {
+  // The committed fixtures are evidence: a regeneration goes elsewhere, never over them.
+  if (existsSync(join(OUT, 'manifest.json'))) throw new Error(`${OUT} already holds fixtures; write to an empty folder (SLATE_C4_FIXTURES_OUT)`)
+  rmSync(OUT, { recursive: true, force: true })
+  const dir = join(OUT, 'data')
+  mkdirSync(dir, { recursive: true })
+  const plain = new DocStore(join(dir, 'slate.db'))
+  writeSettings(plain, { idleMinutes: 42 })
+  plain.addNotice('c4 fixture notice')
+  plain.close()
+  const { header, mk, recoveryKey } = await createEncryptedDataDir(dir, PASSWORD, weak)
+  await enableQuickUnlock(dir, mk, platform)
+  const ring = new KeyRing(mk)
+  const sync = ring.get('sync')
+  const nameEnc = ring.get('nameEnc')
+  const name = ring.get('name')
+  const text = new TextEncoder().encode('C4 cross-version fixture: '.repeat(20))
+  writeFileSync(join(OUT, 'sle1-deflated.bin'), sealEnvelope(sync, 'docs/page_x/y/00000001.chunk', text, { deflate: true }))
+  writeFileSync(join(OUT, 'sle1-raw.bin'), sealEnvelope(sync, 'blobs/abc.png', text, { deflate: false }))
+  const ids = {
+    notebook: '0b8f2c1e-3d4a-4b5c-8d6e-7f8091a2b3c4',
+    page: '1c9a3d2f-4e5b-4c6d-9e7f-8091a2b3c4d5',
+    device: '2dab4e3a-5f6c-4d7e-af80-91a2b3c4d5e6',
+  } as const
+  const names = {
+    notebook: encodeId(nameEnc, 'notebook', ids.notebook),
+    page: encodeId(nameEnc, 'page', ids.page),
+    device: encodeId(nameEnc, 'device', ids.device),
+    blob: blobRemoteName(name, 'deadbeef.png'),
+  }
+  const { keyRing, dbFile } = await unlockVault(dir, { password: PASSWORD }, weak)
+  const lk = keyRing.get('lk')
+  const manifest = {
+    $comment: 'Written by the pre-C4 build (main efcbb2d) through the audited vault/crypto.ts, header.ts, localKeys.ts, names.ts, quickUnlock.ts and preunlock.ts. Test-only keys.',
+    password: PASSWORD,
+    recoveryKey,
+    vaultId: header.vaultId,
+    mk: mk.toString('hex'),
+    lk: lk.toString('hex'),
+    db: dbFile.slice(dir.length + 1),
+    plaintext: Buffer.from(text).toString('utf8'),
+    envelopes: { 'sle1-deflated.bin': 'docs/page_x/y/00000001.chunk', 'sle1-raw.bin': 'blobs/abc.png' },
+    ids,
+    names,
+    blobName: 'deadbeef.png',
+    settings: { idleMinutes: 42 },
+    notice: 'c4 fixture notice',
+  }
+  writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+  keyRing.close()
+  ring.close()
+  for (const f of readdirSync(dir)) if (f === 'slate.db' || f.includes('-wal') || f.includes('-shm')) rmSync(join(dir, f), { force: true })
+  expect(readdirSync(dir).sort()).toContain('vault.json')
+})

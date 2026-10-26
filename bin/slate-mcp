@@ -1,7 +1,7 @@
 #!/bin/sh
 # Slate's MCP server for AI agents. Register it with Claude Code:
 #   claude mcp add slate -- /absolute/path/to/slate/bin/slate-mcp
-# It runs under Electron's Node so better-sqlite3's Electron build loads; build first (npm run build -w @slate/desktop).
+# It runs under Electron's Node, like the app; build first (npm run -w @slate/native build, then npm run build -w @slate/desktop).
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ELECTRON="$(cd "$DIR" && node -e 'process.stdout.write(require("electron"))')"
 ELECTRON_RUN_AS_NODE=1 exec "$ELECTRON" "$DIR/packages/desktop/out/main/mcp.js" "$@"

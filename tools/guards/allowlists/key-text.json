@@ -1,0 +1,11 @@
+{
+  "$comment": "T-STATIC-01 (audit §6.8, Z-2) reviewed exceptions: files under main/vault, main/sync, main/db and main/services.ts that copy or stringify a key-named value, with the names they may. Only shrinks; C1 and C7 empty it (handles instead of key bytes).",
+  "packages/desktop/src/main/vault/quickUnlock.ts": {
+    "names": ["qu"],
+    "reason": "Quick unlock's safeStorage API takes a string, so QU becomes base64 once (audit Z-12, accepted in the standard profile)."
+  },
+  "packages/desktop/src/main/vault/migration.ts": {
+    "names": ["ENGINE_KEYS"],
+    "reason": "Not key material: the SQL list of the sync engine's sync_meta key names, matched by the audit's name pattern."
+  }
+}

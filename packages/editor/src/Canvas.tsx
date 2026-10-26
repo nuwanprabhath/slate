@@ -36,13 +36,16 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   }
 
   /** Makes a box at the caret; what was typed waits in the queue until its editor takes focus. */
-  const startBox = (input?: PendingInput) => {
-    const at = caretRef.current!
-    const boxId = session.createBox(at.x, at.y)
-    queueRef.current = { boxId, inputs: input ? [input] : [] }
-    setCaret(null)
-    setFocusId(boxId)
-  }
+  const startBox = useCallback(
+    (input?: PendingInput) => {
+      const at = caretRef.current!
+      const boxId = session.createBox(at.x, at.y)
+      queueRef.current = { boxId, inputs: input ? [input] : [] }
+      setCaret(null)
+      setFocusId(boxId)
+    },
+    [session],
+  )
 
   const onBoxFocus = useCallback(
     (id: string) => {
@@ -96,7 +99,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     }
     document.addEventListener('paste', onPaste)
     return () => document.removeEventListener('paste', onPaste)
-  }, [session, services, scrollRoot])
+  }, [session, services, scrollRoot, startBox])
 
   const pointFrom = (e: MouseEvent<HTMLDivElement>): Point => {
     const rect = e.currentTarget.getBoundingClientRect()

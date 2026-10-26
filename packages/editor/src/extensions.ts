@@ -6,6 +6,8 @@ import { TableKit } from '@tiptap/extension-table'
 import { Color, FontFamily, FontSize, TextStyle } from '@tiptap/extension-text-style'
 import StarterKit from '@tiptap/starter-kit'
 import { common, createLowlight } from 'lowlight'
+import { Plugin } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { currentTheme, readableColor, readableHighlight } from './colorContrast'
 
 const lowlight = createLowlight(common)
@@ -79,6 +81,33 @@ const ListStyle = Extension.create({
   },
 })
 
+/**
+ * An empty line has no text to size its line box, so the caret there is drawn at the box's default
+ * size even when what will be typed is 32px. The line takes the pending marks' size and font in the
+ * view only; the document keeps a bare paragraph.
+ */
+const EmptyLineStyle = Extension.create({
+  name: 'emptyLineStyle',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          decorations: (state) => {
+            const { selection } = state
+            const parent = selection.$from.parent
+            if (!selection.empty || !parent.isTextblock || parent.content.size > 0) return null
+            const style = (state.storedMarks ?? selection.$from.marks()).find((m) => m.type.name === 'textStyle')?.attrs
+            const css = [style?.fontSize && `font-size: ${style.fontSize}`, style?.fontFamily && `font-family: ${style.fontFamily}`].filter(Boolean).join('; ')
+            if (!css) return null
+            const pos = selection.$from.before()
+            return DecorationSet.create(state.doc, [Decoration.node(pos, pos + parent.nodeSize, { style: css })])
+          },
+        },
+      }),
+    ]
+  },
+})
+
 // --- autoBullets (WP-H) ---
 /**
  * The one auto-format Slate applies by default: "* " at the start of a plain paragraph starts a
@@ -95,6 +124,7 @@ export const AutoBullets = Extension.create({
           const $from = state.doc.resolve(range.from)
           if ($from.parent.type.name !== 'paragraph' || $from.depth !== 1) return null
           chain().deleteRange(range).toggleBulletList().run()
+          return undefined
         },
       }),
     ]
@@ -116,6 +146,7 @@ export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extension
       link: { autolink: false, linkOnPaste: false, openOnClick: false },
     }),
     ListStyle,
+    EmptyLineStyle,
     TextStyle,
     AdaptiveColor,
     FontFamily,

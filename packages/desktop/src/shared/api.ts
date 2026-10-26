@@ -5,6 +5,7 @@ import type { MotionSetting } from './theme/motion'
 import type { SavedTheme, ThemeGenerateResult } from './theme/resolve'
 import type { ThemeSpec } from './theme/spec'
 import type { AppMenuNode, ChromeColors, WindowChrome } from './windowChrome/chrome'
+import type { SecretBytes } from './secret'
 
 /** Themes: the user's saved ones live in main, validated on load and save (main/theme/themeStore.ts). */
 export interface ThemesApi {
@@ -58,6 +59,192 @@ export interface Settings {
   systemTitleBar: boolean
   /** Note and UI fonts the user picked, per theme id; a theme without an entry uses its own. */
   fontOverrides: Record<string, FontOverride>
+  /** Encrypted vaults lock after this many minutes without Slate input; 0 = never. */
+  idleMinutes: number
+  lockOnSleep: boolean
+  lockOnScreenLock: boolean
+  quickUnlock: boolean
+}
+
+/** §6.2. `migrating`: a vault header exists but the plaintext database is still the one in use. */
+/**
+ * `selftest` while the power-up self-test runs (no window shows it), `selftest-failed` after a failed one:
+ * terminal, the error screen is all there is (audit §4.2).
+ */
+export type VaultState = 'selftest' | 'selftest-failed' | 'plaintext' | 'locked' | 'unlocking' | 'unlocked' | 'locking' | 'migrating'
+
+export interface VaultStatus {
+  state: VaultState
+  /** False when Linux has no `gdbus`, so only idle and sleep lock Slate. */
+  screenLockDetected: boolean
+  /** Set once after an unlock that adopted a header changed on another device. */
+  passwordChangedElsewhere: boolean
+  /** Set once after an unlock that found preunlock.json edited while locked. */
+  preunlockTampered: boolean
+  /** How the lock screen offers quick unlock (§8): only when it is set up and the OS can do it now. */
+  quickUnlock: QuickUnlockKind | null
+  /** The vault's crypto profile as vault.json names it (audit §4.1; header v1 is `standard`); null without a vault. */
+  profile: VaultProfile | null
+  /** The last power-up or on-demand self-test (audit §4.2): its failed check ids, first is the reason shown. */
+  selfTest: SelfTestSummary
+}
+
+/** A self-test run as Settings and the error screen show it. */
+export interface SelfTestSummary {
+  passed: boolean
+  /** In run order; empty when it passed. */
+  failed: string[]
+  /** How long the run took, in ms; null before the first run finished. */
+  ms: number | null
+}
+
+/** `standard` (BSI-aligned, Argon2id) or `fips-140-3` (NIST SP 800-132 PBKDF2, the FIPS module required). */
+export type VaultProfile = 'standard' | 'fips-140-3'
+
+/** C9 (audit §4.7): a key rotation (R-1), the header-v1 to v2 upgrade (R-5), or the conversion to fips-140-3 (R-3). */
+export type RekeyKind = 'rotate' | 'upgrade' | 'convert'
+
+/** C9: Settings → Security's key section. */
+export interface VaultKeysInfo {
+  headerVersion: 1 | 2
+  profile: VaultProfile
+  keyEpoch: number
+  /** When the current master key was made. */
+  createdAt: number
+  /** R-4 (fips-140-3): when the keys fell due for rotation, or null. */
+  rotationDueSince: number | null
+  /** A key change still being synced: its re-push, the removal of the old files, or the pruning of the key history. */
+  inProgress: 'repush' | 'sweep' | 'prune' | null
+  /** D-7: devices on the remote that must update Slate before any key change. */
+  blockingDevices: Array<{ name: string; appVersion?: string }>
+  /** Why the device list could not be read (offline, signed out); key changes wait for it. */
+  devicesUnknown?: string
+  canRotate: boolean
+  canUpgrade: boolean
+  canConvert: boolean
+  /** R-2 (git): the sync branch's history still holds files sealed under earlier keys. */
+  canReplaceHistory: boolean
+}
+
+export type QuickUnlockKind = 'touchid' | 'keyring'
+
+/** Settings → Security: the cryptographic module @slate/native found at launch (audit C2, F-FIPS-08). */
+export interface CryptoModuleStatus {
+  /** False when slate_native.node is missing from this build (development checkouts without OpenSSL). */
+  available: boolean
+  /** Why the module is unavailable or failed its start-up checks (a POST code); null when healthy. */
+  problem: string | null
+  module: string
+  version: string
+  cmvp: number
+  standard: string
+  certificateUrl: string
+  /** The FIPS provider is loaded, passed its self-tests, and `fips=yes` is the default property query. */
+  approvedMode: boolean
+  errorState: boolean
+  /** How long loading, the provider's self-tests and the round trip took, in ms. */
+  postMs: number | null
+  libcrypto: string | null
+  /** False when the secure heap could not be locked into memory. */
+  secureHeapLocked: boolean | null
+  /** A checkout build, which may run without the provider (no FIPS claim). Packaged builds never do. */
+  development: boolean
+}
+
+export interface QuickUnlockInfo {
+  /** Null when this computer cannot (no Touch ID, or Linux without a real keyring). */
+  kind: QuickUnlockKind | null
+  enabled: boolean
+  /** Set once after a password unlock that followed a failed quick unlock: offer to set it up again. */
+  offerReenable: boolean
+}
+
+/** Unlock never says why it failed beyond this (§4: same message as a wrong password). */
+export type UnlockResult = { ok: true } | { ok: false; message: string; /** Failed attempts in a row; at 5 the lock screen offers the recovery key. */ failures?: number }
+
+/** Z-5 (C7): a typed secret crosses IPC as bytes (`SecretBytes`, shared/secret.ts), never as a string. */
+export type VaultSecret = { password: SecretBytes } | { recoveryKey: SecretBytes }
+export interface PasswordCheck {
+  ok: boolean
+  reason?: string
+  strength: 0 | 1 | 2 | 3 | 4
+}
+export type PrepareEncryption = { kind: 'recovery'; recoveryKey: string } | { kind: 'join' }
+/** The migration's phases in order (main/vault/migration.ts `MIGRATION_PHASES`). */
+export interface EncryptProgress {
+  phase: 'remote' | 'claim' | 'close' | 'copy' | 'bookkeeping' | 'switch' | 'cleanup' | 'open'
+}
+
+export interface VaultApi {
+  status(): Promise<VaultStatus>
+  unlock(password: SecretBytes): Promise<UnlockResult>
+  unlockRecovery(recoveryKey: SecretBytes): Promise<UnlockResult>
+  /** Touch ID / keyring (§8). Any failure reads "Touch ID unavailable — enter your password". */
+  quickUnlock(): Promise<UnlockResult>
+  quickUnlockInfo(): Promise<QuickUnlockInfo>
+  /** Needs the password once; `ok: false` carries the reason to show. */
+  enableQuickUnlock(password: SecretBytes): Promise<UnlockResult>
+  /** "Forget quick unlock": deletes the sealed key from this computer. */
+  disableQuickUnlock(): Promise<void>
+  /** §15 N10: re-asks the password and resumes a migration that stopped before the switch. */
+  finishMigration(password: SecretBytes): Promise<UnlockResult>
+  cancelMigration(): Promise<void>
+  /**
+   * The strength hint for a new password under `profile` (the vault's, when omitted); `ok` false says why it is
+   * refused. Main decodes it to text for the policy check (C7 criterion 5).
+   */
+  checkPassword(password: SecretBytes, profile?: VaultProfile): Promise<PasswordCheck>
+  /**
+   * Wizard: checks the remote, then makes the vault in memory and returns its recovery key. `fips-140-3` is
+   * accepted only when the module runs in approved mode (`moduleStatus().approvedMode`).
+   */
+  prepareEncryption(password: SecretBytes, profile?: VaultProfile): Promise<PrepareEncryption>
+  /** Wizard: a real unlock round trip with the recovery key the user typed back. */
+  confirmRecovery(recoveryKey: SecretBytes): Promise<boolean>
+  /**
+   * Save dialog for the recovery key (defaults to Documents, refuses the data folder). Text, not bytes: the key was
+   * just made and is on screen, so this adds no copy that `prepareEncryption`/`newRecoveryKey` did not (Z-11 residual).
+   */
+  saveRecoveryKey(recoveryKey: string): Promise<{ saved: boolean; message?: string }>
+  /** Claims the remote (if syncing) and migrates; `join` means another device's vault is there. */
+  encrypt(): Promise<{ kind: 'done' } | { kind: 'join' }>
+  /** Forgets a prepared, unconfirmed vault. */
+  discardEncryption(): Promise<void>
+  /** §7.3 / §7.5: adopts the remote's vault with its password or recovery key. */
+  join(secret: VaultSecret): Promise<UnlockResult>
+  /** §7.3 last bullet: wipes a plaintext remote and encrypts it with this vault. */
+  encryptRemote(): Promise<UnlockResult>
+  changePassword(current: VaultSecret, next: SecretBytes): Promise<UnlockResult>
+  newRecoveryKey(password: SecretBytes): Promise<{ ok: true; recoveryKey: string } | { ok: false; message: string }>
+  onProgress(handler: (progress: EncryptProgress) => void): () => void
+  /** The cryptographic module's state, measured once at launch. */
+  moduleStatus(): Promise<CryptoModuleStatus>
+  /**
+   * Settings → Security → Run self-tests (audit S-7 a): the whole power-up self-test again. A failure stops
+   * Slate at once (every window replaced by the error screen), so the caller sees `passed: false` only if its
+   * window is still there.
+   */
+  selfTest(): Promise<SelfTestSummary>
+  /** C9: the vault's key epoch and format, and which key changes it can take now. */
+  keysInfo(): Promise<VaultKeysInfo>
+  /**
+   * C9 R-1/R-3/R-5, the first half: after the self-test, makes the new header in memory and returns its new recovery
+   * key, shown once and typed back with `confirmRecovery`. `password` is the current one; `newPassword` (convert
+   * only) the fips-140-3 vault's.
+   */
+  prepareRekey(kind: RekeyKind, password: SecretBytes, newPassword?: SecretBytes): Promise<{ ok: true; recoveryKey: string } | { ok: false; message: string }>
+  /** C9: applies the prepared change: notes re-encrypted under new keys, the remote header replaced. */
+  runRekey(): Promise<UnlockResult>
+  /** C9 R-2 (git): the sync branch becomes one commit of its current, re-encrypted files. */
+  replaceSyncHistory(): Promise<UnlockResult>
+  /** Throttled pointer/wheel activity, for the idle lock. */
+  activity(): void
+  /** Mod+Shift+L as the page saw it (the main process also watches real key input). */
+  lock(): void
+  /** The renderer copied or cut something, so a lock may clear it. */
+  copied(): void
+  /** The lock sequence asks the window to write pending edits before the keys go. */
+  onFlush(handler: () => Promise<void>): () => void
 }
 
 export type SyncProvider = 'onedrive' | 'git'
@@ -125,7 +312,18 @@ export interface SyncState extends SyncReport {
   account?: string
   /** When the last sync that reached the drive finished. */
   lastSyncedAt?: number
+  /** The last run stopped at the vault check (§7.3) and uploaded nothing. */
+  vaultProblem?: VaultProblem
+  /** §7.6: an older Slate is writing unencrypted files to this encrypted remote. */
+  plaintextWarning?: boolean
 }
+
+/**
+ * `join-needed`: a plaintext device found an encrypted remote. `other-vault`: the remote holds a
+ * different vault. `not-encrypted`: an encrypted device found a plaintext, non-empty remote.
+ */
+/** `keys-changed` (C9): another device rotated, upgraded or converted this vault; its password adopts the new keys. */
+export type VaultProblem = 'join-needed' | 'other-vault' | 'not-encrypted' | 'keys-changed'
 
 /**
  * How this installation takes an update. `auto`: electron-updater installs it (AppImage).
@@ -245,6 +443,8 @@ export interface SlateApi {
     openFolder(): Promise<void>
     /** Forwards a renderer error to the log. */
     rendererError(report: RendererErrorReport): Promise<void>
+    /** The self-test error screen's "Copy diagnostic report" (audit S-6): redacted, no path, no key. */
+    copyReport(): Promise<void>
   }
   mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }
   clipboardText(): Promise<string>
@@ -280,6 +480,10 @@ export interface SlateApi {
     resolve(id: string, choice: 'merged' | 'mine' | 'theirs'): Promise<void>
     onStatus(handler: (state: SyncState) => void): () => void
     onNotice(handler: (message: string) => void): () => void
+    /** The window shows this notebook; synced so other devices can open it after their first sync. */
+    opened(notebookId: string): Promise<void>
+    /** After this device's first sync: the notebook to show instead of an empty default. */
+    onOpenNotebook(handler: (notebookId: string) => void): () => void
   }
   update: {
     state(): Promise<UpdateState>
@@ -310,6 +514,10 @@ export interface SlateApi {
   onMenu(handler: (command: MenuCommand) => void): () => void
   /** Updates another process (an agent via slate-mcp) wrote to the database. */
   onExternalUpdates(handler: (batches: ExternalBatch[]) => void): () => void
+  vault: VaultApi
+  appVersion(): Promise<string>
+  /** Quits Slate (the self-test error screen's only way out, S-6). */
+  quit(): Promise<void>
 }
 
 export interface BackupPick {
@@ -322,6 +530,8 @@ export interface OneNoteStatus {
   configured: boolean
   signedIn: boolean
   account?: string
+  /** False when this computer has no keyring Slate can use: the sign-in lasts until Slate quits. */
+  remembered?: boolean
 }
 
 export interface ExternalBatch {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DeviceCode, GitAuthInfo, GitAuthMode, GitCheck, GitSettings, SyncProvider } from '../../../shared/api'
+import { SyncTokenField } from './SyncTokenField'
 
 const AUTH_LABELS: Record<GitAuthMode, string> = {
   system: "Use this computer's git setup (SSH key or credential helper)",
@@ -129,7 +130,7 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
                 {auth === 'token' && (
                   <label className="sync-field">
                     Personal access token{info?.hasToken ? ' (one is saved; type to replace it)' : ''}
-                    <input data-testid="git-token" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
+                    <SyncTokenField value={token} onChange={setToken} />
                   </label>
                 )}
                 {auth === 'device' && (

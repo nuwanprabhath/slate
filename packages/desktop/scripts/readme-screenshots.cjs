@@ -98,7 +98,7 @@ async function theme(page, themeId) {
 
   await theme(page, 'builtin:dark')
   await page.screenshot({ path: join(out, 'dark.png') })
-  for (const [id, file] of [['builtin:paper', 'paper.png'], ['builtin:glass', 'glass.png'], ['builtin:light', 'light.png']]) {
+  for (const [id, file] of [['builtin:paper', 'paper.png'], ['builtin:glass', 'glass.png'], ['builtin:folio', 'folio.png'], ['builtin:light', 'light.png']]) {
     await theme(page, id)
     await page.screenshot({ path: join(out, file) })
   }

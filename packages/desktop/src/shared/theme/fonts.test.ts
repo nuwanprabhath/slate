@@ -5,6 +5,14 @@ import { themeToCssVars } from './cssVars'
 import { CURATED_FONTS, fontCssValue, isValidFontName, NOTE_FONT_STACKS, resolveFonts, UI_FONT_STACK } from './fonts'
 import { BASE_THEME } from './spec'
 
+describe('bundled fonts', () => {
+  it('names the bundled Source Serif and Inter first', () => {
+    expect(NOTE_FONT_STACKS['source-serif'].startsWith("'Source Serif 4 Variable'")).toBe(true)
+    expect(NOTE_FONT_STACKS.inter.startsWith("'Inter Variable'")).toBe(true)
+    expect(resolveFonts({ ...BASE_THEME, uiFont: 'inter' }, undefined).ui).toBe(NOTE_FONT_STACKS.inter)
+  })
+})
+
 describe('font names', () => {
   it('accepts letters, digits, spaces, dashes, underscores and dots', () => {
     for (const n of ['Georgia', 'Iowan Old Style', 'Source Serif 4', 'JetBrains_Mono', 'Font-Name.v2']) expect(isValidFontName(n)).toBe(true)
@@ -22,7 +30,7 @@ describe('font names', () => {
   })
 
   it('expands a curated name to its stack across operating systems', () => {
-    expect(fontCssValue('Inter')).toBe('"Inter", "Segoe UI", "Ubuntu", sans-serif')
+    expect(fontCssValue('Inter')).toBe('"Inter Variable", "Inter", "Segoe UI", "Ubuntu", sans-serif')
     for (const f of CURATED_FONTS) {
       expect(isValidFontName(f.name)).toBe(true)
       expect(fontCssValue(f.name)).toMatch(/(serif|sans-serif|monospace|system-ui)$/)

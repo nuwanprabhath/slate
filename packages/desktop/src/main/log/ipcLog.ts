@@ -1,8 +1,7 @@
 import { errorMessage } from './errorMessage'
 import type { Logger } from './logger'
 
-// Handler arguments are whatever the channel takes, so they cannot be typed here.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the wrapper passes every argument through untouched, whatever the channel takes
 type Handler = (...args: any[]) => unknown
 
 interface Registrar {

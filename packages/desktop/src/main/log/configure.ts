@@ -1,11 +1,12 @@
-import { app, clipboard, ipcMain, shell } from 'electron'
+import { app, clipboard } from 'electron'
+import { openLocalPath, revealInFolder } from '../openExternal'
+import type { IpcRegistrar } from '../ipcGuard'
 import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '../../shared/ipc'
 import type { DiagnosticsStatus, RendererErrorReport, Settings } from '../../shared/api'
-import { logHandlers } from './ipcLog'
-import { log } from './logger'
+import { log, securityLog } from './logger'
 
 /**
  * Points the logger at this installation's log folder. Separate from `logger.ts` so that module
@@ -20,10 +21,12 @@ export function configureLogging(settings: Pick<Settings, 'debugLog'>): void {
   }
 }
 
-/** Makes every `ipcMain.handle` handler registered after this log its rejections. Call once, before registering. */
-export function logIpcRejections(): void {
-  const wrapped = logHandlers({ handle: ipcMain.handle.bind(ipcMain) }, log)
-  ipcMain.handle = wrapped.handle as typeof ipcMain.handle
+/**
+ * The security log (audit AU-2): on from the first line of main, whatever the diagnostic switch says. 2 MB across
+ * a few archives, kept 90 days, in a folder of its own inside the data folder.
+ */
+export function configureSecurityLog(): void {
+  securityLog.configure({ enabled: true, dir: join(app.getPath('userData'), 'security-log'), maxSizeMb: 2, retentionDays: 90, home: homedir() })
 }
 
 function status(): DiagnosticsStatus {
@@ -39,19 +42,19 @@ function rendererError(report: RendererErrorReport): void {
   log.error('renderer', report.kind === 'unhandledrejection' ? 'unhandled rejection' : 'uncaught error', { name: text(report.name, 80), frames })
 }
 
-export function registerDiagnosticsIpc(): void {
-  ipcMain.handle(CH.diagnosticsStatus, () => status())
-  ipcMain.handle(CH.diagnosticsRead, () => log.read())
-  ipcMain.handle(CH.diagnosticsCopy, () => {
+export function registerDiagnosticsIpc(ipc: IpcRegistrar): void {
+  ipc.handle(CH.diagnosticsStatus, () => status())
+  ipc.handle(CH.diagnosticsRead, () => log.read())
+  ipc.handle(CH.diagnosticsCopy, async () => {
     const text = log.read()
-    clipboard.writeText(text)
+    await clipboard.writeText(text)
     return text.length
   })
-  ipcMain.handle(CH.diagnosticsClear, () => log.clear())
-  ipcMain.handle(CH.diagnosticsOpenFolder, () => {
+  ipc.handle(CH.diagnosticsClear, () => log.clear())
+  ipc.handle(CH.diagnosticsOpenFolder, () => {
     // Showing the file selects it; before anything is written there is only the user-data folder.
     const file = status().file
-    try { statSync(file); shell.showItemInFolder(file) } catch { void shell.openPath(app.getPath('userData')) }
+    try { statSync(file); revealInFolder(file) } catch { void openLocalPath(app.getPath('userData')) }
   })
-  ipcMain.handle(CH.diagnosticsRendererError, (_e, report: RendererErrorReport) => rendererError(report))
+  ipc.handle(CH.diagnosticsRendererError, (_e, report: RendererErrorReport) => rendererError(report))
 }

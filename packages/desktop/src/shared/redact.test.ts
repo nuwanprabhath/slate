@@ -33,6 +33,25 @@ describe('redactString', () => {
   })
 })
 
+describe('redactString: raw key material (red team 5a)', () => {
+  it('strips a 256-bit key written as hex', () => {
+    const hex = 'a3'.repeat(32)
+    expect(redactString(`master key ${hex} done`)).toBe('master key [redacted-hex] done')
+  })
+
+  it('strips a key written as base64 or base64url', () => {
+    const b64 = Buffer.alloc(32, 7).toString('base64')
+    expect(redactString(`qu=${b64}`)).not.toContain(b64)
+    expect(redactString(`k ${Buffer.alloc(40, 9).toString('base64url')} end`)).toBe('k [redacted-base64] end')
+  })
+
+  it('keeps ordinary ids, hashes shorter than a key, words and paths', () => {
+    for (const s of ['page 3f2b9c1e-4d5a-4e7b-9c1d-2e3f4a5b6c7d', 'commit 0123456789abcdef', 'superlongwordwithoutdigitsatallbutmanyletterssss', 'src/main/vault/keyring.ts']) {
+      expect(redactString(s), s).toBe(s)
+    }
+  })
+})
+
 describe('redact', () => {
   it('walks objects and arrays', () => {
     expect(redact({ a: ['/Users/ann/x'], n: 1, u: undefined })).toEqual({ a: ['~/x'], n: 1 })

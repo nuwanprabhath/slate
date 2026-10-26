@@ -10,3 +10,4 @@ playwright-report/
 release/
 .tools/
 packages/desktop/resources/bin/
+.claude/worktrees/

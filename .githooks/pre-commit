@@ -9,3 +9,19 @@ if ! git symbolic-ref -q HEAD >/dev/null; then
     exit 1
   fi
 fi
+
+# Lint the staged TypeScript and ESM files with the slate/* guard rules (CLAUDE.md, Guardrails).
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' '*.mjs')
+if [ -n "$files" ]; then
+  eslint="$(git rev-parse --show-toplevel)/tools/lint/node_modules/.bin/eslint"
+  if [ ! -x "$eslint" ]; then
+    echo "pre-commit: the lint toolchain is missing; run npm install (it installs tools/lint)." >&2
+    exit 1
+  fi
+  # One argument per file: paths in this repo have no spaces.
+  # shellcheck disable=SC2086
+  if ! "$eslint" --max-warnings 0 --no-warn-ignored $files; then
+    echo "pre-commit: fix the lint errors above; each slate/* message names the accepted path." >&2
+    exit 1
+  fi
+fi

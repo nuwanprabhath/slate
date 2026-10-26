@@ -1,6 +1,9 @@
+import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UpdateState } from '../../shared/api'
-import { UpdateService, type UpdateBackend, type UpdatePrefs } from './updateService'
+import { artifactMessage, keyIdOf, manifestMessage, UpdateSignatureError, type PinnedUpdateKey } from './signature'
+import { UpdateService, type FoundUpdate, type UpdateBackend, type UpdatePrefs } from './updateService'
+import { createUpdateVerifier, type UpdateVerifier, type VerifiedRelease } from './verifier'
 
 const found = (version: string) => ({
   version,
@@ -23,14 +26,34 @@ function stubBackend(version = '0.2.0') {
   }
 }
 
-function setup(opts: { kind?: UpdateState['kind']; prefs?: UpdatePrefs; backend?: ReturnType<typeof stubBackend>; settings?: { automaticChecks: boolean; intervalHours: number } } = {}) {
+/** Trusts every release as signed; the verifier itself is covered by verifier.test.ts. */
+function stubVerifier() {
+  return {
+    release: vi.fn<UpdateVerifier['release']>(async (f) => f as VerifiedRelease),
+    artifact: vi.fn<UpdateVerifier['artifact']>().mockResolvedValue(undefined),
+  }
+}
+
+function setup(
+  opts: {
+    kind?: UpdateState['kind']
+    prefs?: UpdatePrefs
+    backend?: ReturnType<typeof stubBackend>
+    settings?: { automaticChecks: boolean; intervalHours: number }
+    verifier?: ReturnType<typeof stubVerifier>
+  } = {},
+) {
   const settings = { ...(opts.settings ?? { automaticChecks: true, intervalHours: 6 }) }
   const backend = opts.backend ?? stubBackend()
   let prefs: UpdatePrefs = opts.prefs ?? {}
   const states: UpdateState[] = []
   const log = vi.fn()
+  const verifier = opts.verifier ?? stubVerifier()
+  const diag = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
   const service = new UpdateService({
     backend: backend as unknown as UpdateBackend,
+    verifier,
+    diag,
     kind: opts.kind ?? 'deb',
     arch: opts.kind === 'dmg' ? 'arm64' : 'x64',
     currentVersion: '0.1.0',
@@ -42,7 +65,7 @@ function setup(opts: { kind?: UpdateState['kind']; prefs?: UpdatePrefs; backend?
     emit: (s) => states.push(s),
     settings: () => settings,
   })
-  return { settings, service, backend, states, log, prefs: () => prefs }
+  return { settings, service, backend, states, log, verifier, diag, prefs: () => prefs }
 }
 
 describe('UpdateService', () => {
@@ -167,7 +190,7 @@ describe('UpdateService', () => {
     await expect(service.check({ manual: true })).resolves.toMatchObject({ phase: 'error', visible: false })
     expect(service.state()).toMatchObject({ phase: 'error', visible: false })
     expect(prefs().lastError).toContain('offline')
-    expect(String(log.mock.calls[0][0])).toContain('offline')
+    expect(String(log.mock.calls[0]![0])).toContain('offline')
   })
 
   it('keeps a failed download quiet too, and a later success clears the saved error', async () => {
@@ -251,5 +274,109 @@ describe('UpdateService', () => {
     const state = await service.check({ manual: true })
     expect(state.phase).toBe('error')
     expect(state.error).toMatch(/offline/)
+  })
+
+  describe('signatures (C12)', () => {
+    it('T-UPD-01: never offers a release whose signature fails, and logs update.signature.failed', async () => {
+      const verifier = stubVerifier()
+      verifier.release.mockRejectedValue(new UpdateSignatureError('signature by abc does not verify'))
+      const { service, diag, prefs } = setup({ verifier })
+      const state = await service.check({ manual: true })
+      expect(state).toMatchObject({ phase: 'error', visible: false })
+      expect(state.error).toMatch(/does not verify/)
+      expect(diag.error).toHaveBeenCalledWith('update.signature.failed', expect.objectContaining({ version: '0.2.0' }))
+      expect(prefs().lastError).toMatch(/does not verify/)
+      await service.download()
+      expect(service.state().phase).toBe('error')
+    })
+
+    it('hands the release the verifier returned, not the feed object, to download and install', async () => {
+      const { service, backend, verifier } = setup({ kind: 'auto' })
+      await service.check()
+      const verified = await verifier.release.mock.results[0]!.value
+      await service.download()
+      service.install()
+      expect(backend.downloadAuto).toHaveBeenCalledWith(verified, expect.any(Function))
+      expect(backend.installAuto).toHaveBeenCalledWith(verified)
+    })
+
+    it('checks the installer signature before downloading it', async () => {
+      const verifier = stubVerifier()
+      verifier.artifact.mockRejectedValue(new UpdateSignatureError('signature of Slate-0.2.0-linux-amd64.deb is missing'))
+      const { service, backend, diag } = setup({ kind: 'deb', verifier })
+      await service.check()
+      await service.download()
+      expect(verifier.artifact).toHaveBeenCalledWith(expect.objectContaining({ version: '0.2.0' }), expect.objectContaining({ url: 'Slate-0.2.0-linux-amd64.deb' }))
+      expect(backend.downloadFile).not.toHaveBeenCalled()
+      expect(service.state().phase).toBe('error')
+      expect(diag.error).toHaveBeenCalledWith('update.signature.failed', expect.anything())
+    })
+
+    it('an AppImage update verifies every artefact before it downloads, and so before quitAndInstall', async () => {
+      const verifier = stubVerifier()
+      verifier.artifact.mockRejectedValue(new UpdateSignatureError('nope'))
+      const { service, backend } = setup({ kind: 'auto', verifier })
+      await service.check()
+      await service.download()
+      service.install()
+      expect(backend.downloadAuto).not.toHaveBeenCalled()
+      expect(backend.installAuto).not.toHaveBeenCalled()
+
+      const ok = setup({ kind: 'auto' })
+      await ok.service.check()
+      await ok.service.download()
+      ok.service.install()
+      expect(ok.verifier.artifact).toHaveBeenCalledTimes(found('0.2.0').files.length)
+      expect(ok.backend.installAuto).toHaveBeenCalled()
+    })
+
+    it('F2: after any failed check nothing is downloaded or installed, even with a release verified before', async () => {
+      // electron-updater keeps one cached update and every check overwrites it: emulate that.
+      const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+      const key: PinnedUpdateKey = { alg: 'ed25519', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }
+      const sigFile = (m: Uint8Array) =>
+        new TextEncoder().encode(JSON.stringify({ format: 'slate-update-signature', version: 1, alg: 'ed25519', keyId: keyIdOf(key.publicKeyPem), signature: sign(null, m, privateKey).toString('base64') }))
+      const feedOf = (r: FoundUpdate) => new TextEncoder().encode(`version: ${r.version}\nfiles:\n${r.files.map((f) => `  - url: ${f.url}\n    sha512: ${f.sha512}\n`).join('')}`)
+      const good = { version: '0.4.0', files: [{ url: 'Slate-0.4.0-x86_64.AppImage', sha512: 'R09PRA==', size: 1 }] }
+      const evil = { version: '0.5.0', files: [{ url: 'Slate-0.5.0-x86_64.AppImage', sha512: 'RVZJTA==', size: 1 }] }
+      const assets = new Map<string, Uint8Array>([
+        ['0.4.0/latest-linux.yml', feedOf(good)],
+        ['0.4.0/latest-linux.yml.sig', sigFile(manifestMessage('latest-linux.yml', feedOf(good)))],
+        ['0.4.0/Slate-0.4.0-x86_64.AppImage.sig', sigFile(artifactMessage('Slate-0.4.0-x86_64.AppImage', 'R09PRA=='))],
+        ['0.5.0/latest-linux.yml', feedOf(evil)],
+      ])
+      const verifier = createUpdateVerifier({
+        keys: [key],
+        manifestName: 'latest-linux.yml',
+        currentVersion: '0.1.0',
+        fetchAsset: async (version, name) => {
+          // The reviewer's case: an oversized .sig makes the fetch throw a plain Error, not UpdateSignatureError.
+          if (version === '0.5.0' && name.endsWith('.sig')) throw new Error('GET latest-linux.yml.sig: 2000000 bytes is too large')
+          return assets.get(`${version}/${name}`) ?? null
+        },
+      })
+      const run = async (step: 'download' | 'install') => {
+        let cached: FoundUpdate = good
+        const installed: string[] = []
+        const backend = {
+          ...stubBackend(),
+          check: vi.fn(async () => cached),
+          downloadAuto: vi.fn(async () => void installed.push(`downloaded ${cached.version}`)),
+          installAuto: vi.fn(() => void installed.push(`installed ${cached.version}`)),
+        }
+        const { service } = setup({ kind: 'auto', backend, verifier: verifier as unknown as ReturnType<typeof stubVerifier> })
+        await service.check()
+        expect(service.state()).toMatchObject({ phase: 'available', version: '0.4.0' })
+        if (step === 'install') await service.download()
+        cached = evil
+        await service.check({ manual: true })
+        expect(service.state().phase).toBe('error')
+        await service.download()
+        service.install()
+        return installed
+      }
+      expect(await run('download')).toEqual([])
+      expect(await run('install')).toEqual(['downloaded 0.4.0'])
+    })
   })
 })

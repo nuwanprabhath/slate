@@ -102,7 +102,7 @@ describe('findInDoc', () => {
   it('counts a hard break as a character so later positions stay right', () => {
     const d = doc([p(t('a'), { type: 'hardBreak' }, t('foo'))])
     const [r] = findInDoc(d, 'foo', plain)
-    expect(d.textBetween(r.from, r.to)).toBe('foo')
+    expect(d.textBetween(r!.from, r!.to)).toBe('foo')
   })
 })
 

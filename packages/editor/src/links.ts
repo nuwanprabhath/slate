@@ -15,10 +15,11 @@ const DOMAIN_OR_PATH = /^(?:localhost|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:[/?#]\S*)?
 export function normalizeLinkInput(raw: string): LinkInput {
   const text = raw.trim()
   if (!text) return { error: 'Enter a web address' }
+  // eslint-disable-next-line no-control-regex -- control characters are what the pattern strips before the scheme check
   const squashed = text.replace(/[\s\u0000-\u001f]/g, '')
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(squashed)
   if (scheme && !HOST_PORT.test(squashed)) {
-    if (!SAFE_SCHEMES.has(scheme[1].toLowerCase())) return { error: `Links can't use ${scheme[1].toLowerCase()}:` }
+    if (!SAFE_SCHEMES.has(scheme[1]!.toLowerCase())) return { error: `Links can't use ${scheme[1]!.toLowerCase()}:` }
     return { href: text }
   }
   if (!DOMAIN_OR_PATH.test(text)) return { error: 'Enter a web address' }
@@ -89,5 +90,5 @@ export function pastePlainOrLink(view: EditorView, text: string): void {
     view.pasteText(text)
     return
   }
-  view.dispatch(view.state.tr.addMark(from, to, view.state.schema.marks.link.create({ href: text.trim() })))
+  view.dispatch(view.state.tr.addMark(from, to, view.state.schema.marks.link!.create({ href: text.trim() })))
 }

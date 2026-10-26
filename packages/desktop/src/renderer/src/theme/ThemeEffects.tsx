@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { parseColor, saturate, toHex8 } from '../../../shared/theme/color'
 import { EFFECTS } from '../../../shared/theme/effects'
+import { DEFAULT_GLASS } from '../../../shared/theme/spec'
 import { appliedTheme } from './applyTheme'
 
 const FPS = 30
@@ -21,7 +22,6 @@ const TYPING_HOLD_MS = 800
  * change underneath, and Apiary measured it making hovering lag badly without a GPU.
  */
 const GLASS_SCALE = 1 / 8
-const GLASS_SATURATION = 1.4
 
 /**
  * One canvas behind the whole UI; the drawing is `shared/theme/effects`, this decides *when*: at
@@ -34,7 +34,8 @@ export function ThemeEffects({ animated, lowPower }: { animated: boolean; lowPow
   const canvas = useRef<HTMLCanvasElement | null>(null)
   const effects = spec?.effects ?? []
   const glass = spec?.material === 'glass'
-  const signature = JSON.stringify([effects, spec?.palette, glass])
+  const saturation = (spec?.glass ?? DEFAULT_GLASS).saturation
+  const signature = JSON.stringify([effects, spec?.palette, glass, saturation])
 
   useEffect(() => {
     const c = canvas.current
@@ -44,7 +45,7 @@ export function ThemeEffects({ animated, lowPower }: { animated: boolean; lowPow
     const colors = effects.map((e) => {
       const value = css.getPropertyValue(`--${e.color ?? 'accent'}`).trim() || '#ffffff'
       const parsed = glass ? parseColor(value) : null
-      return parsed ? toHex8(saturate(parsed, GLASS_SATURATION)) : value
+      return parsed ? toHex8(saturate(parsed, saturation)) : value
     })
     const size = (): void => {
       const dpr = Math.min(window.devicePixelRatio || 1, lowPower ? LOW_POWER_DPR : MAX_DPR)

@@ -1,0 +1,21 @@
+{
+  "made": "better-sqlite3-multiple-ciphers 13.0.3 (SQLite3MultipleCiphers), cipher=sqlcipher, legacy=4, through openDatabase + DocStore + DbBlobStore, before the C3 swap",
+  "sqliteVersion": "3.53.4",
+  "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "sha256": "c69d152f689899bc6536bccd3afc37f8797472794d25a807b1318f0ab229754f",
+  "rows": {
+    "audit": 1,
+    "blob_data": 2,
+    "blob_synced": 0,
+    "conflicts": 0,
+    "import_items": 0,
+    "import_map": 0,
+    "notices": 0,
+    "search": 2,
+    "settings": 1,
+    "snapshots": 1,
+    "sync_meta": 1,
+    "sync_seen": 0,
+    "updates": 32
+  }
+}

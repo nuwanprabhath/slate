@@ -2,7 +2,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { createBoxAt, expect, MOD, test } from './fixtures'
 
 const focusedEditor = (page: Page) => page.locator('[data-testid="box-editor"]:focus')
-const copy = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.copy())
+const copy = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.copy())
 const clipboardText = (app: ElectronApplication) => app.evaluate(({ clipboard }) => clipboard.readText())
 
 async function typeSelected(page: Page, text: string) {

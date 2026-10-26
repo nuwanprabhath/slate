@@ -23,7 +23,7 @@ describe('writeContent marks', () => {
     )
     doc.commit()
     const para = contentToJSON(root)!.content![0]
-    expect(para.content).toEqual([
+    expect(para!.content).toEqual([
       { type: 'text', text: 'plain ' },
       { type: 'text', text: 'bold', marks: [{ type: 'bold', attrs: {} }] },
       { type: 'text', text: ' red', marks: [{ type: 'textStyle', attrs: { color: '#ff0000' } }] },

@@ -1,0 +1,61 @@
+# Security review tier. A branch that changes any of these, adds a risky line anywhere
+# (scripts/agents/review-gate.mjs, RISKY), or touches a file named in tools/guards/allowlists/*.json
+# needs the security-reviewer agent (.claude/agents/security-reviewer.md, docs/review/REVIEW.md):
+# merge-wp refuses the merge without an approving review in the main checkout's
+# .agent-reports/reviews/<branch with / as ->.md. Other main-process code is in
+# architecture-paths.txt (the architecture review). Test files count only under spec/.
+# Globs from the repo root (`**`, `*`).
+
+# Keys, the database, the native boundary.
+packages/desktop/src/main/vault/**
+packages/desktop/src/main/db/**
+packages/desktop/src/main/sync/**
+packages/native/**
+
+# The IPC door, the preload, the renderer's policy and the process's own hardening.
+packages/desktop/src/main/ipcGuard.ts
+packages/desktop/src/main/index.ts
+packages/desktop/src/main/services.ts
+packages/desktop/src/main/testHooks.ts
+packages/desktop/src/main/openExternal.ts
+packages/desktop/src/main/proc.ts
+packages/desktop/src/main/windows.ts
+packages/desktop/src/main/appProtocol.ts
+packages/desktop/src/main/hardening.ts
+packages/desktop/src/main/secretStorage.ts
+packages/desktop/src/preload/**
+packages/desktop/src/shared/ipc.ts
+packages/desktop/src/shared/api.ts
+packages/desktop/src/shared/csp.ts
+# What the diagnostic log may contain (red team G2-4).
+packages/desktop/src/shared/redact.ts
+packages/desktop/src/main/log/**
+packages/desktop/src/renderer/index.html
+
+# Updates and packaging.
+packages/desktop/src/main/update/**
+packages/desktop/electron-builder*
+packages/desktop/electron.vite.config.ts
+
+# The product rules' spec tests: a changed expectation needs the maintainer (red team re-run R3).
+packages/*/test/spec/**
+packages/*/e2e/spec/**
+
+# Manifests, compilers and test runners: what they leave out is not checked.
+package.json
+package-lock.json
+packages/*/package.json
+tsconfig*.json
+packages/*/tsconfig.json
+vitest.config.ts
+packages/*/vitest*.config.ts
+
+# The guard layer itself.
+eslint.config.mjs
+eslint-suppressions.json
+.dependency-cruiser.cjs
+tools/**
+.claude/**
+.githooks/**
+.github/workflows/**
+scripts/**

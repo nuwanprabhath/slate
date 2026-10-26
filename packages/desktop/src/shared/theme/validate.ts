@@ -1,8 +1,8 @@
 import { parseColor, toHex8 } from './color'
 import { isOneOf, own } from './guards'
 import {
-  PALETTE_TOKENS, MATERIALS, TEXTURE_KINDS, EFFECT_KINDS, FONTS, LIMITS, BASE_THEME,
-  type ThemeSpec, type EffectSpec, type Material, type PaletteToken,
+  PALETTE_TOKENS, MATERIALS, TEXTURE_KINDS, EFFECT_KINDS, FONTS, LIMITS, BASE_THEME, SURFACES, DEFAULT_GLASS,
+  type ThemeSpec, type EffectSpec, type Material, type PaletteToken, type GlassSpec, type SurfaceSpec,
 } from './spec'
 import { ensureReadable, emptyReport, type ThemeReport } from './readability'
 
@@ -83,6 +83,47 @@ function effects(input: unknown, report: ThemeReport): EffectSpec[] {
   return out
 }
 
+function ranged(v: unknown, { min, max }: { min: number; max: number }, fallback: number, report: ThemeReport): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) { report.clamped += 1; return fallback }
+  if (v < min || v > max) { report.clamped += 1; return Math.min(max, Math.max(min, v)) }
+  return v
+}
+
+function glass(input: unknown, report: ThemeReport): GlassSpec | undefined {
+  if (input === undefined) return undefined
+  if (typeof input !== 'object' || input === null) { report.unknown += 1; return undefined }
+  return {
+    saturation: ranged(own(input, 'saturation'), LIMITS.saturation, DEFAULT_GLASS.saturation, report),
+    highlight: ranged(own(input, 'highlight'), { min: 0, max: 1 }, DEFAULT_GLASS.highlight, report),
+    refraction: ranged(own(input, 'refraction'), { min: 0, max: 1 }, DEFAULT_GLASS.refraction, report),
+  }
+}
+
+/** A surface keeps only an allowlisted texture and a gradient between two palette token names. */
+function surfaces(input: unknown, report: ThemeReport): ThemeSpec['surfaces'] {
+  if (input === undefined) return undefined
+  if (typeof input !== 'object' || input === null) { report.unknown += 1; return undefined }
+  const out: NonNullable<ThemeSpec['surfaces']> = {}
+  for (const k of Object.keys(input)) if (!isOneOf(SURFACES, k)) report.unknown += 1
+  for (const name of SURFACES) {
+    const s = own(input, name)
+    if (s === undefined) continue
+    const kept: SurfaceSpec = {}
+    const texture = own(s, 'texture')
+    if (isOneOf(TEXTURE_KINDS, texture) && texture !== 'none') kept.texture = texture
+    else if (texture !== undefined) report.unknown += 1
+    const g = own(s, 'gradient')
+    if (g !== undefined) {
+      const from = own(g, 'from')
+      const to = own(g, 'to')
+      if (isOneOf(PALETTE_TOKENS, from) && isOneOf(PALETTE_TOKENS, to)) kept.gradient = { from, to, angle: ranged(own(g, 'angle'), LIMITS.angle, 180, report) }
+      else report.unknown += 1
+    }
+    if (kept.texture !== undefined || kept.gradient !== undefined) out[name] = kept
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 function choice<T extends string>(list: readonly T[], v: unknown, fallback: T, report: ThemeReport): T {
   if (isOneOf(list, v)) return v
   if (v !== undefined) report.unknown += 1
@@ -105,6 +146,12 @@ export function validateTheme(input: unknown): { spec: ThemeSpec; report: ThemeR
     effects: effects(own(input, 'effects'), report),
     font: choice(FONTS, own(input, 'font'), 'system', report),
   }
+  const uiFont = own(input, 'uiFont')
+  if (uiFont !== undefined) spec.uiFont = choice(FONTS, uiFont, 'system', report)
+  const lens = glass(own(input, 'glass'), report)
+  if (lens !== undefined && spec.material === 'glass') spec.glass = lens
+  const painted = surfaces(own(input, 'surfaces'), report)
+  if (painted !== undefined) spec.surfaces = painted
   limitAlpha(spec, report)
   ensureReadable(spec, report)
   return { spec, report }

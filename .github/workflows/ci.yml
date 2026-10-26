@@ -13,6 +13,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint and guards (Ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The ratchet compares the exception lists with main, so it needs main's history.
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      # Also installs tools/lint (postinstall).
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run guards
+        env:
+          SLATE_BASE_REF: origin/main
+      # Audit C11 criterion 2: every finding has a test and the committed matrix matches the test titles.
+      - name: Traceability (docs/compliance/traceability.yaml)
+        run: node scripts/traceability.mjs --check
+      # The backstop for what the guard-edits hook cannot see in a shell command.
+      - name: Guard files change only in Guardrail-Change commits
+        run: node scripts/agents/check-guard-commits.mjs
+        env:
+          SLATE_BASE_REF: origin/main
+
   test-linux:
     name: Typecheck, tests and e2e (Ubuntu)
     runs-on: ubuntu-24.04
@@ -35,6 +64,13 @@ jobs:
       - name: Install Rust nightly (for the one2html converter)
         run: rustup toolchain install nightly --profile minimal
       - run: npm run build:one2html
+      # Audit C3: the notes database is SQLCipher inside @slate/native, so the main-process tests and
+      # e2e need the addon. libcrypto + SQLCipher only: the FIPS provider (and its pin) is the native job's.
+      - name: Build @slate/native (libcrypto, SQLCipher, addon)
+        run: |
+          npm run -w @slate/native build:openssl -- --only openssl
+          npm run -w @slate/native build:sqlcipher
+          npm run -w @slate/native build:addon
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:main
@@ -46,6 +82,19 @@ jobs:
           # perf-diagnose.spec.ts prints where typing time goes on this runner.
           SLATE_PERF_TRACE: 1
           # xvfb is a virtual display nobody sees, so the window can be shown there (see src/main/index.ts).
+          SLATE_E2E_SHOW: 1
+      # Audit §6.3 T-ZERO-04 and T-ZERO-06 (C7). The suite above already ran with the app non-dumpable
+      # (Z-9), so Chromium's children start that way. Here: after a lock no key or password is left in the
+      # main process (memscan reads /proc/<pid>/mem through passwordless sudo; the app runs as this user),
+      # and a crash leaves no core file although the shell allows one.
+      - name: Memory evidence (T-ZERO-04, T-ZERO-06)
+        working-directory: packages/desktop
+        run: |
+          sudo sysctl -w kernel.core_pattern=/tmp/slate-core.%p
+          ulimit -c unlimited
+          xvfb-run --auto-servernum npx playwright test --config playwright.linux.config.ts
+          test -z "$(ls /tmp/slate-core.* 2>/dev/null)"
+        env:
           SLATE_E2E_SHOW: 1
       # Playwright hides the app's own output, so a launch that hangs shows only timeouts. Start it
       # once by hand and print what Electron and the main process said.
@@ -74,4 +123,77 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # @slate/native's SQLCipher tests need the addon (libcrypto + SQLCipher; no FIPS provider here).
+      - name: Build @slate/native (libcrypto, SQLCipher, addon)
+        run: |
+          npm run -w @slate/native build:openssl -- --only openssl
+          npm run -w @slate/native build:sqlcipher
+          npm run -w @slate/native build:addon
       - run: npm test
+      # Audit §6.1: the main-process layer runs on darwin-arm64 as well as linux-x64.
+      - run: npm run test:main
+
+  native:
+    # Audit C2: @slate/native per prebuild target. OpenSSL 3.5.x and the FIPS Provider 3.1.2 are
+    # built from the SHA-256-pinned tarballs in packages/native/deps.lock.json.
+    name: Native module (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-24.04
+          - target: darwin-arm64
+            os: macos-14
+          - target: darwin-x64
+            os: macos-15-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Electron's system libraries (it runs the main-process tests as Node)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libasound2t64
+      - run: npm ci
+      # --update-pin: CI reports this runner's provider digest (in the uploaded fips-digest.json) for the
+      # maintainer to review and commit. The release never updates the pin (review M4).
+      - name: Build OpenSSL 3.5.x (libcrypto) and the FIPS Provider 3.1.2
+        run: npm run -w @slate/native build:openssl -- --update-pin
+      - name: Build the SQLCipher amalgamation (pinned tarball and amalgamation digest)
+        run: npm run -w @slate/native build:sqlcipher
+      - name: Build slate_native.node
+        run: npm run -w @slate/native build:addon
+      - name: Symbol-export check (criterion 1)
+        run: npm run -w @slate/native check:exports
+      - name: Native KATs (B.1a, T-ZERO-03)
+        run: npm run -w @slate/native test:kat
+      - name: Native KATs under ASan/UBSan
+        run: npm run -w @slate/native test:kat:asan
+      - name: Native KATs through the FIPS provider
+        run: node packages/native/scripts/kat.mjs --fips
+      - name: T-KAT-01 cross-implementation vectors
+        if: runner.os == 'macOS'
+        run: |
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          OPENSSL="$(brew --prefix openssl@3)/bin/openssl" npm run -w @slate/native test:crosscheck
+      - name: Addon round trip and T-POST-06 under ELECTRON_RUN_AS_NODE
+        run: npm run test:main -- src/main/native
+      - name: SQLCipher in the module (T-DB-01..03), in FIPS mode
+        run: |
+          npx vitest run --project native
+          npm run test:main -- src/main/db
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            packages/native/prebuilds/${{ matrix.target }}/slate_native.node
+            packages/native/fips/${{ matrix.target }}/
+            packages/native/fips-digest.json

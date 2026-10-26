@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3'
+import type { KeyHandle } from '@slate/native'
+import { openDatabase, type Database } from './db/openDatabase'
 import { LoroDoc } from 'loro-crdt'
 import type { ImportRecord } from '@slate/importer'
 import type { ConflictRecord } from '@slate/sync'
@@ -24,11 +25,12 @@ export class DocStore {
   private db: Database.Database
 
   /** `compact: false` is for the MCP CLI: only the app compacts, so the two never race on it. */
-  constructor(file: string, private readonly options: { compact?: boolean } = {}) {
-    this.db = new Database(file)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('synchronous = NORMAL')
-    this.db.pragma('busy_timeout = 3000')
+  private readonly options: { compact?: boolean }
+
+  /** The key is used to open the connection and not kept (§15 N9). */
+  constructor(fileOrDb: string | Database.Database, options: { compact?: boolean; key?: KeyHandle | null } = {}) {
+    this.db = typeof fileOrDb === 'string' ? openDatabase(fileOrDb, options.key ?? null) : fileOrDb
+    this.options = { compact: options.compact }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS snapshots (doc_id TEXT PRIMARY KEY, data BLOB NOT NULL);
       CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, data BLOB NOT NULL);
