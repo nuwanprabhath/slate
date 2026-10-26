@@ -87,7 +87,12 @@ module.exports = {
     executableName: 'slate',
   },
   deb: {
+    // POAM-16 (maintainer decision 2026-10-26): the .deb always runs the setuid sandbox. The desktop entry passes
+    // the flag here, the `slate` command through the wrapper the after-install writes (tools/guards/debSandbox.test.ts).
+    // Only the .deb: the AppImage has no setuid chrome-sandbox, and with the flag it would not start.
+    executableArgs: ['--disable-namespace-sandbox'],
     afterInstall: 'build/linux-after-install.sh',
+    afterRemove: 'build/linux-after-remove.sh',
     // pickInstaller looks for amd64 in the name; the release workflow adds this file to latest-linux.yml.
     artifactName: 'Slate-${version}-linux-amd64.${ext}',
   },
