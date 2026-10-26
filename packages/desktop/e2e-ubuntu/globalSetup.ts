@@ -30,6 +30,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const bed = await startBed(shared, await freePort())
   process.env.SLATE_XDEV_BED = JSON.stringify(bed)
   return async () => {
+    // Debugging (README.md): keep the container and the shared folder to look at after the run.
+    if (process.env.SLATE_XDEV_KEEP === '1') {
+      console.log(`SLATE_XDEV_KEEP: container ${bed.name} (docker exec -it ${bed.name} bash), shared folder ${shared}`)
+      return
+    }
     await stopBed(bed.name)
     rmSync(shared, { recursive: true, force: true, maxRetries: 3 })
     removeRoot()

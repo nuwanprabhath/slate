@@ -27,6 +27,8 @@ export interface Device {
   readFile(name: string): Promise<string | null>
   /** The app's own output so far (Ubuntu); empty on the Mac, where Playwright holds it. */
   log(): Promise<string>
+  /** Ubuntu: deletes the login keyring, as a reinstall or a reset keyring password would; the Mac refuses. */
+  resetKeyring(): Promise<void>
 }
 
 /** Settings every launch of the current build gets: syncs back to back, and a fast KDF for new vaults. */
@@ -63,6 +65,7 @@ export function macDevice(dir: string, bare: string): Device {
       return existsSync(path) ? readFileSync(path, 'utf8') : null
     },
     log: () => Promise.resolve(''),
+    resetKeyring: () => Promise.reject(new Error('the Mac device never touches the Keychain')),
   }
 }
 
@@ -117,6 +120,9 @@ export function ubuntuDevice(bed: Bed, scenario: string): Device {
     },
     async log() {
       return (await exec(['cat', `${data}.out`])).stdout
+    },
+    async resetKeyring() {
+      await must('docker', ['exec', bed.name, 'rm', '-rf', '/home/dev/.local/share/keyrings'])
     },
   }
 }

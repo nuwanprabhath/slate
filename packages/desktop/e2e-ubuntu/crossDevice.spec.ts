@@ -137,7 +137,7 @@ test('2. encryption enabled on the Mac; Ubuntu joins with the password', async (
   await synced(u)
   const contents = p.repo.contents()
   for (const text of ['S2-MAC-SEALED', 'S2-UBUNTU-SEALED']) expect(contents).not.toContain(text)
-  expect(p.repo.files().every((f) => f.startsWith('e2ee/'))).toBe(true)
+  expect(p.repo.files().filter((f) => !f.startsWith('e2ee/') && f !== 'README.md')).toEqual([])
   expect(await p.ubuntu.readFile('slate.db')).toBeNull()
 })
 
@@ -161,7 +161,7 @@ test('3. encryption enabled on Ubuntu; the Mac joins with the password', async (
   await synced(u)
   const contents = p.repo.contents()
   for (const text of ['S3-MAC-SEALED', 'S3-UBUNTU-SEALED']) expect(contents).not.toContain(text)
-  expect(p.repo.files().every((f) => f.startsWith('e2ee/'))).toBe(true)
+  expect(p.repo.files().filter((f) => !f.startsWith('e2ee/') && f !== 'README.md')).toEqual([])
 })
 
 test('4. mixed versions: the Mac encrypts while Ubuntu still runs v0.1.0; nothing is lost, then Ubuntu upgrades and joins', async () => {
@@ -178,11 +178,16 @@ test('4. mixed versions: the Mac encrypts while Ubuntu still runs v0.1.0; nothin
 
   await timed('v0.1.0 keeps syncing against the encrypted folder', async () => {
     await writeNote(u, 'S4-UBUNTU-AFTER', 260, 320)
-    // v0.1.0 cannot read encrypted notes: what it had stays, and it does not take the Mac's vault apart.
-    await expect.poll(() => p.repo.git('log', '-1', '--format=%H', 'main'), { timeout: 60_000 }).not.toBe('')
-    await expect(m.getByTestId('vault-plaintext-warning')).toBeVisible({ timeout: 90_000 })
+    // Dozens of v0.1.0 sync attempts at the 500 ms interval. Encrypting replaced the branch's history, so
+    // v0.1.0's push is not a fast-forward and git refuses it: the branch keeps only the Mac's sealed files,
+    // nothing plaintext lands, and v0.1.0 keeps its own notes locally.
+    await u.waitForTimeout(20_000)
+    const touched = p.repo.git('log', '--name-only', '--format=', 'main').split('\n').filter(Boolean)
+    expect(touched.filter((f) => !f.startsWith('e2ee/') && f !== 'README.md')).toEqual([])
     expect(p.repo.git('show', 'main:e2ee/vault.json')).toBe(header)
-    expect(await searchCount(u, 'S4-UBUNTU-OLD')).toBeGreaterThan(0)
+    expect(p.repo.files().filter((f) => !f.startsWith('e2ee/') && f !== 'README.md')).toEqual([])
+    await expect(m.getByTestId('vault-plaintext-warning')).toHaveCount(0)
+    for (const text of ['S4-UBUNTU-OLD', 'S4-UBUNTU-AFTER']) expect(await searchCount(u, text)).toBeGreaterThan(0)
   })
   // The Mac's notes are intact under encryption after a restart.
   await p.mac.stop()
@@ -199,7 +204,7 @@ test('4. mixed versions: the Mac encrypts while Ubuntu still runs v0.1.0; nothin
   await writeNote(u, 'S4-UBUNTU-SEALED', 300, 420)
   await expectNote(mac2, 'S4-UBUNTU-SEALED')
   await synced(u)
-  expect(p.repo.files().every((f) => f.startsWith('e2ee/'))).toBe(true)
+  expect(p.repo.files().filter((f) => !f.startsWith('e2ee/') && f !== 'README.md')).toEqual([])
   expect(bareRepo(p.bare).git('show', 'main:e2ee/vault.json')).not.toContain('S4-')
 })
 
@@ -263,6 +268,18 @@ test('6. lock and unlock; quick unlock on Ubuntu with gnome-keyring, and unavail
     await expectNote(notes, 'S6-NOTE')
     await openSecurity(notes)
     await expect(notes.getByTestId('quick-unlock-row')).toContainText('Not available on this computer')
+  })
+  await timed('Ubuntu with a new, empty keyring: quick unlock fails, the password works, and re-enabling is offered', async () => {
+    await p.ubuntu.stop()
+    await p.ubuntu.resetKeyring()
+    const lock = await p.ubuntu.start({ version: 'current' })
+    await lock.getByTestId('lock-quick-unlock').click()
+    await expect(lock.getByTestId('lock-error')).not.toHaveText('', { timeout: 30_000 })
+    const notes = await unlock(p.ubuntu, lock, PASSWORD)
+    const offer = notes.getByTestId('quick-unlock-offer')
+    await expect(offer).toBeVisible()
+    await expect(offer).toContainText('keyring')
+    await expect(offer).not.toContainText('Touch ID')
   })
 })
 
