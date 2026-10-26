@@ -43,6 +43,13 @@ int main(int argc, char **argv) {
   check("pre-init: keyRandom refused", scc_key_random(&eh) == SCC_ERR_STATE);
   check("pre-init: sha256 refused", scc_sha256(early, 4, early) == SCC_ERR_STATE);
   check("pre-init: nothing allocated", scc_live_handles() == 0);
+  /* C2 M2: the status queries are safe with no secure heap (OpenSSL's heap lock is still NULL here). */
+  check("pre-init: secure heap query safe", scc_secure_heap_used() == 0);
+  check("pre-init: not ready, nothing passed", !scc_ready() && !scc_post_passed() && !scc_fips_active());
+  char early_names[64], early_ver[32];
+  check("pre-init: no provider list, no module info", scc_default_ctx_providers(early_names, sizeof early_names) == SCC_ERR_STATE &&
+                                                      scc_fips_module_info(early_names, sizeof early_names, early_ver, sizeof early_ver) == SCC_ERR_STATE);
+  check("pre-init: zeroize and in_error_state safe", scc_zeroize_all() == 0 && !scc_in_error_state());
   int rc = fips ? scc_init(argv[1], argv[2], 1) : scc_init(NULL, NULL, 0);
   if (rc != SCC_OK) { printf("FAIL init SCC_%d\n", -rc); return 1; }
   check(fips ? "FIPS provider active (fips + base, fips=yes)" : "no FIPS claim without the provider", scc_fips_active() == fips);

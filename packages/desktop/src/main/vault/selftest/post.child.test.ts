@@ -53,6 +53,35 @@ describe('T-POST-02: each KAT corrupted on its own, in a fresh process', () => {
   })
 })
 
+describe('C2 M2: a packaged start whose provider is missing or refused fails closed, never crashes', () => {
+  function packagedStart(modulesDir: string) {
+    const r = spawnSync(process.execPath, [child, testAddonPath, modulesDir, join(out, 'fips-packaged', 'openssl-fips.cnf'), 'none', '1', 'packaged'], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
+    // A SIGSEGV here was the bug: status() read OpenSSL's secure heap before init had set it up.
+    expect(r.signal, r.stderr).toBeNull()
+    expect(r.status, r.stderr).toBe(0)
+    return JSON.parse(r.stdout) as { ok: boolean; failed: string[]; problem: string | null; state: string; errorState: boolean; ready: boolean }
+  }
+
+  it('no provider file: POST-MODULE-LOAD, the error state, and the self-test error screen state', () => {
+    const r = packagedStart(join(out, 'no-provider-packaged'))
+    expect(r).toMatchObject({ ok: false, failed: ['POST-MODULE-LOAD'], state: 'selftest-failed', errorState: true, ready: false })
+    expect(r.problem).toBe('POST-MODULE-LOAD (missing provider)')
+  })
+
+  it('a provider file that is not the pinned module: POST-MODULE-STATUS (SCC_15), selftest-failed', () => {
+    const dir = join(out, 'wrong-provider-packaged')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, testModuleFile), 'not the module')
+    const r = packagedStart(dir)
+    expect(r).toMatchObject({ ok: false, failed: ['POST-MODULE-STATUS'], state: 'selftest-failed', errorState: true, ready: false })
+    expect(r.problem).toBe('POST-MODULE-STATUS (SCC_15)')
+  })
+})
+
 describe('T-POST-04: a start that requires the FIPS provider', () => {
   it('fails POST-MODULE-STATUS on a module without it (the development build), and serves nothing after', () => {
     const r = run('none', { requireFips: true, provider: false })

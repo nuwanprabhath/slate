@@ -70,6 +70,8 @@ int scc_key_destroy(uint32_t handle);
 size_t scc_zeroize_all(void);
 size_t scc_live_handles(void);
 size_t scc_secure_heap_used(void);
+/* 1 once scc_init succeeded and the module is not in the error state. Safe in every init state. */
+int scc_ready(void);
 int scc_kbkdf_for(uint32_t key, const char *label, size_t label_len, const unsigned char *ctx, size_t ctx_len, int usage, uint32_t *out);
 int scc_hkdf_legacy_for(uint32_t key, const unsigned char *salt, size_t salt_len, const char *info, size_t info_len, int usage, uint32_t *out);
 int scc_rewrap_key(uint32_t old_kek, const unsigned char *iv, const unsigned char *aad, size_t aad_len, const unsigned char *ct_tag, size_t ct_tag_len,

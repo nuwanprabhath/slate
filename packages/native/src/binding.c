@@ -142,6 +142,8 @@ static napi_value HardenProcess(napi_env env, napi_callback_info info) {
 static napi_value Status(napi_env env, napi_callback_info info) {
   (void)info; napi_value o, v;
   CHECK(napi_create_object(env, &o));
+  /* Safe in every init state (C2 M2): before init, or after an init that failed, it reports, never crashes. */
+  napi_get_boolean(env, scc_ready(), &v); napi_set_named_property(env, o, "ready", v);
   napi_get_boolean(env, scc_fips_active(), &v); napi_set_named_property(env, o, "fipsActive", v);
   napi_get_boolean(env, scc_in_error_state(), &v); napi_set_named_property(env, o, "errorState", v);
   napi_create_uint32(env, (uint32_t)scc_live_handles(), &v); napi_set_named_property(env, o, "liveHandles", v);

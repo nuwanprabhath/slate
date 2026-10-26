@@ -291,7 +291,8 @@ void scc_enter_error_state(void) { g_error_state = 1; g_post_open = 0; scc_zeroi
 
 void scc_post_gate(void) { g_post_gated = 1; }
 
-int scc_post_passed(void) { return !g_error_state && (!g_post_gated || g_post_ok); }
+/* A module that never initialised has passed nothing. */
+int scc_post_passed(void) { return g_ready && !g_error_state && (!g_post_gated || g_post_ok); }
 
 int scc_post_begin(void) {
   if (scc_in_error_state()) return SCC_ERR_ERROR_STATE;
@@ -460,7 +461,10 @@ size_t scc_live_handles(void) {
   return n;
 }
 
-size_t scc_secure_heap_used(void) { return CRYPTO_secure_used(); }
+/* Callable in every init state (audit §4.2, C2 M2): before CRYPTO_secure_malloc_init has run (no init, or an
+ * init that failed before it) OpenSSL's secure-heap lock is NULL and CRYPTO_secure_used would dereference it. */
+size_t scc_secure_heap_used(void) { return CRYPTO_secure_malloc_initialized() ? CRYPTO_secure_used() : 0; }
+int scc_ready(void) { return g_ready && !g_error_state; }
 int scc_heap_locked(void) { return g_heap_locked; }
 int scc_selftest_failures(void) { return g_selftest_failures; }
 

@@ -8,6 +8,7 @@ All notable changes to Slate are recorded here. The format follows
 
 ### Security
 
+- A packaged build whose FIPS provider is missing or refused now stops on the self-test error screen instead of crashing at startup (seen on Linux).
 - On Linux the .deb always runs Chromium's setuid sandbox, so the lock screen's process is sandboxed and other programs cannot read its memory. When Slate runs without the sandbox (the AppImage on Ubuntu 23.10 and later), the lock screen and Settings → Security say so and recommend the .deb.
 
 ### Fixed
