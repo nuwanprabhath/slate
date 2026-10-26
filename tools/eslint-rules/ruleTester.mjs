@@ -1,5 +1,5 @@
 // @ts-check
-import { afterAll, describe, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { RuleTester, tseslint } from '../lint/index.mjs'
 import { ROOT } from './paths.mjs'
 
@@ -15,14 +15,50 @@ RuleTester.itOnly = it.only
  * uses `FIXTURE` as its filename, whose contents RuleTester replaces with the case's code.
  */
 export function ruleTester({ typed = false } = {}) {
+  if (typed) typedProgramSanity()
   return new RuleTester({
     languageOptions: {
       parser: tseslint.parser,
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ...(typed ? { project: './tools/eslint-rules/fixtures/tsconfig.json', tsconfigRootDir: ROOT } : {}),
-      },
+      parserOptions: { ecmaFeatures: { jsx: true }, ...(typed ? TYPED : {}) },
     },
+  })
+}
+
+/**
+ * The parser options of a typed case. disallowAutomaticSingleRunInference: with CI=true (GitHub
+ * Actions) typescript-eslint infers a single `eslint` run and builds its program once from the
+ * files on disk, so every case would be typed as the fixture's stand-in text, not its own code.
+ */
+const TYPED = { project: './tools/eslint-rules/fixtures/tsconfig.json', tsconfigRootDir: ROOT, disallowAutomaticSingleRunInference: true }
+
+/**
+ * The typed rules skip quietly when they get no types (a plain `eslint` run on a file outside a
+ * project), so a typed RuleTester whose program is wrong would pass every `invalid` case as 0 errors
+ * only by failing them, or worse, pass `valid` cases vacuously. This registers, in every file that
+ * builds a typed RuleTester, a test that the program parsed the case's own code (not the fixture
+ * on disk) and resolved `Buffer` from @types/node and `Database` from @slate/native.
+ */
+function typedProgramSanity() {
+  describe('typed RuleTester: the program has real types', () => {
+    it('parses the case code and resolves Buffer (@types/node) and Database (@slate/native)', () => {
+      const code = "import type { Database } from '@slate/native'\nexport declare const b: Buffer\nexport declare const db: Database\n"
+      const parsed = tseslint.parser.parseForESLint(code, { ...TYPED, filePath: FIXTURE, ecmaFeatures: { jsx: true } })
+      const services = /** @type {any} */ (parsed.services)
+      expect(services?.program, 'typescript-eslint built no program for the typed cases').toBeTruthy()
+      expect(services.program.getSourceFile(FIXTURE)?.text, 'the program read the fixture from disk, not the case code').toBe(code)
+      const checker = services.program.getTypeChecker()
+      /** @param {any} sym */
+      const files = (sym) => (sym?.getDeclarations() ?? []).map((/** @type {any} */ d) => d.getSourceFile().fileName.split('\\').join('/'))
+      /** Where the type of a declared variable is declared. @param {any} id */
+      const typeDeclaredIn = (id) => files(checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(id)).getSymbol())
+      /** Where an imported name is declared. @param {any} id */
+      const importDeclaredIn = (id) => files(checker.getAliasedSymbol(checker.getSymbolAtLocation(services.esTreeNodeToTSNodeMap.get(id))))
+      const body = /** @type {any[]} */ (parsed.ast.body)
+      const buffer = body[1].declaration.declarations[0].id
+      const database = body[0].specifiers[0].local
+      expect(typeDeclaredIn(buffer).some((f) => f.includes('/node_modules/@types/node/')), 'Buffer did not resolve from @types/node').toBe(true)
+      expect(importDeclaredIn(database).some((f) => f.includes('/packages/native/')), 'Database did not resolve from @slate/native').toBe(true)
+    })
   })
 }
 
