@@ -184,6 +184,8 @@ jobs:
     name: Publish the GitHub release
     needs: [build, sbom]
     runs-on: ubuntu-24.04
+    # The signing key is a secret of the `release` environment, which only `v*` tags can deploy to.
+    environment: release
     permissions:
       contents: write
     steps:

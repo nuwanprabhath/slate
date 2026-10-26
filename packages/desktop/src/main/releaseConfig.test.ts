@@ -121,6 +121,14 @@ describe('release configuration (C12)', () => {
       .join('\n')
     expect(code).not.toMatch(/\b(npx|npm)\b/)
   })
+  it('the signing key is read only by jobs in the release environment, which only v* tags can deploy to', () => {
+    const yml = readFileSync(join(desktop, '..', '..', '.github', 'workflows', 'release.yml'), 'utf8')
+    const jobs = yml.slice(yml.indexOf('\njobs:\n')).split(/\n(?=  [A-Za-z][\w-]*:\n)/).slice(1)
+    const signing = jobs.filter((j) => j.includes('secrets.SLATE_UPDATE_SIGNING_KEY'))
+    expect(signing.length).toBeGreaterThan(0)
+    // As a repository secret the key would reach any job of any workflow; as an environment secret only these.
+    for (const job of signing) expect(job).toMatch(/\n    environment: release\n/)
+  })
   it('review R1: the signing job downloads only release-* into dist/, and the SBOM artefact by name elsewhere', () => {
     const yml = readFileSync(join(desktop, '..', '..', '.github', 'workflows', 'release.yml'), 'utf8')
     const job = yml.slice(yml.indexOf('\njobs:\n')).split(/\n(?=  [A-Za-z][\w-]*:\n)/).find((j) => j.includes('secrets.SLATE_UPDATE_SIGNING_KEY'))!

@@ -9,8 +9,9 @@ before you tag `v0.2.0`.
   - the native build for linux-x64 (OpenSSL, FIPS provider, SQLCipher) and the unit, main-process and guard tests;
   - the FIPS provider pins for **linux-x64 and darwin-x64** are committed (only macOS arm64 could be measured on the
     development machine; read the hash from the CI build and commit it with the other pins).
-- [ ] **`SLATE_UPDATE_SIGNING_KEY` is set** as a GitHub Actions secret (the Ed25519 private key the lead generated
-  outside the repository). Without it the release cannot sign the update feeds, and no running 0.2.x app will accept
+- [ ] **`SLATE_UPDATE_SIGNING_KEY` is set** as a secret of the `release` environment of `nuwanprabhath/slate` (the
+  Ed25519 private key the lead generated outside the repository). The environment allows only `v*` tags to deploy,
+  and `release.yml`'s publish job names it; a repository secret would also work but reaches every workflow. Without it the release cannot sign the update feeds, and no running 0.2.x app will accept
   the update (unsigned updates are never accepted, `decisions.md`).
 - [ ] **Guard-change batch confirmed.** In the main checkout, run `scripts/agents/merge-wp.sh --confirm-guard-changes`,
   read every commit and guard-file diff it prints, and allow the Keychain dialog. The pre-push hook refuses a push of
