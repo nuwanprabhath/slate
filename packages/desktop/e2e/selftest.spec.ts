@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import type { Page } from '@playwright/test'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp, test, unlockWith } from './fixtures'
 import { connectMcp, textOf } from './mcpClient'
 
@@ -107,9 +107,8 @@ test.describe('power-up self-test', () => {
     try {
       const notes = await unlockWith(app, page, PASSWORD)
       await expect.poll(async () => (await mcp.client.callTool({ name: 'list_tree', arguments: {} })).isError ?? false, { timeout: 15_000 }).toBe(false)
-      const pid = app.process().pid!
-      const openDbs = () => execFileSync('lsof', ['-p', String(pid)], { encoding: 'utf8' }).split('\n').filter((l) => /slate-[^/\s]*\.db/.test(l))
-      expect(openDbs().length).toBeGreaterThan(0)
+      const openDbs = async () => (await openFiles(app)).filter((l) => /slate-[^/\s]*\.db/.test(l))
+      expect((await openDbs()).length).toBeGreaterThan(0)
 
       // Review C6: a lock in flight while the self-test fails must not replace the error screen with the lock screen.
       await notes.evaluate(() => {
@@ -123,7 +122,7 @@ test.describe('power-up self-test', () => {
       expect(app.windows()).toHaveLength(1)
       expect((await errorScreen!.evaluate(() => window.slate.vault.status())).state).toBe('selftest-failed')
       await expect.poll(async () => textOf(await mcp.client.callTool({ name: 'list_tree', arguments: {} })), { timeout: 15_000 }).toBe(LOCKED_MCP)
-      expect(openDbs()).toEqual([])
+      expect(await openDbs()).toEqual([])
       // Whatever was still in flight (the lock's flush wait) has settled: still only the error screen.
       await new Promise((r) => setTimeout(r, 3500))
       expect(app.windows().filter((w) => !w.isClosed())).toHaveLength(1)
@@ -134,3 +133,25 @@ test.describe('power-up self-test', () => {
     }
   })
 })
+
+/**
+ * The files the app's main process has open. On Linux the app makes itself non-dumpable (Z-9), so its
+ * /proc/<pid>/fd belongs to root and `lsof -p` from the test lists none of them; a process can still read its
+ * own /proc/self/fd, so there the main process lists them itself. macOS has no /proc: lsof on main's pid.
+ */
+async function openFiles(app: ElectronApplication): Promise<string[]> {
+  if (process.platform === 'linux') {
+    return app.evaluate(() => {
+      const fs = process.getBuiltinModule('node:fs')
+      return fs.readdirSync('/proc/self/fd').flatMap((fd) => {
+        try {
+          return [fs.readlinkSync(`/proc/self/fd/${fd}`)]
+        } catch {
+          return [] // The listing's own descriptor, closed by the time it is read.
+        }
+      })
+    })
+  }
+  const pid = await app.evaluate(() => process.pid)
+  return execFileSync('lsof', ['-p', String(pid)], { encoding: 'utf8' }).split('\n')
+}

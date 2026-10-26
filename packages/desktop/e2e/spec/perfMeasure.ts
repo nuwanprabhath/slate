@@ -5,7 +5,10 @@ import { bestOf, keyCpuTimes, percentile, settle } from '../perfCpu'
 
 // The budgets are for a real machine. CI sets SLATE_PERF_FACTOR for its shared, GPU-less VM (page
 // open measured 124 ms there against well under 100 ms on a laptop), so large regressions still fail.
-const factor = Number(process.env.SLATE_PERF_FACTOR) || 1
+export const factor = Number(process.env.SLATE_PERF_FACTOR) || 1
+
+/** The budgets as asserted on this machine, in ms (perfProbes.spec.ts sizes its slowdowns from them). */
+export const BUDGET = { pageOpen: 100 * factor, keyCpu: 16 * factor, keyMedian: 16 * factor, keyTail: 33 * factor }
 
 /**
  * How the budgets are measured so that a busy machine does not fail them (C11; method in e2e/perfCpu.ts):
@@ -87,26 +90,26 @@ export async function measure(page: Page, label: string) {
   const quiet = await settle(page)
   console.log(`${label} renderer settled: idle-task p95 ${quiet.p95.toFixed(1)} ms after ${quiet.waitedMs} ms`)
 
-  const open = await bestOf(RETRIES, () => openOnce(page), (ms) => ms < 100 * factor)
+  const open = await bestOf(RETRIES, () => openOnce(page), (ms) => ms < BUDGET.pageOpen)
   console.log(`${label} page open: ${open.best.toFixed(1)} ms (runs: ${open.all.map((v) => v.toFixed(1)).join(', ')})`)
-  expect(open.best).toBeLessThan(100 * factor)
+  expect(open.best).toBeLessThan(BUDGET.pageOpen)
 
   // CPU first: it is what load does not move, and it is printed even when the wall-clock measure then misses.
   await page.getByTestId('box-editor').first().click()
   const cpu = await keyCpuTimes(page, TEXT.repeat(2))
   const cpuP95 = percentile(cpu.perKey, 0.95)
   console.log(`${label} keystroke CPU p50 ${percentile(cpu.perKey, 0.5).toFixed(1)} ms, p95 ${cpuP95.toFixed(1)} ms over ${cpu.perKey.length} keys (measurement overhead ${cpu.overhead.toFixed(2)} ms subtracted); off-CPU wait p50 ${percentile(cpu.offCpu, 0.5).toFixed(1)} ms, p95 ${percentile(cpu.offCpu, 0.95).toFixed(1)} ms, max ${Math.max(...cpu.offCpu).toFixed(1)} ms`)
-  expect(cpuP95).toBeLessThan(16 * factor)
+  expect(cpuP95).toBeLessThan(BUDGET.keyCpu)
 
   await recordKeyLatency(page)
   // Best of up to three runs, scored by the worse of the two checks against its limit.
   const runs: { p50: number; p95: number }[] = []
-  const score = (r: { p50: number; p95: number }) => Math.max(r.p50 / (16 * factor), r.p95 / (33 * factor))
+  const score = (r: { p50: number; p95: number }) => Math.max(r.p50 / BUDGET.keyMedian, r.p95 / BUDGET.keyTail)
   await bestOf(RETRIES, async () => {
     runs.push(await typingRun(page, label))
     return score(runs[runs.length - 1]!)
   }, (v) => v < 1)
   const best = runs.reduce((a, b) => (score(b) < score(a) ? b : a))
-  expect(best.p50, 'wall-clock median per key, ms').toBeLessThan(16 * factor)
-  expect(best.p95, 'wall-clock p95 per key (two frames), ms').toBeLessThan(33 * factor)
+  expect(best.p50, 'wall-clock median per key, ms').toBeLessThan(BUDGET.keyMedian)
+  expect(best.p95, 'wall-clock p95 per key (two frames), ms').toBeLessThan(BUDGET.keyTail)
 }
