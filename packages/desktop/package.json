@@ -27,6 +27,7 @@
     "e2e:keychain": "electron-vite build && playwright test --config playwright.keychain.config.ts",
     "e2e:fips": "electron-vite build && cross-env SLATE_TEST_PROFILE=fips-140-3 playwright test encryption.spec.ts",
     "e2e:packaged": "playwright test --config e2e-packaged/playwright.config.ts",
+    "e2e:ubuntu": "electron-vite build && playwright test --config e2e-ubuntu/playwright.config.ts",
     "screenshots": "node scripts/readme-screenshots.cjs"
   },
   "dependencies": {

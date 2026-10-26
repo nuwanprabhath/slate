@@ -1,0 +1,17 @@
+# Context of packages/desktop/e2e-ubuntu/docker/Dockerfile: sources only; the image installs and builds its own.
+**/node_modules
+**/out
+**/dist
+.git
+.claude
+.agent-reports
+.worktrees
+release
+.tools
+packages/native/.build
+packages/native/build
+packages/native/prebuilds
+packages/native/fips
+packages/desktop/resources/bin
+**/test-results
+**/playwright-report
