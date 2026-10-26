@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, powerMonitor, protocol, session, systemPreferences } from 'electron'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { arch, homedir, release, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -76,6 +76,7 @@ import { startRequiresFips } from './vault/selftest/profilePeek'
 import { diagnosticReport } from './vault/selftest/report'
 import { databaseFault, failClosed, FaultSupervisor, startupSelfTest, watchModule } from './vault/selftest/supervisor'
 import type { SelfTestSummary } from '../shared/api'
+import { createSandboxMonitor } from './rendererSandbox'
 
 scrubProcessTestHooks(app.isPackaged)
 app.setName(APP_NAME)
@@ -662,11 +663,19 @@ void app.whenReady().then(async () => {
       return 0
     }
   }
+  // POAM-16: probed at each status call, so the lock screen's own renderer is live when it asks.
+  const rendererSandbox = createSandboxMonitor({
+    platform: process.platform,
+    hasNoSandboxSwitch: () => app.commandLine.hasSwitch('no-sandbox'),
+    readStatus: (path) => readFileSync(path, 'utf8'),
+    rendererPids: () => BrowserWindow.getAllWindows().flatMap((w) => (w.isDestroyed() ? [] : [w.webContents.getOSProcessId()])),
+    onUnsandboxed: (reason) => securityEvent.rendererUnsandboxed({ reason }),
+  })
   const status = async (): Promise<VaultStatus> => {
     const quickUnlock = vault.state === 'locked' || vault.state === 'locking' ? await quickKind() : null
     // S-2: after a failed self-test vault.json is not read at all.
     const profile = inSelfTest() ? null : await vaultProfile()
-    const s: VaultStatus = { state: vault.state, screenLockDetected: screenLock.detected, passwordChangedElsewhere, preunlockTampered, quickUnlock, profile, selfTest: lastSelfTest }
+    const s: VaultStatus = { state: vault.state, screenLockDetected: screenLock.detected, passwordChangedElsewhere, preunlockTampered, quickUnlock, profile, selfTest: lastSelfTest, rendererUnsandboxed: !rendererSandbox.check().sandboxed }
     passwordChangedElsewhere = false
     preunlockTampered = false
     return s

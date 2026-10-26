@@ -45,6 +45,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   motion: { default: 'auto', sanitize: (v) => (MOTIONS.some((m) => m === v) ? (v as MotionSetting) : undefined) },
   followSystem: { default: false, sanitize: bool },
   systemTitleBar: { default: false, sanitize: bool },
+  sandboxNoticeDismissed: { default: false, sanitize: bool },
   fontOverrides: { default: {}, sanitize: sanitizeFontOverrides },
   idleMinutes: { default: 30, sanitize: (v) => (Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= 7 * 24 * 60 ? (v as number) : undefined) },
   lockOnSleep: { default: true, sanitize: bool },

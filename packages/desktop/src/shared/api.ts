@@ -57,6 +57,8 @@ export interface Settings {
   followSystem: boolean
   /** The OS title bar instead of Slate's themed one. Read when a window opens, so it needs a restart. */
   systemTitleBar: boolean
+  /** POAM-16: the user dismissed Settings → Security's no-sandbox notice. */
+  sandboxNoticeDismissed: boolean
   /** Note and UI fonts the user picked, per theme id; a theme without an entry uses its own. */
   fontOverrides: Record<string, FontOverride>
   /** Encrypted vaults lock after this many minutes without Slate input; 0 = never. */
@@ -87,6 +89,8 @@ export interface VaultStatus {
   profile: VaultProfile | null
   /** The last power-up or on-demand self-test (audit §4.2): its failed check ids, first is the reason shown. */
   selfTest: SelfTestSummary
+  /** POAM-16: a renderer runs without Chromium's sandbox (--no-sandbox, or Linux seccomp off: the AppImage). */
+  rendererUnsandboxed: boolean
 }
 
 /** A self-test run as Settings and the error screen show it. */
