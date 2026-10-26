@@ -65,10 +65,11 @@ jobs:
         run: rustup toolchain install nightly --profile minimal
       - run: npm run build:one2html
       # Audit C3: the notes database is SQLCipher inside @slate/native, so the main-process tests and
-      # e2e need the addon. libcrypto + SQLCipher only: the FIPS provider (and its pin) is the native job's.
-      - name: Build @slate/native (libcrypto, SQLCipher, addon)
+      # e2e need the addon. The FIPS provider too: the fips-140-3 profile tests (C5, C9 R-3) need it
+      # active. Built exactly as in the native job (pinned tarballs, --update-pin as there).
+      - name: Build @slate/native (libcrypto, FIPS Provider 3.1.2, SQLCipher, addon)
         run: |
-          npm run -w @slate/native build:openssl -- --only openssl
+          npm run -w @slate/native build:openssl -- --update-pin
           npm run -w @slate/native build:sqlcipher
           npm run -w @slate/native build:addon
       - run: npm run typecheck
@@ -123,10 +124,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # @slate/native's SQLCipher tests need the addon (libcrypto + SQLCipher; no FIPS provider here).
-      - name: Build @slate/native (libcrypto, SQLCipher, addon)
+      # @slate/native's SQLCipher tests need the addon, and the fips-140-3 profile tests the FIPS
+      # provider: built as in the native job (pinned tarballs, --update-pin as there).
+      - name: Build @slate/native (libcrypto, FIPS Provider 3.1.2, SQLCipher, addon)
         run: |
-          npm run -w @slate/native build:openssl -- --only openssl
+          npm run -w @slate/native build:openssl -- --update-pin
           npm run -w @slate/native build:sqlcipher
           npm run -w @slate/native build:addon
       - run: npm test
