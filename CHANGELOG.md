@@ -6,6 +6,10 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- On Linux the .deb always runs Chromium's setuid sandbox, so the lock screen's process is sandboxed and other programs cannot read its memory. When Slate runs without the sandbox (the AppImage on Ubuntu 23.10 and later), the lock screen and Settings → Security say so and recommend the .deb.
+
 ### Fixed
 
 - On Linux, the offer to set quick unlock up again names the system keyring instead of Touch ID.

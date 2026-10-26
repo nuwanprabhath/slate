@@ -16,3 +16,6 @@
 .settings-button { padding: 4px 10px; background: var(--hover); color: var(--text); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font: inherit; }
 /* The Sync section reuses the old overlay's form; inside the dialog it drops its own box. */
 .settings-pane .sync-settings { width: auto; max-height: none; padding: 0; background: none; border: none; overflow: visible; }
+
+/* POAM-16: Settings → Security notice while unsandboxed. */
+.security-sandbox-notice { padding: 8px 10px; margin-bottom: 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 4px; }

@@ -52,6 +52,8 @@ export const securityEvent = {
   updateSignatureFailed: (f: { version: string | undefined }, to?: Err): void => mirror('update', to).error('update.signature.failed', f),
   /** `origin` is the sender's origin only (never its path or query). */
   ipcUntrustedSender: (f: { channel: string; origin: string }, to?: Warn): void => mirror('ipc', to).warn('ipc.untrusted-sender', f),
+  /** POAM-16: a renderer runs without Chromium's sandbox (logged once a run). */
+  rendererUnsandboxed: (f: { reason: 'no-sandbox-switch' | 'seccomp-off' }, to?: Warn): void => mirror('app', to).warn('app.renderer.unsandboxed', f),
 } as const
 
 /** A frame URL as an origin for the log: no path, no query, nothing at all when it does not parse. */

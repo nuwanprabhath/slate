@@ -8,7 +8,8 @@ export const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
 /** Cocoa defaults: a test launch never saves or restores window state, so a crashed run cannot make later launches ask to reopen windows. */
 export const NO_WINDOW_RESTORE: string[] = process.platform === 'darwin' ? ['-ApplePersistenceIgnoreState', 'YES'] : []
 
-export async function launchApp(userData: string, env: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page }> {
+/** `switches` go on the app's real command line (e.g. `--no-sandbox` for the POAM-16 notice). */
+export async function launchApp(userData: string, env: Record<string, string> = {}, switches: string[] = []): Promise<{ app: ElectronApplication; page: Page }> {
   // ELECTRON_RUN_AS_NODE (set for `npm run test:main`, or inherited from a parent shell) would make
   // Electron boot as plain Node, so it must not leak into the app under test.
   const { ELECTRON_RUN_AS_NODE: _ignored, ...inherited } = process.env
@@ -16,7 +17,7 @@ export async function launchApp(userData: string, env: Record<string, string> = 
     // Playwright adds --no-sandbox on Linux unless told otherwise, which turns Chromium's sandbox off for
     // every child: the app under test must run sandboxed, as it does for users (T-ZERO-06).
     chromiumSandbox: true,
-    args: [join(__dirname, '..', 'out', 'main', 'index.js'), ...NO_WINDOW_RESTORE],
+    args: [join(__dirname, '..', 'out', 'main', 'index.js'), ...NO_WINDOW_RESTORE, ...switches],
     env: { ...(inherited as Record<string, string>), ...env, SLATE_E2E: '1', SLATE_USER_DATA: userData },
   })
   const page = await app.firstWindow()

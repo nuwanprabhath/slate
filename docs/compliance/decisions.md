@@ -27,6 +27,11 @@ Further maintainer answers:
 - **The fips-140-3 latch needs a restart (C5, 2026-10-24).** Accepted: once a fips-140-3 vault's header has
   verified, the process is approved-only for good, so opening a standard vault needs Slate restarted. The latch is
   set only after the header's `check` verifies (review C5 M1), never from an unverified header.
+- **Renderer sandbox on Linux (POAM-16, 2026-10-26): "Force setuid sandbox; AppImage warns".** The .deb always launches Slate with
+  `--disable-namespace-sandbox` (desktop entry and `/usr/bin/slate` wrapper), so Chromium uses the setuid chrome-sandbox and the renderers,
+  the lock screen's included, are sandboxed and non-dumpable wherever the .deb is installed. The AppImage keeps working; when Slate finds a
+  renderer without the sandbox it says so once in Settings → Security (dismissable) and on the lock screen, recommends the .deb, and logs
+  `app.renderer.unsandboxed`. Implemented in phase 12 (SANDBOX); the AppImage residual stays on POAM-16.
 - **FIPS profile visibility (C5).** The wizard shows the *Standard / FIPS 140-3* choice only in builds that bundle the
   FIPS provider. Other builds create `standard` vaults without asking. Implemented: the choice appears when
   `moduleStatus().approvedMode` is true; a fips-140-3 vault on a build without the module is refused at unlock

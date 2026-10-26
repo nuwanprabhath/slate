@@ -31,6 +31,7 @@
 .lock-hint { margin: 0; color: var(--text-muted, var(--text)); font-size: 12px; text-align: center; }
 .lock-link { align-self: center; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
 .lock-quick:empty { display: none; }
+.lock-sandbox-note { margin: 4px 0 0; color: var(--text-muted, var(--text)); font-size: 11px; text-align: center; max-width: 320px; }
 
 .migration-banner { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--popover); border-bottom: 1px solid var(--border); color: var(--text); font-size: 13px; }
 .migration-banner-text { flex: 1; }

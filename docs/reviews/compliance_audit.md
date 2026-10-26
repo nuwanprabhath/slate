@@ -749,6 +749,7 @@ All events go through the existing redacting logger (`log/logger.ts`). The log f
 | `sync.unverifiable` | `count` |
 | `update.signature.failed` | `version` |
 | `ipc.untrusted-sender` | `channel`, `origin` |
+| `app.renderer.unsandboxed` | `reason` (`no-sandbox-switch` or `seccomp-off`; added in phase 12 for POAM-16, maintainer decision 2026-10-26) |
 
 ### 4.9 Native module build (C2, C3)
 

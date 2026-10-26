@@ -12,6 +12,7 @@ import type { SectionProps } from '../registry'
 import { CryptoModuleGroup } from './CryptoModuleGroup'
 import { KeysGroup } from './KeysGroup'
 import { securityRows } from './securitySlots'
+import { settingsSandboxNotice } from './sandboxText'
 import { securityStatusText } from './securityStatus'
 import '../../lock/lock.css'
 import '../../vault/vault.css'
@@ -144,8 +145,18 @@ export function SecuritySection({ settings, patch, onClose }: SectionProps) {
   if (!status) return null
   const encrypted = status.state === 'unlocked'
   const limits = profileLimits(status.profile)
+  const sandboxNotice = settingsSandboxNotice(status, settings.sandboxNoticeDismissed)
   return (
     <>
+      {sandboxNotice && (
+        <div className="security-sandbox-notice" role="note" data-testid="security-sandbox-notice">
+          <strong>{sandboxNotice.title}</strong>
+          <p className="settings-hint">{sandboxNotice.body}</p>
+          <button type="button" data-testid="security-sandbox-dismiss" onClick={() => patch({ sandboxNoticeDismissed: true })}>
+            Don't show again
+          </button>
+        </div>
+      )}
       <p data-testid="security-status">{securityStatusText(status.state, sync)}</p>
       {status.profile && (
         <p data-testid="security-profile">

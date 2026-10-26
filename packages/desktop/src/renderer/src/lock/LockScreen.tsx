@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { QuickUnlockKind } from '../../../shared/api'
 import { SecretField } from '../vault/SecretField'
 import { submitSecret } from '../vault/secretInput'
+import { lockSandboxNote } from '../settings/sections/sandboxText'
 import iconUrl from '../../../../resources/icon.png'
 import './lock.css'
 
@@ -23,11 +24,15 @@ export function LockScreen() {
   const [failures, setFailures] = useState(0)
   const [busy, setBusy] = useState(false)
   const [quick, setQuick] = useState<QuickUnlockKind | null>(null)
+  const [sandboxNote, setSandboxNote] = useState<string | null>(null)
 
   useEffect(() => {
     void window.slate.vault
       .status()
-      .then((s) => setQuick(s.quickUnlock ?? null))
+      .then((s) => {
+        setQuick(s.quickUnlock ?? null)
+        setSandboxNote(lockSandboxNote(s))
+      })
       .catch(() => {})
   }, [])
 
@@ -99,6 +104,11 @@ export function LockScreen() {
             </button>
           )}
         </div>
+        {sandboxNote && (
+          <p className="lock-sandbox-note" data-testid="lock-sandbox-note">
+            {sandboxNote}
+          </p>
+        )}
       </form>
     </div>
   )
