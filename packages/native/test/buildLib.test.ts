@@ -89,6 +89,10 @@ describe('targets', () => {
     expect(() => configureTarget('win32-x64')).toThrow()
   })
 
+  it('builds linux-arm64 for the Ubuntu cross-device harness on an Apple silicon Mac (e2e-ubuntu)', () => {
+    expect(configureTarget('linux-arm64')).toBe('linux-aarch64')
+  })
+
   it('names the host target and the provider file per platform', () => {
     expect(hostTarget('darwin', 'arm64')).toBe('darwin-arm64')
     expect(hostTarget('linux', 'x64')).toBe('linux-x64')
