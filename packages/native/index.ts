@@ -25,6 +25,8 @@ export type KeyHandle = number & { readonly __keyHandle: unique symbol }
 export type KeyUsage = 'data' | 'master' | 'db' | 'kek'
 
 export interface NativeStatus {
+  /** `init` succeeded and the module is not in the error state. False before init and after a failed one. */
+  ready: boolean
   /** The FIPS provider is loaded, passed its self-tests, and `fips=yes` is the default property query. */
   fipsActive: boolean
   /** Sticky: a module self-test failed or `enterErrorState` ran. Every service now throws `SCC_12`. */
