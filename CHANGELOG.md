@@ -6,16 +6,56 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-27
+
+
 ### Security
 
 - A packaged build whose FIPS provider is missing or refused now stops on the self-test error screen instead of crashing at startup (seen on Linux).
 - On Linux the .deb always runs Chromium's setuid sandbox, so the lock screen's process is sandboxed and other programs cannot read its memory. When Slate runs without the sandbox (the AppImage on Ubuntu 23.10 and later), the lock screen and Settings → Security say so and recommend the .deb.
 
+
+- The security log and the diagnostic log are readable by your user account only (folder 0700, files
+  0600), on encrypted and plaintext installs alike. Repeated unlock attempts during a FIPS 140-3
+  lockout are recorded once a minute with a count instead of one line each, and setting the computer's
+  clock back no longer makes a lockout last longer than its three hours.
+- Your password and recovery key go from the field you type them in to Slate's cryptographic module as
+  bytes, never as text, and every copy is wiped after use; the recovery key is decoded inside the module.
+  After unlocking, the lock screen's window is replaced by a new one, so the process that saw the
+  password ends. Slate turns off crash dumps of itself (and, on Linux, other programs reading its memory)
+  before any key exists.
+- A Slate window only ever shows Slate itself: a link a note opens, or anything that tries to
+  navigate the window or open a new one, goes to your browser instead (https and mailto only). The
+  app asks for no camera, microphone, notification or location access and refuses it if asked.
+- Remote images in notes no longer load in the built app: a note can no longer tell a third party
+  who opened it and when. Images you paste or import are kept with the note and still show.
+- The Microsoft (OneNote import) and GitHub sign-ins are stored only in the system keychain or
+  keyring. On a computer without one (Linux's basic store) Slate keeps them until you quit and you
+  sign in again next time; the import dialog says so. A plain-text Microsoft token cache an older
+  version left behind on such a computer is deleted.
+- Updates are signed: Slate checks an Ed25519 signature on the release's update feed and on the
+  installer before it offers, downloads or installs an update, and refuses one that does not verify.
+  Each release also carries a CycloneDX software bill of materials.
+- The app's pages load from its own `app://slate/` address instead of `file://`, and release builds
+  refuse Node's `--inspect` flags. Remembered panel widths and the last opened page are reset once.
+- Encryption keys derived while unlocking, changing the password or creating a recovery key are
+  wiped from memory as soon as they are used, and the vault's local files are refused when larger
+  than 64 KiB instead of being read whole.
+- All of the vault's cryptography now runs inside `@slate/native` (OpenSSL with the FIPS provider):
+  the password derivation, the master and database keys, sync encryption and remote names. Keys live
+  only in the module's locked memory and are destroyed at lock; Slate's own code never holds one.
+  Unlocking no longer pauses the window while the password is checked. Existing encrypted notes,
+  sync folders, recovery keys and quick unlock keep working unchanged.
+
 ### Fixed
 
 - On Linux, the offer to set quick unlock up again names the system keyring instead of Touch ID.
 
-## [0.2.0] - 2026-10-24
+
+- An empty new line in large text shows a caret as tall as that text, not the default size.
+- The text caret is full height with every font (the macOS system font drew it short).
+- A pasted image no longer leaves a blinking underline: the caret moves to a paragraph after the image, and any gap cursor is drawn as a vertical caret.
+- Delete or Backspace on a selected box header deletes the box (undoable) instead of scrolling the page; Escape returns to the canvas.
 
 ### Added
 
@@ -70,40 +110,6 @@ All notable changes to Slate are recorded here. The format follows
 - Themes can give the sidebar and toolbar their own texture or a gradient between palette colours;
   Paper's sidebar and toolbar now have its paper grain, and generated themes can use it too.
 
-### Security
-
-- The security log and the diagnostic log are readable by your user account only (folder 0700, files
-  0600), on encrypted and plaintext installs alike. Repeated unlock attempts during a FIPS 140-3
-  lockout are recorded once a minute with a count instead of one line each, and setting the computer's
-  clock back no longer makes a lockout last longer than its three hours.
-- Your password and recovery key go from the field you type them in to Slate's cryptographic module as
-  bytes, never as text, and every copy is wiped after use; the recovery key is decoded inside the module.
-  After unlocking, the lock screen's window is replaced by a new one, so the process that saw the
-  password ends. Slate turns off crash dumps of itself (and, on Linux, other programs reading its memory)
-  before any key exists.
-- A Slate window only ever shows Slate itself: a link a note opens, or anything that tries to
-  navigate the window or open a new one, goes to your browser instead (https and mailto only). The
-  app asks for no camera, microphone, notification or location access and refuses it if asked.
-- Remote images in notes no longer load in the built app: a note can no longer tell a third party
-  who opened it and when. Images you paste or import are kept with the note and still show.
-- The Microsoft (OneNote import) and GitHub sign-ins are stored only in the system keychain or
-  keyring. On a computer without one (Linux's basic store) Slate keeps them until you quit and you
-  sign in again next time; the import dialog says so. A plain-text Microsoft token cache an older
-  version left behind on such a computer is deleted.
-- Updates are signed: Slate checks an Ed25519 signature on the release's update feed and on the
-  installer before it offers, downloads or installs an update, and refuses one that does not verify.
-  Each release also carries a CycloneDX software bill of materials.
-- The app's pages load from its own `app://slate/` address instead of `file://`, and release builds
-  refuse Node's `--inspect` flags. Remembered panel widths and the last opened page are reset once.
-- Encryption keys derived while unlocking, changing the password or creating a recovery key are
-  wiped from memory as soon as they are used, and the vault's local files are refused when larger
-  than 64 KiB instead of being read whole.
-- All of the vault's cryptography now runs inside `@slate/native` (OpenSSL with the FIPS provider):
-  the password derivation, the master and database keys, sync encryption and remote names. Keys live
-  only in the module's locked memory and are destroyed at lock; Slate's own code never holds one.
-  Unlocking no longer pauses the window while the password is checked. Existing encrypted notes,
-  sync folders, recovery keys and quick unlock keep working unchanged.
-
 ### Changed
 
 - Glass is now Liquid Glass: panes get a sheen, a bright rim and a lens edge over a blurred,
@@ -114,13 +120,6 @@ All notable changes to Slate are recorded here. The format follows
 - The installed app's window runs under a stricter content security policy: it makes no network
   connections of its own, and images from plain `http:` addresses are no longer shown (`https:`
   images still are).
-
-### Fixed
-
-- An empty new line in large text shows a caret as tall as that text, not the default size.
-- The text caret is full height with every font (the macOS system font drew it short).
-- A pasted image no longer leaves a blinking underline: the caret moves to a paragraph after the image, and any gap cursor is drawn as a vertical caret.
-- Delete or Backspace on a selected box header deletes the box (undoable) instead of scrolling the page; Escape returns to the canvas.
 
 ## [0.1.0] - 2026-10-22
 
