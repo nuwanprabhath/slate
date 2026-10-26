@@ -69,7 +69,12 @@ jobs:
       # user's machine, and make chrome-sandbox setuid root as the .deb's after-install does: Chromium then
       # runs the setuid sandbox, whose renderers are non-dumpable (T-ZERO-06 asserts both).
       - name: Electron's setuid sandbox, as the .deb installs it
-        run: sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+        # npm ci does not fetch Electron's binary on this runner (it downloads on first launch), so chrome-sandbox
+        # does not exist yet: fetch it first.
+        run: |
+          node node_modules/electron/install.js
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       - name: Build @slate/native (libcrypto, SQLCipher, addon)
         run: |
           npm run -w @slate/native build:openssl -- --only openssl
