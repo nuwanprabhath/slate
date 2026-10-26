@@ -169,10 +169,12 @@ Encryption is off until you turn it on in Settings → Security → *Encrypt my 
 - **Keys in memory**: your keys stay inside Slate's cryptographic module, in locked memory that is
   wiped when Slate locks. The password and recovery key you type go to it as bytes and are wiped
   after use; the lock screen's window process ends once Slate unlocks, and Slate leaves no crash dump
-  (on Linux other programs cannot read its memory either; for the windows' own processes that protection
-  comes from Chromium's sandbox). What cannot be wiped: the text field you
-  typed into while its window lives, the copy inside the message that carries the password from the
-  window to Slate's main process (freed, but not wiped, by Electron), and a new password while you set
+  (on Linux other programs cannot read its memory either). On Linux the windows' own processes get that
+  protection from Chromium's setuid sandbox, which the .deb installs; where Chromium picks its
+  user-namespace sandbox instead (unprivileged user namespaces allowed) they are sandboxed but readable by
+  your own account's processes that may trace them, and the AppImage on Ubuntu 23.10 and later runs
+  without Chromium's sandbox, so prefer the .deb there. What cannot be wiped: the text field you
+  typed into while its window lives, and a new password while you set
   it (it is checked against the password rules as text). On macOS, stopping other programs from reading Slate's memory needs a
   signed build, which this version is not.
 - **Not protected**: malware running in your account while Slate is unlocked, and what the sync
