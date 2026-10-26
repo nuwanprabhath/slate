@@ -13,6 +13,9 @@ export async function launchApp(userData: string, env: Record<string, string> = 
   // Electron boot as plain Node, so it must not leak into the app under test.
   const { ELECTRON_RUN_AS_NODE: _ignored, ...inherited } = process.env
   const app = await electron.launch({
+    // Playwright adds --no-sandbox on Linux unless told otherwise, which turns Chromium's sandbox off for
+    // every child: the app under test must run sandboxed, as it does for users (T-ZERO-06).
+    chromiumSandbox: true,
     args: [join(__dirname, '..', 'out', 'main', 'index.js'), ...NO_WINDOW_RESTORE],
     env: { ...(inherited as Record<string, string>), ...env, SLATE_E2E: '1', SLATE_USER_DATA: userData },
   })

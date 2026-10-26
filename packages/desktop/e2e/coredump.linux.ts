@@ -18,11 +18,20 @@ test('T-ZERO-06: the main process is non-dumpable, spawns its renderer, and leav
   // Chromium's children started under it: the window has a live renderer.
   await expect(page.getByTestId('canvas')).toBeVisible()
   const renderer = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId())
-  expect(renderer).toBeGreaterThan(0)
-  // Review C7 L4: hardenProcess reaches main only; Linux renderers fork from the zygote before it runs. Their
-  // protection (the lock window's renderer holds the typed password until Z-6 ends it) is Chromium's
-  // sandbox, which makes them non-dumpable too. Assert it, so losing the sandbox fails here.
-  expect(statSync(`/proc/${renderer}/mem`).uid, 'the renderer is sandboxed and non-dumpable').toBe(0)
+  // A zygote child rewrites its command line into one space-separated string.
+  expect(readFileSync(`/proc/${renderer}/cmdline`, 'utf8')).toMatch(/[\s\0]--type=renderer[\s\0]/)
+  // Review C7 L4: hardenProcess reaches main only; Linux renderers fork from the zygote before it runs. The
+  // lock window's renderer holds the typed password until Z-6 ends it, so its protection is Chromium's sandbox.
+  // First, the sandbox is on at all: seccomp-bpf (mode 2) is the layer every Chromium sandbox flavour applies.
+  // A launcher's --no-sandbox (Playwright adds one unless told otherwise; the AppImage's desktop entry does)
+  // fails here.
+  const status = readFileSync(`/proc/${renderer}/status`, 'utf8')
+  expect(status, 'the renderer runs in Chromium\'s sandbox (seccomp-bpf)').toMatch(/^Seccomp:\s+2$/m)
+  // Then it is non-dumpable. Only the setuid sandbox gives that: chrome-sandbox, setuid root as the .deb's
+  // after-install leaves it, makes its children non-dumpable. The user-namespace sandbox, which Chromium prefers
+  // wherever unprivileged user namespaces are allowed, leaves the renderer dumpable by its user (CI keeps
+  // Ubuntu 24.04's restriction on so the setuid sandbox runs, as on a user's machine).
+  expect(statSync(`/proc/${renderer}/mem`).uid, 'the renderer is non-dumpable (setuid sandbox; see README "Keys in memory")').toBe(0)
 
   const exited = new Promise<string | null>((resolve) => app.process().once('exit', (_code, signal) => resolve(signal)))
   process.kill(pid, 'SIGSEGV')

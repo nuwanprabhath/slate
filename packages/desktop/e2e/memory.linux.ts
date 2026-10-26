@@ -104,14 +104,14 @@ test('T-ZERO-04: after lock, the main process holds no copy of MK, LK, the passw
 
     // Keys: strict. MK, LK and KEK_pw never exist outside the module's secure heap, which the lock wipes.
     expect(recorded('after lock: keys', mainPid, [...needlesFor('mk', CANARY.mk), ...needlesFor('lk', CANARY.lk), ...needlesFor('kek', kek)])).toEqual([])
-    // The password, apart: main zeroes every copy JavaScript can reach (vaultIpc.test.ts), but the IPC
-    // message that carried it is freed by Chromium unwiped (POAM-10, a Z-11 residual). A hit here is that
-    // residual, recorded with its mapping, not a key leak.
+    // The password, scanned apart so a hit is told from a key leak, under the same zero-hit rule. Main zeroes
+    // every copy JavaScript can reach (vaultIpc.test.ts) and gives the module only moduleCopy copies: a short
+    // `new Uint8Array(password)` lives on V8's heap and left an unwiped copy behind (POAM-10).
     const password = recorded('after lock: password', mainPid, [
       { label: 'password/utf8', bytes: Buffer.from(CANARY_PASSWORD, 'utf8') },
       { label: 'password/utf16', bytes: Buffer.from(CANARY_PASSWORD, 'utf16le') },
     ])
-    expect(password, 'password bytes after lock: see docs/compliance/poam.md POAM-10').toEqual([])
+    expect(password, 'password bytes after lock (docs/compliance/poam.md POAM-10)').toEqual([])
   } finally {
     writeReport()
     await app.close()

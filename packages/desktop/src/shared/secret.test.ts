@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { passwordBytes, secretBytes, zeroSecret } from './secret'
+import { moduleCopy, passwordBytes, secretBytes, zeroSecret } from './secret'
 
 describe('typed secrets as bytes (Z-5, C7)', () => {
   it('encodes NFC then UTF-8, so a composed and a decomposed password are the same bytes', () => {
@@ -21,5 +21,15 @@ describe('typed secrets as bytes (Z-5, C7)', () => {
     for (const bad of ['a password', new Uint8Array(0), new Uint8Array(4097), new Uint16Array(4), [1, 2, 3], { length: 3 }, null, undefined, 42]) {
       expect(passwordBytes(bad)).toBeNull()
     }
+  })
+
+  it('moduleCopy is the same bytes in an ArrayBuffer of its own, exactly the secret long (T-ZERO-04)', () => {
+    const pw = secretBytes('a short password')
+    const copy = moduleCopy(pw)
+    expect(Array.from(copy)).toEqual(Array.from(pw))
+    expect(copy.buffer).not.toBe(pw.buffer)
+    expect([copy.byteOffset, copy.buffer.byteLength]).toEqual([0, pw.byteLength])
+    zeroSecret(copy)
+    expect(pw.some((b) => b !== 0)).toBe(true)
   })
 })

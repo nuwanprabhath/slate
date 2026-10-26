@@ -4,7 +4,7 @@
 import type { KeyHandle } from '@slate/native'
 import { destroyKey, toBase64, utf8, vaultNative } from './native'
 import type { ProfileId } from './profile'
-import type { SecretBytes } from '../../shared/secret'
+import { moduleCopy, type SecretBytes } from '../../shared/secret'
 
 export interface Argon2idParams {
   alg: 'argon2id'
@@ -94,8 +94,8 @@ export async function deriveKek(password: SecretBytes, kdf: KdfParams, opts: Wea
 /** The one place a password KEK is derived: the vault's KDF, and the self-test's known answer below. */
 function derive(password: SecretBytes, salt: Uint8Array, kdf: KdfParams): Promise<KeyHandle> {
   const n = vaultNative()
-  if (kdf.alg === 'pbkdf2-hmac-sha512') return n.pbkdf2Async(new Uint8Array(password), salt, kdf.iterations)
-  return n.argon2idAsync(new Uint8Array(password), salt, kdf.memoryKiB, kdf.passes)
+  if (kdf.alg === 'pbkdf2-hmac-sha512') return n.pbkdf2Async(moduleCopy(password), salt, kdf.iterations)
+  return n.argon2idAsync(moduleCopy(password), salt, kdf.memoryKiB, kdf.passes)
 }
 
 /**
