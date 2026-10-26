@@ -6,6 +6,10 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- On Linux, the offer to set quick unlock up again names the system keyring instead of Touch ID.
+
 ## [0.2.0] - 2026-10-24
 
 ### Added

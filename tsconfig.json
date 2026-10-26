@@ -4,5 +4,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["packages/native/index.ts", "packages/*/src", "packages/*/test", "packages/*/e2e", "packages/*/e2e-packaged", "packages/*/*.config.ts", "*.config.ts", "tools/guards"]
+  "include": ["packages/native/index.ts", "packages/*/src", "packages/*/test", "packages/*/e2e", "packages/*/e2e-packaged", "packages/*/e2e-ubuntu","packages/*/*.config.ts", "*.config.ts", "tools/guards"]
 }

@@ -13,6 +13,8 @@ const CONFIGURE_TARGETS = {
   'darwin-arm64': 'darwin64-arm64-cc',
   'darwin-x64': 'darwin64-x86_64-cc',
   'linux-x64': 'linux-x86_64',
+  // Not a release target: the Ubuntu container of packages/desktop/e2e-ubuntu on an Apple silicon Mac.
+  'linux-arm64': 'linux-aarch64',
 }
 
 export const TARGETS = Object.keys(CONFIGURE_TARGETS)
