@@ -1,8 +1,8 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, launchApp, MOD, test } from './fixtures'
+import { expect, launchApp, MOD, test, unlockWith } from './fixtures'
 
 async function openWithShortcut(page: Page) {
   await expect(page.getByTestId('canvas')).toBeVisible()
@@ -76,4 +76,38 @@ test('turning auto bullets off persists across a restart', async () => {
   await openWithShortcut(second.page)
   await expect(second.page.getByTestId('setting-auto-bullets')).not.toBeChecked()
   await second.app.close()
+})
+
+test("POAM-16: without Chromium's sandbox the lock screen says so, Settings → Security warns until dismissed, and the security log records it", async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const password = 'e2e sandbox password'
+  const { app, page: lock } = await launchApp(userData, { SLATE_TEST_ENCRYPT_PASSWORD: password }, ['--no-sandbox'])
+  await expect(lock.getByTestId('lock-screen')).toBeVisible()
+  await expect(lock.getByTestId('lock-sandbox-note')).toContainText("without Chromium's sandbox")
+  const page = await unlockWith(app, lock, password)
+  await openWithShortcut(page)
+  await page.locator('.settings-nav-item', { hasText: 'Security' }).click()
+  const notice = page.getByTestId('security-sandbox-notice')
+  await expect(notice).toContainText('other programs running as you can read their memory')
+  await expect(notice).toContainText('.deb')
+  await page.getByTestId('security-sandbox-dismiss').click()
+  await expect(notice).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await openWithShortcut(page)
+  await page.locator('.settings-nav-item', { hasText: 'Security' }).click()
+  await expect(page.getByTestId('security-module')).toBeVisible()
+  await expect(page.getByTestId('security-sandbox-notice')).toHaveCount(0)
+  await app.close()
+  const dir = join(userData, 'security-log')
+  const log = readdirSync(dir).map((f) => readFileSync(join(dir, f), 'utf8')).join('')
+  expect(log).toContain('app.renderer.unsandboxed {"reason":"no-sandbox-switch"}')
+})
+
+test('POAM-16: a sandboxed run shows no sandbox notice', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const { app, page: lock } = await launchApp(userData, { SLATE_TEST_ENCRYPT_PASSWORD: 'e2e sandbox password' })
+  await expect(lock.getByTestId('lock-screen')).toBeVisible()
+  await expect(lock.getByTestId('lock-quick')).toBeAttached()
+  await expect(lock.getByTestId('lock-sandbox-note')).toHaveCount(0)
+  await app.close()
 })
