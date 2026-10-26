@@ -24,6 +24,7 @@ function fakeNative(over: Partial<SlateNative> = {}): FakeNative {
     postBegin: () => 0 as const,
     postEnd: () => 0 as const,
     status: (): NativeStatus => ({
+      ready: !self.errored,
       fipsActive: fips && !self.errored,
       errorState: self.errored,
       liveHandles: keys.size,

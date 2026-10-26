@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { diagnosticReport, type ReportInput } from './report'
 
 const status: NativeStatus = {
+  ready: false,
   fipsActive: false,
   errorState: true,
   liveHandles: 0,
