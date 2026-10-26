@@ -9,7 +9,8 @@ mkdir -p "$data"
 export SLATE_USER_DATA="$data" SLATE_E2E=1 SLATE_E2E_SHOW=1
 # --no-sandbox: Chromium's sandbox needs user namespaces Docker's seccomp profile denies; the app's own
 # renderer sandbox flag (webPreferences) is unchanged.
-app=(xvfb-run -a /app/$version/node_modules/.bin/electron /app/$version/packages/desktop --no-sandbox --disable-gpu --remote-debugging-port=9222)
+# A laptop-sized screen: xvfb-run's default 640x480 is smaller than the app's window.
+app=(xvfb-run -a -s '-screen 0 1600x1000x24' /app/$version/node_modules/.bin/electron /app/$version/packages/desktop --no-sandbox --disable-gpu --remote-debugging-port=9222)
 if [ "$keyring" = locked-keyring ]; then
   # A desktop that logged in without the keyring password (auto-login): the daemon runs, the login
   # collection stays locked, and nothing can answer an unlock prompt.

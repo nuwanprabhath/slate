@@ -37,8 +37,10 @@ interface Pair {
 }
 
 /** A fresh shared repository and two devices with empty data folders, for one scenario. */
-function pair(scenario: string): Pair {
+function pair(name: string): Pair {
   if (!bed) throw new Error('No bed: run through e2e-ubuntu/playwright.config.ts (npm run e2e:ubuntu)')
+  // A fresh folder per attempt, so --repeat-each and retries never start from an earlier run's data.
+  const scenario = `${name}-${String(test.info().repeatEachIndex)}-${String(test.info().retry)}`
   const dir = join(bed.shared, scenario)
   mkdirSync(dir, { recursive: true })
   const bare = join(dir, 'notes.git')
@@ -59,7 +61,10 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
 let active: Device[] = []
 test.afterEach(async ({}, info) => {
   for (const d of active) {
-    if (info.status !== info.expectedStatus) console.log(`--- ${d.label} app output (tail) ---\n${(await d.log()).split('\n').slice(-60).join('\n')}`)
+    if (info.status !== info.expectedStatus) {
+      console.log(`--- ${d.label} app output (tail) ---\n${(await d.log()).split('\n').slice(-60).join('\n')}`)
+      for (const [i, w] of d.windows().entries()) await w.screenshot({ path: info.outputPath(`${d.label}-${String(i)}.png`) }).catch(() => {})
+    }
     await d.stop().catch(() => {})
   }
   active = []
@@ -317,7 +322,7 @@ const C4_PASSWORD = (JSON.parse(readFileSync(join(C4, 'manifest.json'), 'utf8'))
 
 test('7. a v1 vault upgraded to v2 on the Mac and rotated on Ubuntu; the other device follows each time', async () => {
   const p = track(pair('s7'))
-  const macData = join(bed!.shared, 's7', 'mac-data')
+  const macData = join(bed!.shared, `s7-${String(test.info().repeatEachIndex)}-${String(test.info().retry)}`, 'mac-data')
   mkdirSync(macData, { recursive: true })
   for (const f of ['vault.json', 'local-keys.json', 'preunlock.json', 'slate-e6be7b8b.db']) cpSync(join(C4, 'data', f), join(macData, f))
   let m = await unlock(p.mac, await p.mac.start({ version: 'current' }), C4_PASSWORD)
@@ -400,19 +405,20 @@ test('8. restarts between steps, and a device that was offline catches up', asyn
   })
   await timed('both offline-edit the same page, then merge', async () => {
     await p.ubuntu.stop()
-    await writeNote(m, 'S8-CONCURRENT-MAC', 200, 500)
+    await writeNote(m, 'S8-CONCURRENT-MAC', 200, 540)
     await synced(m)
     await p.mac.stop()
     u = await unlock(p.ubuntu, await p.ubuntu.start({ version: 'current' }), PASSWORD)
-    await writeNote(u, 'S8-CONCURRENT-UBUNTU', 420, 500)
+    await writeNote(u, 'S8-CONCURRENT-UBUNTU', 200, 600)
     m = await unlock(p.mac, await p.mac.start({ version: 'current' }), PASSWORD)
-    for (const page of [m, u]) for (const text of ['S8-CONCURRENT-MAC', 'S8-CONCURRENT-UBUNTU']) await expectNote(page, text)
+    await test.step('Ubuntu sees the Mac’s', () => expectNote(u, 'S8-CONCURRENT-MAC'))
+    await test.step('the Mac sees Ubuntu’s', () => expectNote(m, 'S8-CONCURRENT-UBUNTU'))
   })
   await timed('Ubuntu loses the repository while running; both write; it comes back and both converge', async () => {
     await p.ubuntu.setOnline(false)
     await expect(u.getByTestId('sync-status')).toHaveAttribute('data-state', /offline|error/, { timeout: 60_000 })
-    await writeNote(u, 'S8-UBUNTU-OFFLINE', 460, 260)
-    await writeNote(m, 'S8-MAC-WHILE-UBUNTU-OFFLINE', 460, 380)
+    await writeNote(u, 'S8-UBUNTU-OFFLINE', 200, 660)
+    await writeNote(m, 'S8-MAC-WHILE-UBUNTU-OFFLINE', 200, 720)
     await synced(m)
     await u.waitForTimeout(5_000)
     expect(await searchCount(u, 'S8-MAC-WHILE-UBUNTU-OFFLINE')).toBe(0)
