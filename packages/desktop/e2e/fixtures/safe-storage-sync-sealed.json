@@ -1,0 +1,6 @@
+{
+  "sealedBase64": "djEwfqQ79cCWd3BOB25bVaguvfQQjy2TGfc2x2PL9m6QBKk=",
+  "plain": "slate-c8-fixture",
+  "sealedBy": "Electron 45.0.0 safeStorage.encryptString (sync API, pre-C8)",
+  "appName": "Slate"
+}

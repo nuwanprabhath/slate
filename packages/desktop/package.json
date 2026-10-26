@@ -24,6 +24,7 @@
     "dist:mac:arm64": "electron-vite build && electron-builder --mac --arm64 --publish never",
     "dist:mac:x64": "electron-vite build && electron-builder --mac --x64 --publish never",
     "dist:linux": "electron-vite build && electron-builder --linux --publish never",
+    "e2e:keychain": "electron-vite build && playwright test --config playwright.keychain.config.ts",
     "e2e:fips": "electron-vite build && cross-env SLATE_TEST_PROFILE=fips-140-3 playwright test encryption.spec.ts",
     "e2e:packaged": "playwright test --config e2e-packaged/playwright.config.ts",
     "screenshots": "node scripts/readme-screenshots.cjs"

@@ -16,8 +16,9 @@ before you tag `v0.2.0`.
 - [ ] **Guard-change batch confirmed.** In the main checkout, run `scripts/agents/merge-wp.sh --confirm-guard-changes`,
   read every commit and guard-file diff it prints, and allow the Keychain dialog. The pre-push hook refuses a push of
   main until you have.
-- [ ] **C8 criterion 3 settled.** Either supply the fixture it needs, or write down that you accept the gap, in
-  `decisions.md`.
+- [x] **C8 criterion 3 settled** (2026-10-26). The maintainer sealed `e2e/fixtures/safe-storage-sync-sealed.json` with
+  the pre-C8 sync API on their Mac; `npm run e2e:keychain` opens it with the async API (passes; a corrupted copy
+  fails). Rerun it on that Mac before a release that touches secret storage.
 - [ ] **GitHub branch protection on `main`** is on (required status checks, no force push), so the agents' commit
   trail cannot be rewritten after the fact.
 - [ ] **D-1 signing is acknowledged.** The macOS build is ad-hoc signed and the Linux packages are unsigned, so

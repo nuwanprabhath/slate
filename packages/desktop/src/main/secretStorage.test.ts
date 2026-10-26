@@ -58,7 +58,7 @@ function storageOver(ss: AsyncSafeStorage): SecretStorage {
 }
 
 // Waits on the maintainer's macOS fixture; the ready body is openSyncSealedFixture in e2e/syncSealedFixture.ts.
-it.todo('C8 criterion 3: a blob sealed by the pre-C8 synchronous API opens with the async one, from the safeStorage sync-sealed fixture the maintainer supplies (C8)')
+// C8 criterion 3 runs on the maintainer's Mac against their Keychain: e2e/safeStorageMigration.keychain.ts (npm run e2e:keychain).
 
 describe('secretFile', () => {
   it('stores the secret sealed, 0600, and reads it back', async () => {
