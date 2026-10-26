@@ -170,10 +170,10 @@ Encryption is off until you turn it on in Settings → Security → *Encrypt my 
   wiped when Slate locks. The password and recovery key you type go to it as bytes and are wiped
   after use; the lock screen's window process ends once Slate unlocks, and Slate leaves no crash dump
   (on Linux other programs cannot read its memory either). On Linux the windows' own processes get that
-  protection from Chromium's setuid sandbox, which the .deb installs; where Chromium picks its
-  user-namespace sandbox instead (unprivileged user namespaces allowed) they are sandboxed but readable by
-  your own account's processes that may trace them, and the AppImage on Ubuntu 23.10 and later runs
-  without Chromium's sandbox, so prefer the .deb there. What cannot be wiped: the text field you
+  protection from Chromium's setuid sandbox, which the .deb installs and always uses. The AppImage cannot:
+  on Ubuntu 23.10 and later it runs without Chromium's sandbox, and elsewhere in its user-namespace sandbox,
+  where your own account's processes that may trace them can read them. Slate tells you on the lock screen and in
+  Settings → Security when it runs without the sandbox; prefer the .deb. What cannot be wiped: the text field you
   typed into while its window lives, and a new password while you set
   it (it is checked against the password rules as text). On macOS, stopping other programs from reading Slate's memory needs a
   signed build, which this version is not.
