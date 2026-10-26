@@ -1,6 +1,14 @@
 {
   "darwin-arm64": {
-    "provider": "7ec487b9a88d09a1e0465edc69de57a05a7edf9f9f074bbbf0876f5f8b5f8202",
-    "config": "2ff500ba261ef9c5670a3c7d1420381bf1ee5cbe99e732761e47ea751c9fd157"
+    "provider": "764447fb568f6e7c5bc5833cca673caef4faa4889918eff80beb1b50e493bff4",
+    "config": "d3fc1e378f25a289372155a02d5eb3828f23489044066a9fa93e33017e2bb6c6"
+  },
+  "darwin-x64": {
+    "provider": "c87b32f69fcf0dcdd7e4d797be0642e461104b8062ec33848e89918f1becfff2",
+    "config": "020d331f0b64b4de11280c95bb8f5c193316847dcae7427c838ade006725a780"
+  },
+  "linux-x64": {
+    "provider": "1418ae34840abec3c3eccd2d2df7e0423fc299d3e8a3c7b064ebd58866acdc8d",
+    "config": "7ec6041b6c4a71644b21d8fba3528de84532958da565c9dcffebbd3981c84a1e"
   }
 }

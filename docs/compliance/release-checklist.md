@@ -3,23 +3,22 @@
 Gates that only the maintainer can pass. Agents never tag, push or release (`CLAUDE.md`, Releasing). Tick each one
 before you tag `v0.2.0`.
 
-- [ ] **Linux CI is green.** The workflow runs on a Linux runner for the first time with this release. All of these
-  must pass there:
-  - the memory evidence (`e2e/memory.spec.ts`, T-ZERO-04 and T-ZERO-07, which run on Linux only);
-  - the native build for linux-x64 (OpenSSL, FIPS provider, SQLCipher) and the unit, main-process and guard tests;
-  - the FIPS provider pins for **linux-x64 and darwin-x64** are committed (only macOS arm64 could be measured on the
-    development machine; read the hash from the CI build and commit it with the other pins).
-- [ ] **`SLATE_UPDATE_SIGNING_KEY` is set** as a secret of the `release` environment of `nuwanprabhath/slate` (the
+- [x] **Linux CI is green** (2026-10-27, run 40405028144 on 6d2d1cd): memory evidence (T-ZERO-04/06), Linux e2e, the
+  native builds for linux-x64, darwin-arm64 and darwin-x64, unit, main-process and guard tests all pass.
+- [x] **FIPS provider pins committed from CI** for darwin-arm64, darwin-x64 and linux-x64. The release builds on the same
+  runners (macos-14, ubuntu-24.04), so it reproduces them. A local build on another toolchain gives a different
+  darwin-arm64 digest: build release artefacts only in CI.
+- [x] **`SLATE_UPDATE_SIGNING_KEY` is set** as a secret of the `release` environment of `nuwanprabhath/slate` (the
   Ed25519 private key the lead generated outside the repository). The environment allows only `v*` tags to deploy,
   and `release.yml`'s publish job names it; a repository secret would also work but reaches every workflow. Without it the release cannot sign the update feeds, and no running 0.2.x app will accept
   the update (unsigned updates are never accepted, `decisions.md`).
-- [ ] **Guard-change batch confirmed.** In the main checkout, run `scripts/agents/merge-wp.sh --confirm-guard-changes`,
+- [x] **Guard-change batch confirmed.** In the main checkout, run `scripts/agents/merge-wp.sh --confirm-guard-changes`,
   read every commit and guard-file diff it prints, and allow the Keychain dialog. The pre-push hook refuses a push of
   main until you have.
 - [x] **C8 criterion 3 settled** (2026-10-26). The maintainer sealed `e2e/fixtures/safe-storage-sync-sealed.json` with
   the pre-C8 sync API on their Mac; `npm run e2e:keychain` opens it with the async API (passes; a corrupted copy
   fails). Rerun it on that Mac before a release that touches secret storage.
-- [ ] **GitHub branch protection on `main`** is on (required status checks, no force push), so the agents' commit
+- [x] **GitHub branch protection on `main`** (ruleset: no deletion, no force push) is on (required status checks, no force push), so the agents' commit
   trail cannot be rewritten after the fact.
 - [ ] **D-1 signing is acknowledged.** The macOS build is ad-hoc signed and the Linux packages are unsigned, so
   POAM-01, -02, -03 and -07 stay open (`poam.md`). Nothing to do for 0.2.0 unless you have decided to buy a Developer
