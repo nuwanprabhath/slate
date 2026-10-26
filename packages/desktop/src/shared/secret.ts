@@ -18,6 +18,17 @@ export function zeroSecret(...secrets: Array<SecretBytes | null | undefined>): v
   for (const s of secrets) s?.fill(0)
 }
 
+/**
+ * The copy of a typed secret that the module takes and wipes, in its own ArrayBuffer. `new Uint8Array(secret)`
+ * would keep a short secret on V8's heap; the module reading it makes V8 move the bytes to a new store and
+ * leave the heap copy behind as garbage nobody wipes (T-ZERO-04 found the password in main after lock).
+ */
+export function moduleCopy(secret: SecretBytes): Uint8Array {
+  const copy = new Uint8Array(new ArrayBuffer(secret.byteLength))
+  for (let i = 0; i < secret.length; i++) copy[i] = secret[i] ?? 0
+  return copy
+}
+
 /** The limits main accepts at the IPC boundary: anything else is refused before it reaches a KDF. */
 export const SECRET_MAX_BYTES = 4096
 

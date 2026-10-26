@@ -40,7 +40,7 @@ findings:
       T-ZERO-01: [packages/desktop/src/main/vault/keyring.test.ts, packages/desktop/src/main/vault/zeroise.test.ts, packages/desktop/src/main/vault/zeroiseErrors.test.ts]
       T-ZERO-02: [packages/desktop/src/main/vault/secureHeap.test.ts]
       T-ZERO-03: [packages/native/test/kat.c]
-      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts]
+      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts, packages/desktop/src/shared/secret.test.ts, tools/guards/vaultSecrets.test.ts]
       T-ZERO-05: [packages/desktop/e2e/lock.spec.ts]
       T-ZERO-07: [packages/desktop/e2e/memory.spec.ts]
       T-STATIC-01: [packages/desktop/src/main/static.test.ts]
@@ -94,7 +94,7 @@ findings:
   F-NIST-07:
     wp: [C7]
     tests:
-      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts]
+      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts, packages/desktop/src/shared/secret.test.ts, tools/guards/vaultSecrets.test.ts]
       T-ZERO-06: [packages/desktop/e2e/coredump.linux.ts]
   F-NIST-08:
     wp: [C8]
@@ -142,7 +142,7 @@ findings:
     wp: [C7]
     tests:
       T-ZERO-01: [packages/desktop/src/main/vault/keyring.test.ts, packages/desktop/src/main/vault/zeroise.test.ts, packages/desktop/src/main/vault/zeroiseErrors.test.ts]
-      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts]
+      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts, packages/desktop/src/shared/secret.test.ts, tools/guards/vaultSecrets.test.ts]
   F-CC-03:
     wp: [C6]
     tests:
@@ -204,7 +204,7 @@ rules:
       T-ZERO-01: [packages/desktop/src/main/vault/keyring.test.ts, packages/desktop/src/main/vault/zeroise.test.ts, packages/desktop/src/main/vault/zeroiseErrors.test.ts]
       T-ZERO-02: [packages/desktop/src/main/vault/secureHeap.test.ts]
       T-ZERO-03: [packages/native/test/kat.c]
-      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts]
+      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts, packages/desktop/src/shared/secret.test.ts, tools/guards/vaultSecrets.test.ts]
       T-ZERO-05: [packages/desktop/e2e/lock.spec.ts]
       T-ZERO-06: [packages/desktop/e2e/coredump.linux.ts]
       T-ZERO-07: [packages/desktop/e2e/memory.spec.ts]
@@ -288,7 +288,7 @@ mapping:
       T-ZERO-01: [packages/desktop/src/main/vault/keyring.test.ts, packages/desktop/src/main/vault/zeroise.test.ts, packages/desktop/src/main/vault/zeroiseErrors.test.ts]
       T-ZERO-02: [packages/desktop/src/main/vault/secureHeap.test.ts]
       T-ZERO-03: [packages/native/test/kat.c]
-      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts]
+      T-ZERO-04: [packages/desktop/e2e/memory.linux.ts, packages/desktop/src/shared/secret.test.ts, tools/guards/vaultSecrets.test.ts]
       T-ZERO-05: [packages/desktop/e2e/lock.spec.ts]
       T-ZERO-06: [packages/desktop/e2e/coredump.linux.ts]
       T-ZERO-07: [packages/desktop/e2e/memory.spec.ts]
@@ -414,7 +414,7 @@ tests:
   T-ZERO-01: [packages/desktop/src/main/vault/keyring.test.ts, packages/desktop/src/main/vault/zeroise.test.ts, packages/desktop/src/main/vault/zeroiseErrors.test.ts]
   T-ZERO-02: [packages/desktop/src/main/vault/secureHeap.test.ts]
   T-ZERO-03: [packages/native/test/kat.c]
-  T-ZERO-04: [packages/desktop/e2e/memory.linux.ts]
+  T-ZERO-04: [packages/desktop/e2e/memory.linux.ts, packages/desktop/src/shared/secret.test.ts, tools/guards/vaultSecrets.test.ts]
   T-ZERO-05: [packages/desktop/e2e/lock.spec.ts]
   T-ZERO-06: [packages/desktop/e2e/coredump.linux.ts]
   T-ZERO-07: [packages/desktop/e2e/memory.spec.ts]

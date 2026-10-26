@@ -113,6 +113,17 @@ describe('C7: VaultApi takes every typed secret as bytes (Z-5)', () => {
     expect(read('packages/desktop/src/shared/secret.ts')).toMatch(/export const SECRET_MAX_BYTES = 4096/)
   })
 
+  it('main hands the module its copy of a typed secret through moduleCopy, never new Uint8Array(secret) (T-ZERO-04)', () => {
+    // V8 keeps a short `new Uint8Array(secret)` on its heap; when the module reads it, V8 moves the bytes to a
+    // new store and leaves the old copy behind as unwiped garbage, so the password stayed in main after lock.
+    for (const file of ['packages/desktop/src/main/vault/kdf.ts', 'packages/desktop/src/main/vault/recovery.ts']) {
+      const src = read(file)
+      expect(src, file).not.toMatch(/new Uint8Array\((password|text|secret|pw|recoveryKey)\)/)
+      expect(src, file).toMatch(/moduleCopy\(/)
+    }
+    expect(read('packages/desktop/src/shared/secret.ts')).toMatch(/new Uint8Array\(new ArrayBuffer\(secret\.byteLength\)\)/)
+  })
+
   it('the check sees a string secret, a new secret method and a secret inside an object (self-test)', () => {
     const bad = 'export interface VaultApi {\n  unlock(password: string): Promise<UnlockResult>\n  /** x */\n  rotate(current: VaultSecret, next: string): Promise<void>\n  status(): Promise<VaultStatus>\n  wipe(opts: { passphrase: string }): void\n}'
     const p = interfaceParams(bad, 'VaultApi')

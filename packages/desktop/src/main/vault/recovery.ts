@@ -1,5 +1,5 @@
 import { nativeErrorCode, type KeyHandle } from '@slate/native'
-import type { SecretBytes } from '../../shared/secret'
+import { moduleCopy, type SecretBytes } from '../../shared/secret'
 import { vaultNative } from './native'
 
 export class BadRecoveryKey extends Error {
@@ -42,7 +42,7 @@ export function encodeRecovery(bytes: Uint8Array): string {
  */
 export function decodeRecovery(text: SecretBytes): KeyHandle {
   try {
-    return vaultNative().recoveryDecode(new Uint8Array(text))
+    return vaultNative().recoveryDecode(moduleCopy(text))
   } catch (e) {
     if (nativeErrorCode(e) === 'SCC_1') throw new BadRecoveryKey()
     throw e
