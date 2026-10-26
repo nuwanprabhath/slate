@@ -9,8 +9,8 @@ export type Version = 'current' | 'v0.1.0'
 export interface StartOptions {
   version: Version
   env?: Record<string, string>
-  /** Ubuntu only: a desktop session with gnome-keyring unlocked (default), or none at all. */
-  keyring?: boolean
+  /** Ubuntu only: a desktop session with gnome-keyring unlocked (default) or locked (auto-login), or none at all. */
+  keyring?: 'unlocked' | 'locked' | 'none'
 }
 
 /** One computer in a scenario: a data folder that outlives app restarts, and the app running on it. */
@@ -29,6 +29,8 @@ export interface Device {
   log(): Promise<string>
   /** Ubuntu: deletes the login keyring, as a reinstall or a reset keyring password would; the Mac refuses. */
   resetKeyring(): Promise<void>
+  /** Ubuntu: takes the shared repository away while the app runs (a laptop off the network), or brings it back. */
+  setOnline(online: boolean): Promise<void>
 }
 
 /** Settings every launch of the current build gets: syncs back to back, and a fast KDF for new vaults. */
@@ -66,23 +68,28 @@ export function macDevice(dir: string, bare: string): Device {
     },
     log: () => Promise.resolve(''),
     resetKeyring: () => Promise.reject(new Error('the Mac device never touches the Keychain')),
+    setOnline: () => Promise.reject(new Error('only the Ubuntu device goes offline')),
   }
 }
 
 /** The app in the container, under xvfb, driven over the Chrome DevTools Protocol on the published port. */
 export function ubuntuDevice(bed: Bed, scenario: string): Device {
   const data = `/home/dev/xdev/${scenario}`
+  const link = `/home/dev/links/${scenario}.git`
+  let linked = false
   let browser: Browser | null = null
   const exec = (args: string[]) => run('docker', ['exec', bed.name, ...args])
   const running = async () => (await exec(['pgrep', '-f', 'remote-debugging-port=9222'])).code === 0
   return {
     label: 'Ubuntu',
-    remoteUrl: `file:///remote/${scenario}/notes.git`,
+    // A link to the mounted repository, so the device can go offline without touching the Mac's view of it.
+    remoteUrl: `file://${link}`,
     async start(opts) {
       if (await running()) throw new Error('an app is already running in the container')
+      if (!linked) await this.setOnline(true)
       const env = { ...baseEnv(opts.version), ...opts.env }
       const envArgs = Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`])
-      await must('docker', ['exec', '-d', ...envArgs, bed.name, 'slate-run', opts.version === 'current' ? 'current' : 'v010', data, opts.keyring === false ? 'no-keyring' : 'keyring'])
+      await must('docker', ['exec', '-d', ...envArgs, bed.name, 'slate-run', opts.version === 'current' ? 'current' : 'v010', data, { unlocked: 'keyring', locked: 'locked-keyring', none: 'no-keyring' }[opts.keyring ?? 'unlocked']])
       const url = `http://127.0.0.1:${String(bed.port)}`
       await expect
         .poll(
@@ -120,6 +127,11 @@ export function ubuntuDevice(bed: Bed, scenario: string): Device {
     },
     async log() {
       return (await exec(['cat', `${data}.out`])).stdout
+    },
+    async setOnline(online) {
+      await must('docker', ['exec', bed.name, 'mkdir', '-p', '/home/dev/links'])
+      await must('docker', ['exec', bed.name, ...(online ? ['ln', '-sfn', `/remote/${scenario}/notes.git`, link] : ['rm', '-f', link])])
+      linked = true
     },
     async resetKeyring() {
       await must('docker', ['exec', bed.name, 'rm', '-rf', '/home/dev/.local/share/keyrings'])

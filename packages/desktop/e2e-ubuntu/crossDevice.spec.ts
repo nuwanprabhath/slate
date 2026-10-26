@@ -27,6 +27,7 @@ import {
 const bed = JSON.parse(process.env.SLATE_XDEV_BED ?? 'null') as Bed | null
 const PASSWORD = 'cross-device password one'
 const NEW_PASSWORD = 'cross-device password two'
+const THIRD_PASSWORD = 'cross-device password three'
 
 interface Pair {
   mac: Device
@@ -229,6 +230,23 @@ test('5. a password changed on the Mac unlocks Ubuntu after a sync, live and aft
       await expectNote(await unlock(d, lock, NEW_PASSWORD), 'S5-NOTE')
     }
   })
+  await timed('Ubuntu is off while the Mac changes the password again; it opens with the password it knew, then follows after a sync', async () => {
+    await p.ubuntu.stop()
+    const mac = p.mac.windows().at(-1)!
+    await changePassword(mac, NEW_PASSWORD, THIRD_PASSWORD)
+    await synced(mac)
+    // E2EE design §4: a device adopts a remote header only after a sync, so a password change elsewhere never
+    // locks it out; until then the lock screen knows only the password this device last used.
+    let lock = await p.ubuntu.start({ version: 'current' })
+    await lock.getByTestId('lock-secret').fill(THIRD_PASSWORD)
+    await lock.getByTestId('lock-unlock').click()
+    await expect(lock.getByTestId('lock-error')).toHaveText("That password didn't work", { timeout: 60_000 })
+    const u2 = await unlock(p.ubuntu, lock, NEW_PASSWORD)
+    await expect.poll(async () => (await p.ubuntu.readFile('vault.pending.json')) !== null, { timeout: 60_000 }).toBe(true)
+    await u2.evaluate(() => window.slate.vault.lock())
+    lock = await lockWindow(p.ubuntu)
+    await expectNote(await unlock(p.ubuntu, lock, THIRD_PASSWORD), 'S5-NOTE')
+  })
 })
 
 test('6. lock and unlock; quick unlock on Ubuntu with gnome-keyring, and unavailable without a keyring', async () => {
@@ -261,13 +279,23 @@ test('6. lock and unlock; quick unlock on Ubuntu with gnome-keyring, and unavail
   })
   await timed('Ubuntu without a keyring: no quick unlock, the password works', async () => {
     await p.ubuntu.stop()
-    const lock = await p.ubuntu.start({ version: 'current', keyring: false })
+    const lock = await p.ubuntu.start({ version: 'current', keyring: 'none' })
     await expect(lock.getByTestId('lock-screen')).toBeVisible()
     await expect(lock.getByTestId('lock-quick-unlock')).toHaveCount(0)
     const notes = await unlock(p.ubuntu, lock, PASSWORD)
     await expectNote(notes, 'S6-NOTE')
     await openSecurity(notes)
     await expect(notes.getByTestId('quick-unlock-row')).toContainText('Not available on this computer')
+  })
+  await timed('Ubuntu with its keyring locked (auto-login): no hang, quick unlock fails cleanly, the password works', async () => {
+    await p.ubuntu.stop()
+    const lock = await p.ubuntu.start({ version: 'current', keyring: 'locked' })
+    await expect(lock.getByTestId('lock-screen')).toBeVisible()
+    if ((await lock.getByTestId('lock-quick-unlock').count()) > 0) {
+      await lock.getByTestId('lock-quick-unlock').click()
+      await expect(lock.getByTestId('lock-error')).not.toHaveText('', { timeout: 30_000 })
+    }
+    await expectNote(await unlock(p.ubuntu, lock, PASSWORD), 'S6-NOTE')
   })
   await timed('Ubuntu with a new, empty keyring: quick unlock fails, the password works, and re-enabling is offered', async () => {
     await p.ubuntu.stop()
@@ -327,6 +355,22 @@ test('7. a v1 vault upgraded to v2 on the Mac and rotated on Ubuntu; the other d
     await writeNote(m, 'S7-MAC-AFTER-ROTATION', 260, 320)
     await expectNote(u, 'S7-MAC-AFTER-ROTATION')
   })
+  await timed('the Mac is off while Ubuntu rotates again; it follows at its next start', async () => {
+    await p.mac.stop()
+    const epoch = p.repo.header().keyEpoch
+    await closeSettings(u).catch(() => {})
+    await rekey(u, 'rotate', C4_PASSWORD)
+    await expect.poll(() => p.repo.header().keyEpoch, { timeout: 120_000 }).toBe(epoch + 1)
+    await writeNote(u, 'S7-UBUNTU-WHILE-MAC-OFF', 300, 420)
+    m = await unlock(p.mac, await p.mac.start({ version: 'current' }), C4_PASSWORD)
+    await expect(m.getByTestId('vault-join-banner')).toContainText('keys were changed', { timeout: 90_000 })
+    await m.evaluate(() => window.slate.vault.lock())
+    m = await unlock(p.mac, await lockWindow(p.mac), C4_PASSWORD)
+    await expectNote(m, 'S7-UBUNTU-WHILE-MAC-OFF')
+    await writeNote(m, 'S7-MAC-AFTER-SECOND-ROTATION', 340, 200)
+    await expectNote(u, 'S7-MAC-AFTER-SECOND-ROTATION')
+    await expect.poll(async () => (JSON.parse((await p.mac.readFile('vault.json')) ?? '{}') as { keyEpoch?: number }).keyEpoch, { timeout: 60_000 }).toBe(epoch + 1)
+  })
 })
 
 test('8. restarts between steps, and a device that was offline catches up', async () => {
@@ -363,5 +407,18 @@ test('8. restarts between steps, and a device that was offline catches up', asyn
     await writeNote(u, 'S8-CONCURRENT-UBUNTU', 420, 500)
     m = await unlock(p.mac, await p.mac.start({ version: 'current' }), PASSWORD)
     for (const page of [m, u]) for (const text of ['S8-CONCURRENT-MAC', 'S8-CONCURRENT-UBUNTU']) await expectNote(page, text)
+  })
+  await timed('Ubuntu loses the repository while running; both write; it comes back and both converge', async () => {
+    await p.ubuntu.setOnline(false)
+    await expect(u.getByTestId('sync-status')).toHaveAttribute('data-state', /offline|error/, { timeout: 60_000 })
+    await writeNote(u, 'S8-UBUNTU-OFFLINE', 460, 260)
+    await writeNote(m, 'S8-MAC-WHILE-UBUNTU-OFFLINE', 460, 380)
+    await synced(m)
+    await u.waitForTimeout(5_000)
+    expect(await searchCount(u, 'S8-MAC-WHILE-UBUNTU-OFFLINE')).toBe(0)
+    await p.ubuntu.setOnline(true)
+    await expectNote(u, 'S8-MAC-WHILE-UBUNTU-OFFLINE')
+    await expectNote(m, 'S8-UBUNTU-OFFLINE')
+    await synced(u)
   })
 })
