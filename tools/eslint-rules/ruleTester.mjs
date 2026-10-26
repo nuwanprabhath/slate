@@ -24,8 +24,12 @@ export function ruleTester({ typed = false } = {}) {
   })
 }
 
-/** The parser options of a typed case. */
-const TYPED = { project: './tools/eslint-rules/fixtures/tsconfig.json', tsconfigRootDir: ROOT }
+/**
+ * The parser options of a typed case. disallowAutomaticSingleRunInference: with CI=true (GitHub
+ * Actions) typescript-eslint infers a single `eslint` run and builds its program once from the
+ * files on disk, so every case would be typed as the fixture's stand-in text, not its own code.
+ */
+const TYPED = { project: './tools/eslint-rules/fixtures/tsconfig.json', tsconfigRootDir: ROOT, disallowAutomaticSingleRunInference: true }
 
 /**
  * The typed rules skip quietly when they get no types (a plain `eslint` run on a file outside a
