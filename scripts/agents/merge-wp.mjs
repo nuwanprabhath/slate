@@ -46,7 +46,7 @@ const AGENT_ENV = /^(CLAUDE|ANTHROPIC_|AI_AGENT$|AGENT_|CODEX|CURSOR_AGENT|AIDER
  */
 export function agentRefusal({ cwd, here, mainCheckout, env }) {
   const agent = Object.keys(env).filter((k) => AGENT_ENV.test(k))
-  if (agent.length > 0) return `refused inside an agent session (${agent.slice(0, 3).join(', ')}): merge-wp is the maintainer's, run by hand in a terminal.`
+  if (agent.length > 0) return `refused: this shell has agent environment variables (${agent.slice(0, 3).join(', ')}). merge-wp is the maintainer's and must run in a standalone terminal (Terminal.app, iTerm), not an agent session or an editor's integrated terminal: the Claude Code extension sets CLAUDE_CODE_SSE_PORT in VS Code's terminal.`
   if (resolve(cwd) !== resolve(mainCheckout) || resolve(here) !== resolve(mainCheckout)) return `run this from a shell in the main checkout (${mainCheckout}), not a worktree.`
   return null
 }
