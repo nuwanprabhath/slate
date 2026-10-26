@@ -34,15 +34,16 @@ jobs:
           fi
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
-      # Re-review note: build the module first, so test:main runs addon.test.ts (M1, M3, L1-L3, T-POST-06)
-      # against the real slate_native.node instead of skipping it. The provider must match the committed pin.
+      # Build the module before any test: npm test includes @slate/native's own tests, and test:main runs
+      # addon.test.ts (M1, M3, L1-L3, T-POST-06) against the real slate_native.node. The provider must match
+      # the committed pin.
       - name: Install Electron's system libraries (it runs the main-process tests as Node)
         run: |
           sudo apt-get update
           sudo apt-get install -y libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libasound2t64
       - name: Build @slate/native (OpenSSL, FIPS provider, SQLCipher, addon)
         run: npm run -w @slate/native build
+      - run: npm test
       - run: npm run test:main
 
   build:
