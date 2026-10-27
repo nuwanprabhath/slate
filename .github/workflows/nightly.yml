@@ -43,7 +43,8 @@ jobs:
       # A new seed every night (the run number), so the soak explores beyond CI's fixed 0x51a7e; a failure prints
       # the seed and fast-check's shrunk counterexample, which becomes a fixed case in the same file.
       - name: Fuzz soak
-        run: npm run test:main -- src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
+        # 200k runs per property take minutes, not vitest's default 5 s per test.
+        run: npm run test:main -- --testTimeout=1800000 src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
         env:
           SLATE_FUZZ_RUNS: 200000
           SLATE_FUZZ_SEED: ${{ github.run_number }}
