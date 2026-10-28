@@ -136,3 +136,29 @@ test('the recovery-key link switches the field, and idle time locks the vault', 
     await app.close()
   }
 })
+
+test('the toolbar lock button shows only for an unlocked encrypted vault and locks Slate', async () => {
+  const plain = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')))
+  try {
+    await expect(plain.page.getByTestId('sync-status')).toBeVisible()
+    await expect(plain.page.getByTestId('toolbar-lock')).toHaveCount(0)
+  } finally {
+    await plain.app.close()
+  }
+
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const { app, page } = await launchApp(userData, { SLATE_TEST_ENCRYPT_PASSWORD: PASSWORD })
+  try {
+    const notes = await unlockWith(app, page, PASSWORD)
+    const lock = notes.getByTestId('toolbar-lock')
+    await expect(lock).toBeVisible({ timeout: 15_000 })
+    await expect(lock).toHaveAttribute('aria-label', 'Lock Slate')
+    await expect(lock).toHaveAttribute('title', /^Lock Slate \((⌘⇧L|Ctrl\+Shift\+L)\)$/)
+    await lock.click().catch((e: Error) => {
+      if (!/Target page, context or browser has been closed/.test(e.message)) throw e
+    })
+    await noteIpcRefused(await lockWindow(app))
+  } finally {
+    await app.close()
+  }
+})
