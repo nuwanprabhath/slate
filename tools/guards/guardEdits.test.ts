@@ -265,6 +265,22 @@ describe('guard-edits hook: Bash', () => {
     expect(ctx('Bash', { command: 'git -c core.hooksPath=/tmp commit -m x' })).toMatch(/hooksPath/)
   })
 
+  it('denies changing where the shared git config puts the work tree (phase 13: a bisect left core.bare=true)', () => {
+    for (const command of [
+      'git config core.bare true',
+      'git config --bool core.bare false',
+      'git -C ../.. config core.worktree /tmp/x',
+      'git config --unset core.worktree',
+      'git config extensions.worktreeConfig true',
+      'git -c core.bare=true status',
+      'cd .. && git config core.bare true',
+    ]) {
+      expect(ctx('Bash', { command }), command).toMatch(/work tree/)
+    }
+    expect(ctx('Bash', { command: 'git worktree list' })).toBeNull()
+    expect(ctx('Bash', { command: 'git config user.name' })).toBeNull()
+  })
+
   it('denies rewriting history', () => {
     expect(ctx('Bash', { command: 'git update-ref refs/heads/main HEAD' })).toMatch(/update-ref/)
     expect(ctx('Bash', { command: 'git reset --hard main' })).toMatch(/main/)

@@ -199,6 +199,9 @@ export function decide({ tool, input, root, cwd, branch, unlockText, firstCommit
     if (/--no-verify\b/.test(flat)) return `Denied: --no-verify skips the git hooks that run the guard checks. Fix what they report. ${HOW}`
     if (/\bgit\b/.test(flat) && /\balias\./i.test(flat)) return `Denied: a git alias can hide --no-verify or -n behind another name. Run the git command itself. ${HOW}`
     if (/core\.hookspath/i.test(flat) || /\bGIT_CONFIG_(COUNT|KEY_|VALUE_|PARAMETERS|GLOBAL|SYSTEM|NOSYSTEM)/.test(flat)) return `Denied: core.hooksPath or a GIT_CONFIG_* variable can switch off the git hooks. ${HOW}`
+    // Every worktree shares one git config: core.bare=true there (left behind by a bisect in phase 13)
+    // turns the main checkout into "no work tree", and the lead's merges then fail.
+    if (/\bgit\b/.test(flat) && /\bcore\.(bare|worktree)\b|\bextensions\.worktreeconfig\b/i.test(flat)) return `Denied: core.bare, core.worktree and extensions.worktreeConfig change where git finds the work tree for every worktree, the main checkout included. ${HOW}`
     const plumbing = /\bgit\s+(update-ref|commit-tree|update-index|read-tree|am|apply)\b/.exec(command)
     if (plumbing) return `Denied: git ${plumbing[1]} writes commits or files behind the hooks' back. Edit files and commit them normally. ${HOW}`
     if (/\bgit\s+stash\s+(pop|apply)\b/.test(command)) return `Denied: git stash pop/apply can restore anyone's changes, guard files included (the stash is shared by every worktree). Commit on your branch instead. ${HOW}`
