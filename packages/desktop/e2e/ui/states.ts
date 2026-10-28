@@ -36,10 +36,19 @@ export async function stubInvoke(app: ElectronApplication, channel: string, valu
   }, { channel, value })
 }
 
-/** Main sends `payload` on event `channel` to every window, as it does when the state changes. */
-export async function sendEvent(app: ElectronApplication, channel: string, payload: unknown): Promise<void> {
+/**
+ * Main sends `payload` on event `channel` now and in place of every later payload on it, for every open
+ * window: the state holds even when main's own code sends the real one afterwards (a settings write makes
+ * sync report its status again, and on a slow machine that report can land after a one-off send).
+ */
+export async function stubEvent(app: ElectronApplication, channel: string, payload: unknown): Promise<void> {
   await app.evaluate(({ BrowserWindow }, { channel: ch, payload: p }) => {
-    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(ch, p)
+    for (const w of BrowserWindow.getAllWindows()) {
+      const wc = w.webContents
+      const send = wc.send.bind(wc)
+      wc.send = (c: string, ...args: unknown[]) => (c === ch ? send(c, p) : send(c, ...args))
+      wc.send(ch, p)
+    }
   }, { channel, payload })
 }
 
