@@ -3,7 +3,7 @@
 // they are ours. Deterministic: seed 0x51a7e, 2000 runs (test/fuzz.ts).
 import { randomBytes } from 'node:crypto'
 import fc from 'fast-check'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { apply, fcParams, forAll, fuzzTimeout, jsonValue, mutation, Rng } from '../../../test/fuzz'
 import { importKey, knownDataKey, samePasswordKey } from '../../../test/vaultKeys'
 import { openEnvelope, parseEnvelope, sealEnvelope, UnverifiableFile } from './envelope'
@@ -20,6 +20,10 @@ import { parseProfileFloor } from './profileFloor'
 import { parseQuickUnlock } from './quickUnlock'
 import { BadRecoveryKey, decodeRecovery, encodeRecovery } from './recovery'
 import { vidOf } from './suite'
+
+// Every test here scales with SLATE_FUZZ_RUNS, the seeded ones too: the soak's 200,000 runs outlast vitest's 5 s
+// default, and a --testTimeout given through `npm run test:main --` is taken by npm, not vitest.
+vi.setConfig({ testTimeout: fuzzTimeout() })
 
 const b64 = (n: number, fill = 7) => Buffer.alloc(n, fill).toString('base64')
 const wrap = () => ({ alg: 'aes-256-gcm', nonce: b64(12, 1), ct: b64(48, 2) })
