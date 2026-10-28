@@ -8,3 +8,6 @@
 .updates-help { color: var(--muted); font-size: 12px; }
 .updates-check { display: flex; align-items: center; gap: 10px; }
 .updates-field { display: flex; align-items: center; gap: 8px; }
+/* Text links carry no padding, so a link that wraps to the next line starts on the text's edge. */
+.update-banner { column-gap: 12px; }
+.update-banner button.update-banner-link { padding-left: 0; padding-right: 0; }

@@ -54,9 +54,12 @@
 }
 
 .vault-profile label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 4px 0;
 }
+.vault-profile input { margin: 0; }
 
 /*
  * A labelled field (PasswordFields, Settings → Security): label, field, then its muted hint, 4px
