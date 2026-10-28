@@ -11,6 +11,9 @@ All notable changes to Slate are recorded here. The format follows
 ### Added
 
 - A lock button next to the sync status locks Slate in one click. It shows only when your notes are encrypted.
+- Right-click empty canvas → **Re-arrange boxes** moves overlapping boxes apart, shifting each one down only as far as needed. One undo puts them back.
+- ⌘-click (Ctrl-click on Linux) selects several boxes; drag any of them to move them together. Escape clears the selection, and Delete removes the selected boxes (undoable).
+- Boxes resize from the left edge, the bottom edge and the bottom corners as well as the right edge. Dragging the bottom edge gives a box a minimum height; it still grows with its text.
 - The Sections and Pages columns can each be collapsed to a slim rail: hover the line to a column's right and click the chevron, then click the rail to bring the column back at its previous width. With both collapsed, the notebook picker hides too and the page gets the room. The choice is remembered.
 
 ### Changed
@@ -21,6 +24,8 @@ All notable changes to Slate are recorded here. The format follows
 
 ### Fixed
 
+- A box underneath another can always be grabbed: a box's handle is never covered by another box, a handle lying over another box is always shown, and clicking a box brings it to the front (the order is saved with the page). Box backgrounds are opaque, so overlapping text no longer mixes.
+- Right-click menus line up: every item starts at the same left edge, with the ✓ in its own column.
 - Lock screen: "Unlock with Touch ID" is centred under Unlock and the same width.
 - Settings → Security → Change password is a proper form: a label above each field, help text below, no overlapping borders or cut-off hints.
 - Settings → Diagnostics: the log file, its size and the buttons each sit on their own row instead of a squeezed column; spacing and alignment are tidied in every settings section, the encrypt wizard and the update banner.
