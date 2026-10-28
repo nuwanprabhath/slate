@@ -310,12 +310,15 @@ function Workspace({ library, onShowImport, banners }: { library: Library; onSho
 
   const libraryPanel = () => (
     <aside className="sidebar" data-testid="library-panel">
+      {/* Both columns hidden: the pane is just the two rails, so the picker's width does not hold it open. */}
+      {!(layout.sectionsCollapsed && layout.pagesCollapsed) && (
       <NotebookPicker
         library={library}
         current={entry}
         onSelect={(id) => setSelection({ notebookId: id, sectionId: null, pageId: null })}
         onImport={onShowImport}
       />
+      )}
       <div className="sidebar-cols">
         {layout.sectionsCollapsed ? (
           <Rail testId="sections-column" buttonTestId="expand-sections" label="Show sections" onExpand={() => setCollapsed('sectionsCollapsed', false)} />
