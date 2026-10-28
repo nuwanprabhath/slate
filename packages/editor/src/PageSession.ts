@@ -110,6 +110,19 @@ export class PageSession {
   }
 
   /**
+   * A drag of a box's bottom edge from `oldHeight` to `newHeight`: the new size and the push of the
+   * boxes below it (as for growing text) are one undo step.
+   */
+  resizeBox(boxId: string, patch: BoxPatch, oldHeight: number, newHeight: number): void {
+    const moved = computePush(this.rects(), boxId, oldHeight, newHeight)
+    const patches = new Map<string, BoxPatch>([[boxId, patch]])
+    for (const [id, y] of moved) patches.set(id, { y })
+    // The box's own size report after this render is not growth: it was pushed for here.
+    this.heights.set(boxId, newHeight)
+    this.ownStep(() => this.page.updateBoxes(patches))
+  }
+
+  /**
    * Raises a box above the others. Stacking is page data (it syncs and survives a reload) but not
    * an edit: clicking into a box must not add an undo step, so it uses a sys:* origin.
    */

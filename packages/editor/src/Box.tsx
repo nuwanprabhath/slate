@@ -90,7 +90,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
     target.setPointerCapture(e.pointerId)
     const group = mode === 'move' && selected
     const minHeight = mode === 'move' ? 0 : contentHeight()
-    const startHeight = box.height ?? ref.current?.offsetHeight ?? minHeight
+    const startHeight = ref.current?.offsetHeight ?? box.height ?? minHeight
     const start = { px: e.clientX, py: e.clientY, x: box.x, y: box.y, width: box.width }
     let current: Gesture = { x: start.x, y: start.y, width: start.width, height: box.height }
     let groupDelta: GroupDrag = { dx: 0, dy: 0 }
@@ -125,16 +125,18 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
         return
       }
       const patch: BoxPatch = { x: Math.round(current.x), y: Math.round(current.y), width: Math.round(current.width) }
-      if (mode !== 'move') {
-        session.noteLocalEdit(box.id)
-        // Dragged back to the content's own height: no min height, so the box shrinks with its text again.
-        if (current.height !== undefined) patch.height = current.height <= minHeight + 1 ? null : Math.round(current.height)
-      }
+      // Dragged back to the content's own height: no min height, so the box shrinks with its text again.
+      if (current.height !== undefined) patch.height = current.height <= minHeight + 1 ? null : Math.round(current.height)
       if (patch.x === box.x && patch.y === box.y && patch.width === box.width && (patch.height === undefined || (patch.height ?? undefined) === box.height)) {
         setGesture(null)
         return
       }
-      session.updateBoxes(new Map([[box.id, patch]]))
+      if (patch.height !== undefined) session.resizeBox(box.id, patch, startHeight, Math.max(minHeight, current.height ?? 0))
+      else {
+        // A width change reflows the text; growth from that pushes boxes below, as typing does.
+        if (mode !== 'move') session.noteLocalEdit(box.id)
+        session.updateBoxes(new Map([[box.id, patch]]))
+      }
     }
     target.addEventListener('pointermove', move)
     target.addEventListener('pointerup', up)

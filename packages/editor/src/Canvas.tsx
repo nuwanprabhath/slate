@@ -58,9 +58,6 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     const target = e.target as HTMLElement
     if (isSelectMod(e) && !target.closest('a, button')) {
       const next = new Set(selectionRef.current)
-      // The first Cmd/Ctrl+click also takes in the box being edited, as in a file list.
-      const editing = document.activeElement?.closest('.slate-box')?.getAttribute('data-box-id')
-      if (next.size === 0 && editing && editing !== id) next.add(editing)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       setSelection(next)
