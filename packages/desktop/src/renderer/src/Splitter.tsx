@@ -69,9 +69,30 @@ interface Props {
   width: number | null
   /** `null` (double-click) hands the column back to auto-fit. */
   onChange: (width: number | null) => void
+  /** Adds a hover/focus chevron that collapses the column to the left. */
+  collapse?: { label: string; testId: string; onCollapse: () => void }
 }
 
-export function Splitter({ testId, label, width, onChange }: Props) {
+interface RailProps {
+  testId: string
+  /** Names the expand button and its tooltip, e.g. "Show sections". */
+  label: string
+  buttonTestId: string
+  onExpand: () => void
+}
+
+/** A collapsed column: a slim full-height rail that expands it on click. */
+export function Rail({ testId, label, buttonTestId, onExpand }: RailProps) {
+  return (
+    <div className="column-rail" data-testid={testId} onClick={onExpand}>
+      <button type="button" className="rail-button" data-testid={buttonTestId} aria-label={label} title={label} onClick={onExpand}>
+        ›
+      </button>
+    </div>
+  )
+}
+
+export function Splitter({ testId, label, width, onChange, collapse }: Props) {
   const [dragging, setDragging] = useState(false)
   const start = useRef({ x: 0, width: 0 })
   // The column to the left may be auto-fitted, so its rendered width is the drag/keyboard origin.
@@ -117,6 +138,22 @@ export function Splitter({ testId, label, width, onChange }: Props) {
       onPointerCancel={end}
       onDoubleClick={() => onChange(null)}
       onKeyDown={onKeyDown}
-    />
+    >
+      {collapse && (
+        <button
+          type="button"
+          className="collapse-button"
+          data-testid={collapse.testId}
+          aria-label={collapse.label}
+          title={collapse.label}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onClick={collapse.onCollapse}
+        >
+          ‹
+        </button>
+      )}
+    </div>
   )
 }

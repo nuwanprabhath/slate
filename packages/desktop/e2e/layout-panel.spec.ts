@@ -9,7 +9,8 @@ const width = async (page: Page, testId: string) => (await page.getByTestId(test
 async function drag(page: Page, testId: string, dx: number) {
   const box = (await page.getByTestId(testId).boundingBox())!
   const x = box.x + box.width / 2
-  const y = box.y + box.height / 2
+  // Off-centre: the collapse button sits on the middle of the line and never starts a drag.
+  const y = box.y + box.height / 4
   await page.mouse.move(x, y)
   await page.mouse.down()
   await page.mouse.move(x + dx / 2, y, { steps: 4 })
@@ -74,7 +75,7 @@ test('splitters resize, clamp, keep the manual width and double-click back to au
 
   await drag(page, 'splitter-sections', -600)
   expect(await width(page, 'sections-column')).toBeCloseTo(100, 0)
-  await page.getByTestId('splitter-sections').dblclick()
+  await page.getByTestId('splitter-sections').dblclick({ position: { x: 0.5, y: 40 } })
   expect(await width(page, 'sections-column')).toBeCloseTo(auto, 0)
 
   await page.getByTestId('splitter-pages').focus()
@@ -97,4 +98,56 @@ test('hidden panel and column widths survive a relaunch', async () => {
   await second.page.getByTestId('activity-library').click()
   expect(Math.abs((await width(second.page, 'sections-column')) - (auto + 60))).toBeLessThanOrEqual(4)
   await second.app.close()
+})
+
+async function hoverLine(page: Page, testId: string) {
+  const box = (await page.getByTestId(testId).boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+}
+
+test('each library column collapses to a rail and expands to its old width', async ({ page }) => {
+  await expect(page.getByTestId('collapse-sections')).toBeHidden()
+  const canvas = await width(page, 'canvas')
+  const sections = await width(page, 'sections-column')
+  await hoverLine(page, 'splitter-sections')
+  await expect(page.getByTestId('collapse-sections')).toBeVisible()
+  await expect(page.getByTestId('collapse-sections')).toHaveAttribute('aria-label', 'Hide sections')
+  await page.getByTestId('collapse-sections').click()
+  await expect(page.getByTestId('expand-sections')).toBeVisible()
+  expect(await width(page, 'sections-column')).toBeLessThanOrEqual(24)
+  await expect(page.getByTestId('splitter-sections')).toHaveCount(0)
+  expect(await width(page, 'canvas')).toBeGreaterThan(canvas + sections - 40)
+  // The pages column is independent.
+  const pagesWidth = await width(page, 'pages-column')
+  await hoverLine(page, 'splitter-pages')
+  await page.getByTestId('collapse-pages').click()
+  expect(await width(page, 'pages-column')).toBeLessThanOrEqual(24)
+  expect(await width(page, 'sections-column')).toBeLessThanOrEqual(24)
+  await page.getByTestId('expand-pages').click()
+  expect(Math.abs((await width(page, 'pages-column')) - pagesWidth)).toBeLessThanOrEqual(1)
+  await page.getByTestId('sections-column').click()
+  await expect(page.getByTestId('expand-sections')).toHaveCount(0)
+  expect(Math.abs((await width(page, 'sections-column')) - sections)).toBeLessThanOrEqual(1)
+})
+
+test('a collapsed column survives a restart and resizing still works', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const first = await launchApp(userData)
+  try {
+    await hoverLine(first.page, 'splitter-sections')
+    await first.page.getByTestId('collapse-sections').click()
+    await expect(first.page.getByTestId('expand-sections')).toBeVisible()
+  } finally {
+    await first.app.close()
+  }
+  const second = await launchApp(userData)
+  try {
+    await expect(second.page.getByTestId('expand-sections')).toBeVisible()
+    expect(await width(second.page, 'sections-column')).toBeLessThanOrEqual(24)
+    const before = await width(second.page, 'pages-column')
+    await drag(second.page, 'splitter-pages', 60)
+    await expect.poll(() => width(second.page, 'pages-column')).toBeGreaterThan(before + 40)
+  } finally {
+    await second.app.close()
+  }
 })
