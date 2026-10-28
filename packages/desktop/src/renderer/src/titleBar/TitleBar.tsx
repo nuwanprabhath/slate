@@ -20,17 +20,20 @@ export function TitleBar({ title }: { title: string }) {
       data-chrome={kind}
       // macOS zooms on its own for hiddenInset; Linux's window manager does not see this drag region.
       onDoubleClick={(e) => {
-        if (platform === 'linux' && e.target === e.currentTarget) window.slate.chrome.toggleMaximize()
+        if (platform === 'linux' && !(e.target as Element).closest('.menu-bar')) window.slate.chrome.toggleMaximize()
       }}
     >
-      {kind === 'overlay' && <MenuBar />}
+      {/* Start and end grow alike, so the title sits in the window's centre while it fits between them. */}
+      <div className="title-bar-start">{kind === 'overlay' && <MenuBar />}</div>
       <span
         className="title-bar-title"
         data-testid="title-bar-title"
+        title={title}
         data-ui-allow="clipped-text: the window title; the page and notebook names show in full in the library and its tooltips"
       >
         {title}
       </span>
+      <div className="title-bar-end" />
     </header>
   )
 }

@@ -4,16 +4,21 @@
 
 .title-bar {
   position: relative; flex: none; display: flex; align-items: center; height: 36px; box-sizing: border-box;
-  padding: 0 8px; background: var(--toolbar-bg); color: var(--muted); border-bottom: 1px solid var(--border);
+  background: var(--toolbar-bg); color: var(--muted); border-bottom: 1px solid var(--border);
   font-size: 12px; user-select: none; -webkit-app-region: drag; z-index: 40;
 }
+/* Both ends grow from zero and never below their content (padding included), so while the title fits it is
+   centred in the window; when it does not, it takes only the room between them and ends in an ellipsis. */
+.title-bar-start, .title-bar-end { flex: 1 1 0; display: flex; align-items: center; height: 100%; box-sizing: border-box; }
+.title-bar-start { padding-left: 8px; }
+.title-bar-end { padding-right: 8px; }
 /* The traffic lights. */
-.title-bar[data-chrome='mac'] { padding-left: 76px; }
+.title-bar[data-chrome='mac'] .title-bar-start { padding-left: 76px; }
 /* Electron's window buttons; the env() is the space it leaves us when it reports one. */
-.title-bar[data-chrome='overlay'] { padding-right: calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100% - 140px))); }
+.title-bar[data-chrome='overlay'] .title-bar-end { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 140px))); }
 .title-bar-title {
-  position: absolute; left: 50%; transform: translateX(-50%); max-width: 50%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
+  flex: 0 1 auto; min-width: 0; padding: 0 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .menu-bar { display: flex; height: 100%; align-items: center; -webkit-app-region: no-drag; }

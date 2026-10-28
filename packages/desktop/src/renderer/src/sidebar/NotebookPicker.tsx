@@ -34,7 +34,13 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
         />
       ) : (
         <button type="button" className="notebook-current" data-testid="notebook-picker" onClick={() => setOpen((o) => !o)}>
-          <span className="label" title={current.doc.name}>{current.doc.name}</span>
+          <span
+            className="label"
+            title={current.doc.name}
+            data-ui-allow="overlap: the name ends in an ellipsis inside its own box, so the badge and chevron beside it are never drawn over; the audit measures a clipped text's full run"
+          >
+            {current.doc.name}
+          </span>
           {notebookAccess && (
             <span className="ai-badge" data-testid="ai-badge" title={accessTitle(notebookAccess)}>
               AI

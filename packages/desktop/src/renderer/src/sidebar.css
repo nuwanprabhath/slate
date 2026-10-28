@@ -1,5 +1,7 @@
 .sidebar { display: flex; flex-direction: column; flex: none; min-height: 0; background: var(--sidebar-bg); border-right: 1px solid var(--border); }
-.notebook-picker { position: relative; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+/* The columns size the pane, never the notebook's name: a long name (or a wider system font) would otherwise hold
+   the pane open past a collapsed column. The name ends in an ellipsis, in full in its tooltip. */
+.notebook-picker { position: relative; padding: 10px 12px; border-bottom: 1px solid var(--border); contain: inline-size; }
 .notebook-current { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; color: var(--text); font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; text-align: left; }
 .notebook-current .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notebook-menu, .context-menu { position: absolute; z-index: 20; min-width: 220px; padding: 4px; background: var(--popover); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 24px rgb(0 0 0 / 0.35); display: flex; flex-direction: column; }
