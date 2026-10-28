@@ -6,9 +6,25 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-28
+
 ### Added
 
-- The Sections and Pages columns can each be collapsed to a slim rail: hover the column's splitter and click the chevron, then click the rail to bring it back at its previous width. The choice is remembered.
+- A lock button next to the sync status locks Slate in one click. It shows only when your notes are encrypted.
+- The Sections and Pages columns can each be collapsed to a slim rail: hover the line to a column's right and click the chevron, then click the rail to bring the column back at its previous width. With both collapsed, the notebook picker hides too and the page gets the room. The choice is remembered.
+
+### Changed
+
+- The Settings button at the bottom left is now a gear instead of an icon that looked like a sun.
+- A long section or page name no longer pushes the page out of a narrow window: an auto-fitted column is capped at a fifth of the window, and the full name shows in a tooltip.
+- Buttons, dialogs and the find bar look consistent across themes: no grey browser-default buttons, opaque dialogs in Glass, and readable primary buttons in Dark.
+
+### Fixed
+
+- Lock screen: "Unlock with Touch ID" is centred under Unlock and the same width.
+- Settings → Security → Change password is a proper form: a label above each field, help text below, no overlapping borders or cut-off hints.
+- Settings → Diagnostics: the log file, its size and the buttons each sit on their own row instead of a squeezed column; spacing and alignment are tidied in every settings section, the encrypt wizard and the update banner.
+- Banners (enter your password, migration, quick unlock) sit below the title bar instead of under it, so their buttons are no longer cut off.
 
 ## [0.2.0] - 2026-10-27
 
