@@ -56,3 +56,32 @@ export function settleOverlaps(boxes: BoxRect[], gap = 12): Map<string, number> 
   }
   return moved
 }
+
+function overlaps(a: BoxRect, b: BoxRect): boolean {
+  return overlapsX(a, b) && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+/** Whether any two boxes overlap (touching edges do not count). */
+export function hasOverlaps(boxes: BoxRect[]): boolean {
+  return boxes.some((a, i) => boxes.some((b, j) => i < j && overlaps(a, b)))
+}
+
+/**
+ * "Re-arrange boxes": moves boxes so none overlap, changing the layout as little as possible.
+ * Boxes are placed in (y, x) order; each keeps its x and moves down only as far as it needs to
+ * clear every box already placed, leaving `gap`. Unlike `settleOverlaps`, a box that overlaps
+ * nothing stays put even when it sits closer than `gap` to another. Returns the new y of every
+ * box that moved.
+ */
+export function arrangeBoxes(boxes: BoxRect[], gap = 16): Map<string, number> {
+  const moved = new Map<string, number>()
+  const placed: BoxRect[] = []
+  for (const box of [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const at = { ...box }
+    // Moving below one box can land on another placed box; repeat until clear. Each pass moves down, so it ends.
+    for (let hit = placed.find((p) => overlaps(p, at)); hit; hit = placed.find((p) => overlaps(p, at))) at.y = hit.y + hit.height + gap
+    if (at.y !== box.y) moved.set(box.id, at.y)
+    placed.push(at)
+  }
+  return moved
+}

@@ -6,6 +6,9 @@
 .notebook-menu { top: 100%; left: 12px; }
 .context-menu { position: fixed; }
 .notebook-menu button, .context-menu button[role='menuitem'] { background: none; border: none; color: var(--text); font: inherit; text-align: left; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+/* A menu with choices keeps a check column, so every label starts at the same edge. */
+.has-checks button.menu-item[role="menuitem"] { position: relative; padding-left: 26px; }
+.has-checks .menu-check { position: absolute; left: 10px; }
 .notebook-menu button:hover, .context-menu button[role='menuitem']:hover { background: var(--hover); }
 .notebook-menu button.selected { background: var(--selected); }
 .notebook-menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; width: 100%; }

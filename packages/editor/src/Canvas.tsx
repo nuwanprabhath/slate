@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { PMJSON } from '@slate/core'
 import { activeEditor } from './activeEditor'
-import { Box } from './Box'
+import { Box, type GroupDrag } from './Box'
+import { CanvasMenu } from './CanvasMenu'
 import { imageFilesFrom } from './images'
 import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
@@ -19,6 +20,11 @@ type Point = { x: number; y: number }
 type PendingInput = { text: string } | { enter: true } | { html: string; plain: string } | { readClipboard: true }
 
 const isMod = (e: KeyboardEvent) => e.metaKey || e.ctrlKey
+/** Cmd on macOS, Ctrl elsewhere: the multi-select modifier, as in the platform's file managers. */
+const isSelectMod = (e: { metaKey: boolean; ctrlKey: boolean }) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey)
+/** `.slate-box-bar`'s height in canvas.css. */
+const HANDLE_HEIGHT = 18
+const NO_SELECTION: ReadonlySet<string> = new Set()
 
 export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   const boxes = useSyncExternalStore(session.subscribe, session.getBoxes)
@@ -29,6 +35,96 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   const caretRef = useRef<Point | null>(null)
   const queueRef = useRef<{ boxId: string; inputs: PendingInput[] } | null>(null)
   const services = useEditorServices()
+  const [selection, setSelection] = useState<ReadonlySet<string>>(NO_SELECTION)
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
+  const [groupDrag, setGroupDrag] = useState<GroupDrag | null>(null)
+  const [menu, setMenu] = useState<Point | null>(null)
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
+
+  // Back to front: each box's place in the stack (z, then id), so overlapping boxes layer the same everywhere.
+  const layers = useMemo(() => {
+    const order = [...boxes].sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    return new Map(order.map((b, i) => [b.id, i + 1]))
+  }, [boxes])
+
+  // A handle bar stacks above every box body, so where one lies over another box it would catch
+  // clicks on that box's text unseen: those handles are always drawn.
+  const coveringHandles = useMemo(() => {
+    const out = new Set<string>()
+    for (const b of boxes) {
+      const top = b.y - HANDLE_HEIGHT
+      for (const o of boxes) {
+        if (o.id === b.id) continue
+        const oh = Math.max(session.heightOf(o.id) ?? 0, o.height ?? 0)
+        if (b.x < o.x + o.width && o.x < b.x + b.width && top < o.y + oh && o.y < b.y) {
+          out.add(b.id)
+          break
+        }
+      }
+    }
+    return out
+  }, [boxes, session])
+
+  // A selected box that was deleted (here, by undo or on another device) leaves the selection.
+  useEffect(() => {
+    if (selection.size === 0) return
+    const live = new Set(boxes.map((b) => b.id))
+    if ([...selection].some((id) => !live.has(id))) setSelection(new Set([...selection].filter((id) => live.has(id))))
+  }, [boxes, selection])
+
+  const onBoxPress = useCallback((id: string, e: PointerEvent<HTMLElement>): boolean => {
+    const target = e.target as HTMLElement
+    if (isSelectMod(e) && !target.closest('a, button')) {
+      const next = new Set(selectionRef.current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      setSelection(next)
+      // Out of the text, so Delete and Escape act on the selection and cannot edit text.
+      canvasRef.current?.focus({ preventScroll: true })
+      return true
+    }
+    // A plain press on a selected box's handle drags the selection; anywhere else it selects only that box.
+    const onHandle = target.closest('.slate-box-handle') !== null
+    if (!(onHandle && selectionRef.current.has(id)) && selectionRef.current.size > 0) setSelection(NO_SELECTION)
+    return false
+  }, [])
+
+  const onGroupDrag = useCallback(
+    (drag: GroupDrag | null, commit: boolean) => {
+      if (!commit) {
+        setGroupDrag(drag)
+        return
+      }
+      setGroupDrag(null)
+      if (!drag || (drag.dx === 0 && drag.dy === 0)) return
+      const patches = new Map<string, { x: number; y: number }>()
+      for (const b of session.getBoxes()) {
+        if (selectionRef.current.has(b.id)) patches.set(b.id, { x: Math.max(0, Math.round(b.x + drag.dx)), y: Math.max(0, Math.round(b.y + drag.dy)) })
+      }
+      session.updateBoxes(patches)
+    },
+    [session],
+  )
+
+  useEffect(() => {
+    if (selection.size === 0) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelection(NO_SELECTION)
+        return
+      }
+      // Only while no text has focus (a Cmd/Ctrl+click moves focus to the canvas), so these keys never eat text.
+      if ((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement === canvasRef.current) {
+        e.preventDefault()
+        session.deleteBoxes([...selectionRef.current])
+        setSelection(NO_SELECTION)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selection, session])
 
   const setCaret = (p: Point | null) => {
     caretRef.current = p
@@ -109,11 +205,18 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget || e.button !== 0) return
     e.preventDefault()
+    setSelection(NO_SELECTION)
     queueRef.current = null
     setFocusId(null)
     setCaret(pointFrom(e))
     // Focusing the canvas blurs any box editor, which removes that box if it was left empty.
     e.currentTarget.focus({ preventScroll: true })
+  }
+
+  const onContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return
+    e.preventDefault()
+    setMenu({ x: e.clientX, y: e.clientY })
   }
 
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -166,9 +269,11 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   return (
     <div className="slate-scroll" ref={setScrollRoot} data-testid="canvas-scroll">
       <div
+        ref={canvasRef}
         className="slate-canvas"
         data-testid="canvas"
         tabIndex={-1}
+        onContextMenu={onContextMenu}
         style={{ minHeight: bottom + 400, minWidth: right + 200 }}
         onMouseDown={onMouseDown}
         onDoubleClick={onDoubleClick}
@@ -188,9 +293,22 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
               onFocus={onBoxFocus}
               conflict={conflicts?.has(b.id) ?? false}
               onConflictClick={onConflictClick}
+              layer={layers.get(b.id) ?? 1}
+              selected={selection.has(b.id)}
+              handleShown={coveringHandles.has(b.id)}
+              onPress={onBoxPress}
+              onGroupDrag={onGroupDrag}
+              groupDrag={groupDrag}
             />
           ))}
       </div>
+      {menu && (
+        <CanvasMenu
+          at={menu}
+          onClose={closeMenu}
+          items={[{ label: 'Re-arrange boxes', testId: 'arrange-boxes', disabled: !session.canArrange(), onSelect: () => session.arrange() }]}
+        />
+      )}
     </div>
   )
 }

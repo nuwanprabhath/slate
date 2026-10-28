@@ -1,11 +1,28 @@
-import { memo, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import type { BoxState } from '@slate/core'
+import { memo, useEffect, type CSSProperties, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import type { BoxPatch, BoxState } from '@slate/core'
 import { BoxEditor } from './BoxEditor'
 import { findStore } from './find'
 import type { PageSession } from './PageSession'
 import { StaticBox } from './StaticBox'
 
 const MIN_WIDTH = 120
+/** Border top and bottom: a stored min height is the box's outer height. */
+const BORDERS = 2
+
+/** Edges and corners a box can be resized from (compass points; the top edge is the handle). */
+export type ResizeEdge = 'e' | 'w' | 's' | 'se' | 'sw'
+const EDGES: ReadonlyArray<{ edge: ResizeEdge; testId: string }> = [
+  { edge: 'e', testId: 'box-resize' },
+  { edge: 'w', testId: 'box-resize-left' },
+  { edge: 's', testId: 'box-resize-bottom' },
+  { edge: 'se', testId: 'box-resize-se' },
+  { edge: 'sw', testId: 'box-resize-sw' },
+]
+
+export interface GroupDrag {
+  dx: number
+  dy: number
+}
 
 interface Props {
   box: BoxState
@@ -15,13 +32,29 @@ interface Props {
   onFocus: (id: string) => void
   conflict?: boolean
   onConflictClick?: (id: string) => void
+  /** Position in the page's stacking order, 1 = back. */
+  layer: number
+  /** The handle lies over another box: draw it always, so what catches the pointer there is visible. */
+  handleShown: boolean
+  /** In the Cmd/Ctrl+click multi-selection. */
+  selected: boolean
+  /** Every pointer press on the box; returns true when the canvas consumed it (a Cmd/Ctrl+click). */
+  onPress: (id: string, e: ReactPointerEvent<HTMLElement>) => boolean
+  /** Dragging a selected box's handle moves the whole selection; the canvas owns that gesture. */
+  onGroupDrag: (drag: GroupDrag | null, commit: boolean) => void
+  /** The selection's live offset while one of its handles is dragged. */
+  groupDrag: GroupDrag | null
 }
 
-type Gesture = { x: number; y: number; width: number }
+type Gesture = { x: number; y: number; width: number; height?: number }
 
-function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick }: Props) {
-  const onFocus = () => onFocusBox(box.id)
+function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick, layer, selected, handleShown, onPress, onGroupDrag, groupDrag }: Props) {
+  const onFocus = () => {
+    session.bringToFront(box.id)
+    onFocusBox(box.id)
+  }
   const ref = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
   const [gesture, setGesture] = useState<Gesture | null>(null)
   // Static boxes have no decorations, so a box with find matches is a live editor while they show.
@@ -41,29 +74,71 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
   }, [session, box.id])
 
   // Drop the local gesture override once the doc reflects the committed position.
-  useEffect(() => setGesture(null), [box.x, box.y, box.width])
+  useEffect(() => setGesture(null), [box.x, box.y, box.width, box.height])
 
-  const startGesture = (e: ReactPointerEvent<HTMLElement>, mode: 'move' | 'resize') => {
+  /** Height of the content alone: a min height may never go below it. */
+  const contentHeight = (): number => {
+    const body = bodyRef.current
+    if (!body) return 0
+    let h = 0
+    for (const child of Array.from(body.children)) if (child instanceof HTMLElement) h += child.offsetHeight
+    return h + BORDERS
+  }
+
+  const startGesture = (e: ReactPointerEvent<HTMLElement>, mode: 'move' | ResizeEdge) => {
     e.preventDefault()
     e.stopPropagation()
     const target = e.currentTarget
     target.setPointerCapture(e.pointerId)
+    const group = mode === 'move' && selected
+    const minHeight = mode === 'move' ? 0 : contentHeight()
+    const startHeight = ref.current?.offsetHeight ?? box.height ?? minHeight
     const start = { px: e.clientX, py: e.clientY, x: box.x, y: box.y, width: box.width }
-    let current: Gesture = { x: start.x, y: start.y, width: start.width }
+    let current: Gesture = { x: start.x, y: start.y, width: start.width, height: box.height }
+    let groupDelta: GroupDrag = { dx: 0, dy: 0 }
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - start.px
       const dy = ev.clientY - start.py
-      current =
-        mode === 'move'
-          ? { x: Math.max(0, start.x + dx), y: Math.max(0, start.y + dy), width: start.width }
-          : { x: start.x, y: start.y, width: Math.max(MIN_WIDTH, start.width + dx) }
+      if (group) {
+        groupDelta = { dx, dy }
+        onGroupDrag(groupDelta, false)
+        return
+      }
+      if (mode === 'move') current = { ...current, x: Math.max(0, start.x + dx), y: Math.max(0, start.y + dy) }
+      else {
+        const next: Gesture = { ...current }
+        if (mode === 'e' || mode === 'se') next.width = Math.max(MIN_WIDTH, start.width + dx)
+        if (mode === 'w' || mode === 'sw') {
+          // The right edge stays put: x and width change together, within the minimum width and the canvas.
+          const shift = Math.max(-start.x, Math.min(dx, start.width - MIN_WIDTH))
+          next.x = start.x + shift
+          next.width = start.width - shift
+        }
+        if (mode === 's' || mode === 'se' || mode === 'sw') next.height = Math.max(minHeight, startHeight + dy)
+        current = next
+      }
       setGesture(current)
     }
     const up = () => {
       target.removeEventListener('pointermove', move)
       target.removeEventListener('pointerup', up)
-      if (mode === 'resize') session.noteLocalEdit(box.id)
-      session.page.updateBox(box.id, { x: Math.round(current.x), y: Math.round(current.y), width: Math.round(current.width) })
+      if (group) {
+        onGroupDrag(groupDelta, true)
+        return
+      }
+      const patch: BoxPatch = { x: Math.round(current.x), y: Math.round(current.y), width: Math.round(current.width) }
+      // Dragged back to the content's own height: no min height, so the box shrinks with its text again.
+      if (current.height !== undefined) patch.height = current.height <= minHeight + 1 ? null : Math.round(current.height)
+      if (patch.x === box.x && patch.y === box.y && patch.width === box.width && (patch.height === undefined || (patch.height ?? undefined) === box.height)) {
+        setGesture(null)
+        return
+      }
+      if (patch.height !== undefined) session.resizeBox(box.id, patch, startHeight, Math.max(minHeight, current.height ?? 0))
+      else {
+        // A width change reflows the text; growth from that pushes boxes below, as typing does.
+        if (mode !== 'move') session.noteLocalEdit(box.id)
+        session.updateBoxes(new Map([[box.id, patch]]))
+      }
     }
     target.addEventListener('pointermove', move)
     target.addEventListener('pointerup', up)
@@ -77,9 +152,28 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
     if (e.key !== 'Escape') session.deleteBox(box.id)
   }
 
-  const { x, y, width } = gesture ?? box
+  const shown = gesture ?? box
+  const x = shown.x + (selected && groupDrag ? groupDrag.dx : 0)
+  const y = shown.y + (selected && groupDrag ? groupDrag.dy : 0)
+  const style = { left: Math.max(0, x), top: Math.max(0, y), width: shown.width, minHeight: shown.height, '--z': layer } as CSSProperties
   return (
-    <div ref={ref} className={['slate-box', box.private && 'is-private', conflict && 'has-conflict'].filter(Boolean).join(' ')} data-testid="box" data-box-id={box.id} style={{ left: x, top: y, width }}>
+    <div
+      ref={ref}
+      className={['slate-box', box.private && 'is-private', conflict && 'has-conflict', selected && 'is-selected', handleShown && 'handle-shown'].filter(Boolean).join(' ')}
+      data-testid="box"
+      data-box-id={box.id}
+      aria-selected={selected}
+      style={style}
+      onPointerDownCapture={(e) => {
+        if (e.button !== 0) return
+        if (onPress(box.id, e)) {
+          e.preventDefault()
+          e.stopPropagation()
+          return
+        }
+        session.bringToFront(box.id)
+      }}
+    >
       <div className="slate-box-bar">
         <div className="slate-box-handle" data-testid="box-handle" tabIndex={-1}
           onPointerDown={(e) => {
@@ -123,12 +217,16 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
           </svg>
         </button>
       </div>
-      {visible || autoFocus || findHit ? (
-        <BoxEditor box={box} session={session} autoFocus={autoFocus} onFocus={onFocus} />
-      ) : (
-        <StaticBox doc={session.doc} contentId={box.contentId} onActivate={onFocus} />
-      )}
-      <div className="slate-box-resize" data-testid="box-resize" onPointerDown={(e) => startGesture(e, 'resize')} />
+      <div className="slate-box-body" ref={bodyRef}>
+        {visible || autoFocus || findHit ? (
+          <BoxEditor box={box} session={session} autoFocus={autoFocus} onFocus={onFocus} />
+        ) : (
+          <StaticBox doc={session.doc} contentId={box.contentId} onActivate={onFocus} />
+        )}
+      </div>
+      {EDGES.map(({ edge, testId }) => (
+        <div key={edge} className={`slate-box-resize slate-box-resize-${edge}`} data-testid={testId} onPointerDown={(e) => startGesture(e, edge)} />
+      ))}
     </div>
   )
 }
@@ -149,5 +247,12 @@ export const Box = memo(
     a.box.y === b.box.y &&
     a.box.width === b.box.width &&
     a.box.private === b.box.private &&
+    a.box.height === b.box.height &&
+    a.layer === b.layer &&
+    a.selected === b.selected &&
+    a.handleShown === b.handleShown &&
+    a.onPress === b.onPress &&
+    a.onGroupDrag === b.onGroupDrag &&
+    (a.selected ? a.groupDrag === b.groupDrag : true) &&
     a.box.contentId === b.box.contentId,
 )

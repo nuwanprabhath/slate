@@ -10,7 +10,7 @@ const OPTIONS: Array<{ access: Access | null; label: string }> = [
 /** Context-menu entries that set the explicit AI grant on a node or on the whole notebook. */
 export function accessItems(nb: NotebookDoc, target: TreeItem['id'] | typeof NOTEBOOK_SCOPE): MenuItem[] {
   const current = nb.accessOf(target)
-  return OPTIONS.map((o) => ({ label: `${current === o.access ? '✓ ' : ''}${o.label}`, onSelect: () => nb.setAccess(target, o.access) }))
+  return OPTIONS.map((o) => ({ label: o.label, checked: current === o.access, onSelect: () => nb.setAccess(target, o.access) }))
 }
 
 export function accessTitle(access: Access): string {

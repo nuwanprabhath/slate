@@ -33,6 +33,7 @@ export type UiRule =
   | 'crowded'
   | 'off-centre'
   | 'squeezed-text'
+  | 'ragged-menu'
 
 export interface UiViolation {
   rule: UiRule
@@ -445,6 +446,42 @@ export function auditUi(opts: AuditOptions = {}): UiViolation[] {
       }
       if (worst !== null) add('overlap', a, `overlaps ${nameOf(b)} by ${String(Math.round(worst[0]))}×${String(Math.round(worst[1]))}px`)
     }
+  }
+
+  // ragged-menu: a menu's text rows start at one left edge (a check mark reserves its column), so
+  // a row centred by some other style shows. Rows without text (a swatch row) do not count.
+  for (const menu of root.querySelectorAll('[role="menu"], .context-menu, [data-popup]')) {
+    if (menu.getClientRects().length === 0) continue
+    const all = [...menu.querySelectorAll('button, [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]')]
+    const outer = all.filter((row) => !all.some((other) => other !== row && other.contains(row)))
+    // A row of buttons side by side (a find bar's toggles) is a toolbar, not menu items.
+    const sameLine = (a: Element, b: Element) => {
+      const ra = a.getBoundingClientRect()
+      const rb = b.getBoundingClientRect()
+      return Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top) > 2
+    }
+    const rows = outer.filter((row) => !outer.some((other) => other !== row && sameLine(row, other)))
+    const starts: Array<[Element, number]> = []
+    for (const row of rows) {
+      if (row.getClientRects().length === 0) continue
+      const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
+      let left: number | null = null
+      for (let n = walker.nextNode(); n !== null && left === null; n = walker.nextNode()) {
+        const text = n.textContent ?? ''
+        // The label, not a leading check mark: a check column is reserved, so labels line up.
+        const at = text.search(/[\p{L}\p{N}]/u)
+        if (at < 0) continue
+        const range = document.createRange()
+        range.setStart(n, at)
+        range.setEnd(n, at + 1)
+        const r = range.getBoundingClientRect()
+        if (r.width > 0) left = r.left
+      }
+      if (left !== null) starts.push([row, left])
+    }
+    if (starts.length < 2) continue
+    const edge = Math.min(...starts.map(([, l]) => l))
+    for (const [row, l] of starts) if (l - edge > 2) add('ragged-menu', row, `label starts ${String(Math.round(l - edge))}px right of the menu's other items`)
   }
   return out
 }

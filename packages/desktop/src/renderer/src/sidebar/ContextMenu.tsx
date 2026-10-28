@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 export type MenuItem =
-  | { label: string; onSelect: () => void; confirm?: boolean }
+  | { label: string; onSelect: () => void; confirm?: boolean; /** A choice: shows a check mark when true. */ checked?: boolean }
   | { swatches: readonly string[]; onPick: (color: string) => void }
 
 export interface MenuState {
@@ -14,6 +14,8 @@ export interface MenuState {
 export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const [armed, setArmed] = useState<string | null>(null)
+  // When any item is a choice, every label leaves room for the check mark (has-checks) so they all start at one edge.
+  const checks = menu.items.some((i) => 'label' in i && i.checked !== undefined)
   useEffect(() => {
     const down = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose()
@@ -29,7 +31,7 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
     }
   }, [onClose])
   return (
-    <div ref={ref} className="context-menu" style={{ left: menu.x, top: menu.y }} role="menu">
+    <div ref={ref} className={checks ? 'context-menu has-checks' : 'context-menu'} style={{ left: menu.x, top: menu.y }} role="menu">
       {menu.items.map((item, i) =>
         'swatches' in item ? (
           <div key={i} className="swatches">
@@ -52,13 +54,14 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
             key={i}
             type="button"
             role="menuitem"
-            className={item.confirm ? 'danger' : undefined}
+            className={item.confirm ? 'menu-item danger' : 'menu-item'}
             onClick={() => {
               if (item.confirm && armed !== item.label) return setArmed(item.label)
               item.onSelect()
               onClose()
             }}
           >
+            {item.checked === true && <span className="menu-check">✓ </span>}
             {item.confirm && armed === item.label ? `Click again to ${item.label.toLowerCase()}` : item.label}
           </button>
         ),

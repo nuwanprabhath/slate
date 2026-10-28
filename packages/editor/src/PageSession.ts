@@ -1,5 +1,5 @@
 import { UndoManager, type LoroDoc } from 'loro-crdt'
-import { PageDoc, computePush, contentToJSON, settleOverlaps, type BoxState, type PMJSON } from '@slate/core'
+import { PageDoc, arrangeBoxes, computePush, hasOverlaps, contentToJSON, settleOverlaps, type BoxPatch, type BoxRect, type BoxState, type PMJSON } from '@slate/core'
 import { writeContent } from './content'
 import { isEmptyContent } from './emptyBox'
 import { schema } from './extensions'
@@ -96,10 +96,63 @@ export class PageSession {
 
   /** A user's delete of a whole box: unlike `deleteIfEmpty` it is an undo step. */
   deleteBox(boxId: string): void {
-    // A delete right after typing would otherwise merge into that edit, and undo would take both back.
+    this.ownStep(() => this.page.deleteBox(boxId))
+  }
+
+  /** Deletes several boxes as one undo step. */
+  deleteBoxes(ids: string[]): void {
+    if (ids.length > 0) this.ownStep(() => this.page.deleteBoxes(ids))
+  }
+
+  /** Moves or resizes boxes as one undo step of their own. */
+  updateBoxes(patches: Map<string, BoxPatch>): void {
+    if (patches.size > 0) this.ownStep(() => this.page.updateBoxes(patches))
+  }
+
+  /**
+   * A drag of a box's bottom edge from `oldHeight` to `newHeight`: the new size and the push of the
+   * boxes below it (as for growing text) are one undo step.
+   */
+  resizeBox(boxId: string, patch: BoxPatch, oldHeight: number, newHeight: number): void {
+    const moved = computePush(this.rects(), boxId, oldHeight, newHeight)
+    const patches = new Map<string, BoxPatch>([[boxId, patch]])
+    for (const [id, y] of moved) patches.set(id, { y })
+    // The box's own size report after this render is not growth: it was pushed for here.
+    this.heights.set(boxId, newHeight)
+    this.ownStep(() => this.page.updateBoxes(patches))
+  }
+
+  /**
+   * Raises a box above the others. Stacking is page data (it syncs and survives a reload) but not
+   * an edit: clicking into a box must not add an undo step, so it uses a sys:* origin.
+   */
+  bringToFront(boxId: string): void {
+    this.page.bringToFront(boxId, 'sys:z')
+  }
+
+  private rects(): BoxRect[] {
+    return this.snapshot.map((b) => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: this.heights.get(b.id) ?? 0 }))
+  }
+
+  /** Whether "Re-arrange boxes" would change anything: some boxes overlap. */
+  canArrange(): boolean {
+    return this.snapshot.length >= 2 && hasOverlaps(this.rects())
+  }
+
+  /** "Re-arrange boxes": moves boxes down until none overlap, as one undo step. */
+  arrange(): void {
+    const moved = arrangeBoxes(this.rects())
+    if (moved.size > 0) this.ownStep(() => this.page.moveBoxes(moved))
+  }
+
+  /** A change made right after typing would otherwise merge into that edit, and undo would take both back. */
+  private ownStep(change: () => void): void {
     this.undoManager.setMergeInterval(0)
-    this.page.deleteBox(boxId)
-    this.undoManager.setMergeInterval(UNDO_MERGE_MS)
+    try {
+      change()
+    } finally {
+      this.undoManager.setMergeInterval(UNDO_MERGE_MS)
+    }
   }
 
   noteLocalEdit(boxId: string): void {
@@ -122,8 +175,7 @@ export class PageSession {
     const local = this.localEdits.delete(boxId)
     if (this.page.needsLayout()) this.scheduleSettle()
     if (!local || old === undefined || height <= old) return
-    const rects = this.snapshot.map((b) => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: this.heights.get(b.id) ?? 0 }))
-    const moved = computePush(rects, boxId, old, height)
+    const moved = computePush(this.rects(), boxId, old, height)
     if (moved.size > 0) this.page.moveBoxes(moved)
   }
 

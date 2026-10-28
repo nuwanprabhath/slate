@@ -7,19 +7,27 @@ export interface BoxState {
   y: number
   width: number
   private: boolean
+  /** Stacking order: higher is in front; ties by id. Pages saved before stacking read as 0. */
+  z: number
+  /** Minimum height the person dragged the box to; it still grows with its content. Unset: content height. */
+  height?: number
   /** Loro container that loro-prosemirror binds this box's editor to. */
   contentId: ContainerID
 }
 
-export type BoxPatch = Partial<Pick<BoxState, 'x' | 'y' | 'width' | 'private'>>
+/** `height: null` clears the min height. */
+export type BoxPatch = Partial<Pick<BoxState, 'x' | 'y' | 'width' | 'private' | 'z'>> & { height?: number | null }
 
 function toState(id: string, m: LoroMap): BoxState {
+  const height = m.get('height')
   return {
     id,
     x: Number(m.get('x') ?? 0),
     y: Number(m.get('y') ?? 0),
     width: Number(m.get('width') ?? 0),
     private: m.get('private') === true,
+    z: Number(m.get('z') ?? 0),
+    ...(typeof height === 'number' && height > 0 ? { height } : {}),
     contentId: (m.get('content') as LoroMap).id,
   }
 }
@@ -48,11 +56,13 @@ export class PageDoc {
 
   addBox(init: { x: number; y: number; width: number }): string {
     const id = newId()
+    const z = this.maxZ() + 1
     const box = this.boxes.setContainer(id, new LoroMap())
     box.set('x', init.x)
     box.set('y', init.y)
     box.set('width', init.width)
     box.set('private', false)
+    box.set('z', z)
     box.setContainer('content', new LoroMap())
     this.doc.commit()
     return id
@@ -79,10 +89,39 @@ export class PageDoc {
   }
 
   updateBox(id: string, patch: BoxPatch): void {
-    const m = this.boxMap(id)
-    if (!m) return
-    for (const [key, value] of Object.entries(patch)) if (value !== undefined) m.set(key, value)
-    this.doc.commit()
+    this.updateBoxes(new Map([[id, patch]]))
+  }
+
+  /** Patches several boxes in one commit (one undo step). */
+  updateBoxes(patches: Map<string, BoxPatch>, origin?: string): void {
+    for (const [id, patch] of patches) {
+      const m = this.boxMap(id)
+      if (!m) continue
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) m.delete(key)
+        else if (value !== undefined) m.set(key, value)
+      }
+    }
+    this.doc.commit(origin === undefined ? undefined : { origin })
+  }
+
+  private maxZ(): number {
+    return this.listBoxes().reduce((max, b) => Math.max(max, b.z), 0)
+  }
+
+  /** Box ids from back to front: by z, then id (pages saved before stacking are all z 0). */
+  stackOrder(): string[] {
+    return this.listBoxes()
+      .sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((b) => b.id)
+  }
+
+  /** Puts the box in front of every other one. Returns false (and writes nothing) when it already is. */
+  bringToFront(id: string, origin?: string): boolean {
+    const order = this.stackOrder()
+    if (!order.includes(id) || order.at(-1) === id) return false
+    this.updateBoxes(new Map([[id, { z: this.maxZ() + 1 }]]), origin)
+    return true
   }
 
   moveBoxes(ys: Map<string, number>, origin?: string): void {
@@ -98,6 +137,11 @@ export class PageDoc {
   setNeedsLayout(on: boolean): void {
     this.doc.getMap('meta').set('needsLayout', on)
     this.doc.commit({ origin: 'sys:layout' })
+  }
+
+  deleteBoxes(ids: string[], origin?: string): void {
+    for (const id of ids) this.boxes.delete(id)
+    this.doc.commit(origin === undefined ? undefined : { origin })
   }
 
   deleteBox(id: string, origin?: string): void {

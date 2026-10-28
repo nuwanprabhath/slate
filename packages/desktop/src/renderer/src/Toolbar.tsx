@@ -81,6 +81,7 @@ function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STY
               key={s.value}
               type="button"
               role="menuitem"
+              className="menu-item"
               data-testid={`list-style-${s.value}`}
               title={s.value}
               onMouseDown={(e) => e.preventDefault()}
