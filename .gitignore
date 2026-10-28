@@ -11,4 +11,4 @@ release/
 .tools/
 packages/desktop/resources/bin/
 .claude/worktrees/
-ui-review/
+/ui-review/

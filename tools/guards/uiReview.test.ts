@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error -- a plain .mjs hook module with JSDoc types, no declaration file
 import { uiReviewProblems } from '../../.claude/hooks/uiReview.mjs'
-import { read } from './repo'
+import { git, read } from './repo'
 
 type Problems = (branch: { changed: string[]; trailer: (key: string) => string; allowNow: number; allowBase: number }) => string[]
 const check = uiReviewProblems as Problems
@@ -44,5 +44,15 @@ describe('the UI part of the definition of done', () => {
 
   it('the scenarios run in the normal e2e suite (Playwright finds e2e/ui)', () => {
     expect(read('packages/desktop/playwright.config.ts')).toMatch(/testDir: 'e2e'/)
+  })
+})
+
+/** The ui-review skill was once lost to a `.gitignore` line (`ui-review/`) while CLAUDE.md pointed at it. */
+describe('skills CLAUDE.md names', () => {
+  it('are tracked by git, not only present on one disk', () => {
+    const named = [...new Set(read('CLAUDE.md').match(/\.claude\/skills\/[\w./-]+\.md/g) ?? [])]
+    expect(named).toContain('.claude/skills/ui-review/SKILL.md')
+    const tracked = new Set(git(['ls-files', '--', '.claude/skills']).split('\n'))
+    expect(named.filter((p) => !tracked.has(p))).toEqual([])
   })
 })
