@@ -23,6 +23,8 @@ const GUARDED = [
   /^scripts\/agents\//,
   // The CLAUDE.md product rules' spec tests (red team re-run R3).
   /^packages\/[^/]+\/(test|e2e)\/spec\//,
+  // The UI audit and reviewUi: an agent whose screen fails the audit must fix the screen, not the audit (phase 13).
+  /^packages\/desktop\/e2e\/ui\/(audit|review)\.ts$/,
 ]
 export const isGuardFile = (rel) => GUARDED.some((re) => re.test(rel))
 

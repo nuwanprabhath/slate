@@ -44,7 +44,7 @@ first.
   - a branch that changes `packages/desktop/src/renderer/**/*.{tsx,css}` adds or changes a UI
     scenario (or says why in `No-UI-Review-Reason:`);
   - a new `data-ui-allow` needs a `UI-Allow-Reason:` trailer;
-  - a change to `audit.ts` or `review.ts` needs a `UI-Gate-Change:` trailer.
+  - `audit.ts` and `review.ts` are guard files (`scripts/agents/review-gate.mjs`): an agent cannot edit them without the lead's signed unlock, and a change also needs a `UI-Gate-Change:` trailer. A false positive goes in your report.
 
 An element that legitimately breaks a rule carries `data-ui-allow="<rule>: <reason>"` (reason of 8
 characters or more), for example the window title, which truncates while the page and notebook
