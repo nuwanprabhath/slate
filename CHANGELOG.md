@@ -26,6 +26,9 @@ All notable changes to Slate are recorded here. The format follows
 
 - A box underneath another can always be grabbed: a box's handle is never covered by another box, a handle lying over another box is always shown, and clicking a box brings it to the front (the order is saved with the page). Box backgrounds are opaque, so overlapping text no longer mixes.
 - Right-click menus line up: every item starts at the same left edge, with the ✓ in its own column.
+- On Linux and Windows a long page title no longer runs into the menu bar; it shortens with an ellipsis and shows in full on hover.
+- Collapsing a library column gives all of its width back to the page.
+- Automatic sync waits a full interval after the previous sync finishes, so a slow sync no longer leaves the status showing "Syncing…" almost all the time.
 - Lock screen: "Unlock with Touch ID" is centred under Unlock and the same width.
 - Settings → Security → Change password is a proper form: a label above each field, help text below, no overlapping borders or cut-off hints.
 - Settings → Diagnostics: the log file, its size and the buttons each sit on their own row instead of a squeezed column; spacing and alignment are tidied in every settings section, the encrypt wizard and the update banner.
