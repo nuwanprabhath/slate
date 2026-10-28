@@ -52,19 +52,21 @@ export function QuickUnlockRow() {
 
   return (
     <div className="settings-field quick-unlock-row" data-testid="quick-unlock-row">
-      <label>
+      <label className="settings-row">
         <input
           type="checkbox"
           data-testid="quick-unlock-toggle"
           checked={info.enabled || asking}
           disabled={!info.kind && !info.enabled}
           onChange={(e) => (e.target.checked ? setAsking(true) : info.enabled ? void disable() : setAsking(false))}
-        />{' '}
-        {name}
+        />
+        <span>
+          <strong>{name}</strong>
+          <span className="settings-help">{info.kind ? QUICK_UNLOCK_NOTE : 'Not available on this computer (needs Touch ID, or a GNOME or KDE keyring).'}</span>
+        </span>
       </label>
-      <p className="settings-hint">{info.kind ? QUICK_UNLOCK_NOTE : 'Not available on this computer (needs Touch ID, or a GNOME or KDE keyring).'}</p>
       {asking && !info.enabled && (
-        <form onSubmit={(e) => void enable(e)}>
+        <form className="settings-actions settings-indent" onSubmit={(e) => void enable(e)}>
           <SecretField
             fieldRef={field}
             autoFocus

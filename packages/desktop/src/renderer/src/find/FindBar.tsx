@@ -150,7 +150,7 @@ export function FindBar({ session }: { session: PageSession }) {
   }
 
   return (
-    <div className="find-bar" data-testid="find-bar" role="search" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="find-bar" data-testid="find-bar" data-popup role="search" onMouseDown={(e) => e.stopPropagation()}>
       <div className={invalid ? 'find-input has-error' : 'find-input'}>
         <input
           ref={inputRef}

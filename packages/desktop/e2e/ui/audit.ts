@@ -203,13 +203,18 @@ export function auditUi(opts: AuditOptions = {}): UiViolation[] {
     return border || rgba(s.backgroundColor)[3] > 0.05
   }
 
-  let canvas: HTMLCanvasElement | null = null
+  /** Laid out by the page itself, so a variable font measures as it renders (a canvas does not). */
   const textWidth = (text: string, s: CSSStyleDeclaration): number => {
-    canvas ??= document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (ctx === null) return 0
-    ctx.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`
-    return ctx.measureText(text).width + parseFloat(s.letterSpacing || '0') * text.length
+    const probe = document.createElement('span')
+    probe.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre;visibility:hidden'
+    probe.style.font = s.font
+    probe.style.letterSpacing = s.letterSpacing
+    probe.style.fontVariationSettings = s.fontVariationSettings
+    probe.textContent = text
+    document.body.append(probe)
+    const w = probe.getBoundingClientRect().width
+    probe.remove()
+    return w
   }
 
   const all = [...root.querySelectorAll('*')].filter(visible)
@@ -358,7 +363,7 @@ export function auditUi(opts: AuditOptions = {}): UiViolation[] {
     if (child.matches(CONTROL)) return child
     const inner = [...child.children].filter(visible)
     const only = inner.length === 1 ? inner[0] : undefined
-    return only !== undefined && only.matches(CONTROL) ? only : child
+    return only !== undefined && only.matches(CONTROL) && ownText(child) === '' ? only : child
   }
   for (const col of all) {
     const s = getComputedStyle(col)
@@ -390,51 +395,55 @@ export function auditUi(opts: AuditOptions = {}): UiViolation[] {
   // Two controls, or two texts, drawn over each other in the same layer.
   const leaves = all.filter((el) => el.matches(INTERACTIVE) || (ownText(el) !== '' && el.closest(PROSE) === null))
   /**
-   * What `el` draws that another thing could cover: a field's content box (inside its padding, where
-   * an inline toggle may sit), else its own text (a card's corner action is not over the card's
-   * words), else its box.
+   * What `el` draws that another thing could cover, as boxes: a field's content box (inside its
+   * padding, where an inline toggle may sit), else each line of its own text (a card's corner action
+   * is not over the card's words, and a wrapped span's lines are not one rectangle), else its box.
+   * Each is cut to what its ancestors let show: a row scrolled half out of its list is not over the
+   * header above the list.
    */
-  const drawn = (el: Element): DOMRect => {
+  const drawn = (el: Element): DOMRect[] => {
     const r = el.getBoundingClientRect()
+    let boxes: DOMRect[] = []
     if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) {
       const s = getComputedStyle(el)
       const left = r.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft)
       const right = r.right - parseFloat(s.borderRightWidth) - parseFloat(s.paddingRight)
-      return new DOMRect(left, r.top, Math.max(0, right - left), r.height)
+      boxes = [new DOMRect(left, r.top, Math.max(0, right - left), r.height)]
+    } else {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+        if ((n.textContent ?? '').trim() === '') continue
+        const control = n.parentElement?.closest(INTERACTIVE) ?? null
+        if (control !== null && control !== el && el.contains(control)) continue
+        const range = document.createRange()
+        range.selectNodeContents(n)
+        for (const t of range.getClientRects()) if (t.width > 0 && t.height > 0) boxes.push(t)
+      }
+      if (boxes.length === 0) boxes = [r]
     }
-    if (el.children.length === 0) return r
-    let box: DOMRect | null = null
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-    for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
-      if ((n.textContent ?? '').trim() === '') continue
-      const owner = n.parentElement
-      if (owner !== null && owner !== el && owner.closest(INTERACTIVE) !== el && owner.closest(INTERACTIVE) !== null) continue
-      const range = document.createRange()
-      range.selectNodeContents(n)
-      const t = range.getBoundingClientRect()
-      if (t.width === 0) continue
-      box = box === null ? t : new DOMRect(Math.min(box.left, t.left), Math.min(box.top, t.top), Math.max(box.right, t.right) - Math.min(box.left, t.left), Math.max(box.bottom, t.bottom) - Math.min(box.top, t.top))
-    }
-    return box ?? r
-  }
-  const shownBox = (el: Element): DOMRect => {
-    const r = drawn(el)
     const c = clipBox(el)
-    const left = Math.max(r.left, c.left)
-    const top = Math.max(r.top, c.top)
-    return new DOMRect(left, top, Math.max(0, Math.min(r.right, c.right) - left), Math.max(0, Math.min(r.bottom, c.bottom) - top))
+    return boxes.map((b) => {
+      const left = Math.max(b.left, c.left)
+      const top = Math.max(b.top, c.top)
+      return new DOMRect(left, top, Math.max(0, Math.min(b.right, c.right) - left), Math.max(0, Math.min(b.bottom, c.bottom) - top))
+    })
   }
+  const shapes = new Map(leaves.map((el) => [el, drawn(el)]))
   for (let i = 0; i < leaves.length; i++) {
     const a = leaves[i]
     if (a === undefined) continue
-    const ra = shownBox(a)
     for (let j = i + 1; j < leaves.length; j++) {
       const b = leaves[j]
       if (b === undefined || a.contains(b) || b.contains(a) || layerOf(a) !== layerOf(b)) continue
-      const rb = shownBox(b)
-      const w = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left)
-      const h = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top)
-      if (w > 2 && h > 2) add('overlap', a, `overlaps ${nameOf(b)} by ${String(Math.round(w))}×${String(Math.round(h))}px`)
+      let worst: [number, number] | null = null
+      for (const ra of shapes.get(a) ?? []) {
+        for (const rb of shapes.get(b) ?? []) {
+          const w = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left)
+          const h = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top)
+          if (w > 2 && h > 2 && (worst === null || w * h > worst[0] * worst[1])) worst = [w, h]
+        }
+      }
+      if (worst !== null) add('overlap', a, `overlaps ${nameOf(b)} by ${String(Math.round(worst[0]))}×${String(Math.round(worst[1]))}px`)
     }
   }
   return out

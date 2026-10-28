@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { clampPane, clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, loadLibraryBox, paneWidth, PANE_MIN, saveLayout, saveLibraryBox, scaleColumns, RAIL_WIDTH, scaleExpanded } from './layout'
+import { autoFitCap, clampPane, clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, loadLibraryBox, paneWidth, PANE_MIN, saveLayout, saveLibraryBox, scaleColumns, RAIL_WIDTH, scaleExpanded } from './layout'
 
 describe('fitWidth', () => {
   it('is the widest name plus its chrome', () => {
@@ -128,5 +128,17 @@ describe('collapsed columns', () => {
     expect(scaleExpanded(100, 300, 600, true, false)).toEqual([null, 600 - RAIL_WIDTH])
     expect(scaleExpanded(100, 300, 600, false, true)).toEqual([600 - RAIL_WIDTH, null])
     expect(scaleExpanded(100, 300, 600, true, true)).toEqual([null, null])
+  })
+})
+
+describe('autoFitCap', () => {
+  it('keeps two auto-fitted columns to 40% of the window, so the page keeps the rest', () => {
+    expect(autoFitCap(800)).toBe(160)
+    expect(autoFitCap(1280)).toBe(256)
+    expect(2 * autoFitCap(800) + 48).toBeLessThan(800 / 2)
+  })
+  it('never goes under the column minimum or over the maximum', () => {
+    expect(autoFitCap(300)).toBe(COLUMN_MIN)
+    expect(autoFitCap(4000)).toBe(COLUMN_MAX)
   })
 })

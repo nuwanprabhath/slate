@@ -28,10 +28,15 @@
 .lock-unlock { padding: 6px 12px; background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-control); color: var(--accent-contrast); cursor: pointer; }
 .lock-unlock:disabled { opacity: 0.6; cursor: default; }
 .lock-error { min-height: 1.2em; margin: 0; color: var(--danger); font-size: 12px; text-align: center; }
-.lock-hint { margin: 0; color: var(--text-muted, var(--text)); font-size: 12px; text-align: center; }
+.lock-hint { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
 .lock-link { align-self: center; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
+.lock-quick { display: flex; flex-direction: column; }
 .lock-quick:empty { display: none; }
-.lock-sandbox-note { margin: 4px 0 0; color: var(--text-muted, var(--text)); font-size: 11px; text-align: center; max-width: 320px; }
+/* Quick unlock: as wide as Unlock and on the same centre line, in the secondary style. */
+.lock-secondary { padding: 6px 12px; background: var(--hover); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text); cursor: pointer; }
+.lock-secondary:hover:not(:disabled) { background: var(--selected); }
+.lock-secondary:disabled { opacity: 0.6; cursor: default; }
+.lock-sandbox-note { margin: 4px 0 0; color: var(--muted); font-size: 11px; text-align: center; max-width: 320px; }
 
 .migration-banner { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--popover); border-bottom: 1px solid var(--border); color: var(--text); font-size: 13px; }
 .migration-banner-text { flex: 1; }
@@ -41,3 +46,6 @@
 .selftest-card { width: 360px; }
 .selftest-text { margin: 0 0 6px; font-size: 13px; line-height: 1.45; }
 .selftest-text code { font-family: var(--font-mono, monospace); font-size: 12px; }
+.migration-banner-form { display: flex; align-items: center; gap: 8px; }
+/* Banners in the shell (App's `banners`) keep their height; the notes take what is left. */
+.app-shell > :is(.migration-banner, .vault-banner) { flex: none; }

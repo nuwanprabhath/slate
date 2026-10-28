@@ -70,7 +70,7 @@ html[data-material='glass'] :is(.toolbar, .title-bar)::before {
 }
 html[data-material='glass'] :is(.sidebar, .activity-bar, .toolbar, .title-bar)::after { z-index: 1; box-shadow: var(--glass-rim); }
 /* Popovers float over text, not over the canvas: their thick tint, with the sheen and rim on top. */
-html[data-material='glass'] :is(.palette-popover, .style-menu, .font-combo-list, .notebook-menu, .context-menu, .sync-popover) {
+html[data-material='glass'] :is(.palette-popover, .style-menu, .font-combo-list, .notebook-menu, .context-menu, .sync-popover, .find-bar) {
   background: var(--glass-sheen), var(--popover);
   box-shadow: var(--glass-rim), 0 8px 24px rgb(0 0 0 / 0.3);
 }
@@ -136,3 +136,4 @@ html[data-material='glass'] :is(.settings-dialog, .vault-dialog, .lock-card, .ai
   background-image: linear-gradient(var(--panel), var(--panel));
 }
 html[data-material='glass'] .lock-card { background-image: linear-gradient(var(--popover), var(--popover)); }
+.theme-describe label { display: flex; flex-direction: column; gap: 2px; }

@@ -61,6 +61,15 @@ export function clampWidth(width: number): number {
   return Math.min(COLUMN_MAX, Math.max(COLUMN_MIN, Math.round(width)))
 }
 
+/**
+ * The widest a column grows to fit its names: a fifth of the window. Two long names once took 960 px
+ * of an 800 px window and pushed the page out of it; a longer name is cut with its full text in a
+ * tooltip. A width the user dragged is theirs and is not capped.
+ */
+export function autoFitCap(windowWidth: number): number {
+  return clampWidth(Math.floor(windowWidth / 5))
+}
+
 export interface MeasuredRow {
   /** Rendered width of the name, unclipped. */
   text: number

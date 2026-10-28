@@ -67,12 +67,18 @@ export function PasswordFields({
 
   return (
     <>
-      <SecretField fieldRef={first} data-testid={testId} placeholder="New password" autoFocus onEdit={firstEdited} />
-      <SecretField fieldRef={again} data-testid={`${testId}-again`} placeholder="The same password again" onEdit={compare} />
-      <span className="vault-hint" data-testid={`${testId}-strength`}>
-        {check === null ? 'At least 10 characters. A few unrelated words make a strong one.' : check.ok ? `Strength: ${STRENGTH[check.strength]}` : check.reason}
-        {check?.ok && againTyped && !same ? ' · The two passwords differ.' : ''}
-      </span>
+      <label className="vault-field">
+        <span>New password</span>
+        <SecretField fieldRef={first} data-testid={testId} autoFocus onEdit={firstEdited} />
+      </label>
+      <label className="vault-field">
+        <span>Type it again</span>
+        <SecretField fieldRef={again} data-testid={`${testId}-again`} onEdit={compare} />
+        <span className="vault-hint" data-testid={`${testId}-strength`}>
+          {check === null ? 'At least 10 characters. A few unrelated words make a strong one.' : check.ok ? `Strength: ${STRENGTH[check.strength]}` : check.reason}
+          {check?.ok && againTyped && !same ? ' · The two passwords differ.' : ''}
+        </span>
+      </label>
     </>
   )
 }

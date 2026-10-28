@@ -84,9 +84,9 @@ export function UpdatesSection() {
         />
         Check for updates automatically
       </label>
-      <p className="updates-help">Slate asks GitHub whether there is a newer release. Nothing is downloaded or installed without you saying so.</p>
+      <p className="updates-help settings-indent">Slate asks GitHub whether there is a newer release. Nothing is downloaded or installed without you saying so.</p>
       {settings.updateAutomaticChecks && (
-        <label className="updates-field">
+        <label className="updates-field settings-indent">
           Every
           <select data-testid="setting-update-interval" value={hours} onChange={(e) => save({ updateCheckIntervalHours: Number(e.target.value) })}>
             {intervals.map((h) => (

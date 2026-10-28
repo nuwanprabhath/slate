@@ -14,7 +14,7 @@
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { expect } from '../fixtures'
+import { expect, test } from '../fixtures'
 import { auditUi, type UiViolation } from './audit'
 
 /** The built-in themes every scenario is checked in (shared/theme/builtins.ts). */
@@ -110,6 +110,8 @@ export async function reviewUi(app: ElectronApplication, page: Page, name: strin
   const themes = opts.themes ?? THEMES
   const height = opts.height ?? 820
   mkdirSync(SHOTS, { recursive: true })
+  // Each pass (theme × width × screenful) takes a few seconds; the scenario's own budget is for its steps.
+  test.info().setTimeout(test.info().timeout + themes.length * widths.length * 15_000)
   const found: Array<UiViolation & { shot: string }> = []
   for (const theme of themes) {
     await setTheme(app, page, theme)

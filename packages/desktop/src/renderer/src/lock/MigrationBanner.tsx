@@ -40,6 +40,7 @@ export function MigrationBanner() {
       </span>
       {asking ? (
         <form
+          className="migration-banner-form"
           onSubmit={(e) => {
             e.preventDefault()
             void finish()

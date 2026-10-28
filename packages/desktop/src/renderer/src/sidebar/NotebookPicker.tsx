@@ -34,7 +34,7 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
         />
       ) : (
         <button type="button" className="notebook-current" data-testid="notebook-picker" onClick={() => setOpen((o) => !o)}>
-          <span className="label">{current.doc.name}</span>
+          <span className="label" title={current.doc.name}>{current.doc.name}</span>
           {notebookAccess && (
             <span className="ai-badge" data-testid="ai-badge" title={accessTitle(notebookAccess)}>
               AI

@@ -23,7 +23,7 @@
 .vault-primary { padding: 6px 14px; background: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-control); color: var(--accent-contrast); cursor: pointer; }
 .vault-primary:disabled { opacity: 0.6; cursor: default; }
 .vault-error { color: var(--danger); min-height: 1.2em; }
-.vault-hint { color: var(--text-muted, var(--text)); font-size: 12px; }
+.vault-hint { color: var(--muted); font-size: 12px; }
 .vault-key { display: grid; grid-template-columns: repeat(7, auto); gap: 6px 10px; justify-content: center; padding: 12px; font-family: var(--font-mono, monospace); font-size: 15px; letter-spacing: 0.06em; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; user-select: all; }
 .vault-steps { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .vault-steps li[data-state='done']::before { content: '✓ '; }
@@ -57,3 +57,19 @@
   display: block;
   margin: 4px 0;
 }
+
+/*
+ * A labelled field (PasswordFields, Settings → Security): label, field, then its muted hint, 4px
+ * apart, one per row. Fields share one width so their edges line up.
+ */
+.vault-field { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; }
+.vault-field > input, .vault-field > textarea { box-sizing: border-box; width: 320px; max-width: 100%; }
+.vault-dialog .vault-field { align-self: stretch; }
+.vault-dialog .vault-field > input { width: 100%; }
+.settings-group > .lock-link, .settings-link { align-self: flex-start; padding: 0; margin-top: -6px; }
+
+/* Settings → Security's groups: a titled box holding a stack of fields. */
+.settings-group { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; margin: 0; padding: 10px 14px 14px; border: 1px solid var(--border); border-radius: 6px; }
+.settings-group > legend { padding: 0 4px; font-weight: 600; }
+.settings-group > p { margin: 0; }
+.vault-hint:empty { display: none; }

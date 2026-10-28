@@ -31,3 +31,6 @@
 .settings-field { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; }
 .settings-path { font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
 .settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.settings-pane > p { margin: 0; }
+/* Under a checkbox: on its label's edge (15px box + 8px gap), like CheckboxSetting's help. */
+.settings-indent { margin-left: 23px; }

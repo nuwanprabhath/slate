@@ -26,13 +26,17 @@ for (const problem of ['join-needed', 'other-vault', 'not-encrypted'] as const) 
     await expect(page.getByTestId('canvas')).toBeVisible()
     const state = { ...(await page.evaluate(() => window.slate.sync.status())), vaultProblem: problem, plaintextWarning: problem === 'not-encrypted' }
     await stubInvoke(app, 'sync:status', state)
-    await sendEvent(app, 'sync:status-event', state)
-    await expect(page.getByTestId(problem === 'not-encrypted' ? 'vault-remote-plain-banner' : 'vault-join-banner')).toBeVisible()
-    await reviewUi(app, page, `banner vault ${problem}`)
-    if (problem !== 'join-needed') return
-    // The reported defect: "Enter password…" was cut by the window's top edge, over the title bar.
-    const [bar, button] = await Promise.all([page.getByTestId('title-bar').boundingBox(), page.getByTestId('vault-join-open').boundingBox()])
-    expect(button!.y).toBeGreaterThanOrEqual(bar!.y + bar!.height)
+    // Re-sent on every pass: a theme change is a settings write, after which main sends the real status.
+    await reviewUi(app, page, `banner vault ${problem}`, {
+      open: async (p) => {
+        await sendEvent(app, 'sync:status-event', state)
+        const banner = p.getByTestId(problem === 'not-encrypted' ? 'vault-remote-plain-banner' : 'vault-join-banner')
+        await expect(banner).toBeVisible()
+        // The reported defect: the banner's button was cut by the window's top edge, over the title bar.
+        const [bar, box] = await Promise.all([p.getByTestId('title-bar').boundingBox(), banner.boundingBox()])
+        expect(box!.y).toBeGreaterThanOrEqual(bar!.y + bar!.height)
+      },
+    })
   })
 }
 

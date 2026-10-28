@@ -60,18 +60,16 @@ function ChangePassword() {
   return (
     <fieldset className="settings-group" data-testid="security-change-password">
       <legend>Change password</legend>
-      <SecretField
-        fieldRef={currentField}
-        data-testid="security-current"
-        placeholder={useRecovery ? 'Recovery key' : 'Current password'}
-        onEdit={(f) => setCurrentTyped(f.value !== '')}
-      />
-      <button type="button" className="lock-link" onClick={() => setUseRecovery(!useRecovery)}>
+      <label className="vault-field">
+        <span>{useRecovery ? 'Recovery key' : 'Current password'}</span>
+        <SecretField fieldRef={currentField} data-testid="security-current" onEdit={(f) => setCurrentTyped(f.value !== '')} />
+      </label>
+      <button type="button" className="lock-link settings-link" onClick={() => setUseRecovery(!useRecovery)}>
         {useRecovery ? 'Use the current password' : 'Forgot it? Use the recovery key'}
       </button>
       <PasswordFields control={newPassword} onValid={onNextValid} testId="security-new" />
-      <div className="security-row">
-        <button type="button" data-testid="security-change-submit" disabled={busy || !nextOk || !currentTyped} onClick={() => void submit()}>
+      <div className="settings-actions">
+        <button type="button" className="btn" data-testid="security-change-submit" disabled={busy || !nextOk || !currentTyped} onClick={() => void submit()}>
           Change password
         </button>
         <span className="vault-hint" data-testid="security-change-message">{message}</span>
@@ -151,7 +149,7 @@ export function SecuritySection({ settings, patch, onClose }: SectionProps) {
       {sandboxNotice && (
         <div className="security-sandbox-notice" role="note" data-testid="security-sandbox-notice">
           <strong>{sandboxNotice.title}</strong>
-          <p className="settings-hint">{sandboxNotice.body}</p>
+          <p className="settings-help">{sandboxNotice.body}</p>
           <button type="button" data-testid="security-sandbox-dismiss" onClick={() => patch({ sandboxNoticeDismissed: true })}>
             Don't show again
           </button>
