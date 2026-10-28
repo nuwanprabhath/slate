@@ -86,7 +86,7 @@ export function SectionList({ nb, items, selectedSectionId, onSelect, onDeleted 
               onCancel={() => setRenaming(null)}
             />
           ) : (
-            <span className="label">{item.title}</span>
+            <span className="label" title={item.title}>{item.title}</span>
           )}
           {item.access && (
             <span className="ai-badge" data-testid="ai-badge" title={accessTitle(item.access)}>

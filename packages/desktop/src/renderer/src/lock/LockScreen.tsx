@@ -90,6 +90,13 @@ export function LockScreen() {
         <button type="submit" className="lock-unlock" data-testid="lock-unlock" disabled={!typed || busy}>
           {busy ? 'Unlocking…' : 'Unlock'}
         </button>
+        <div className="lock-quick" data-testid="lock-quick">
+          {quick && mode === 'password' && (
+            <button type="button" className="lock-secondary" data-testid="lock-quick-unlock" disabled={busy} onClick={() => void quickUnlock()}>
+              {quick === 'touchid' ? 'Unlock with Touch ID' : 'Unlock'}
+            </button>
+          )}
+        </div>
         <p className="lock-error" data-testid="lock-error" role="alert">
           {error ?? ''}
         </p>
@@ -97,13 +104,6 @@ export function LockScreen() {
         <button type="button" className="lock-link" data-testid="lock-switch" onClick={switchMode}>
           {mode === 'password' ? 'Use recovery key' : 'Use password'}
         </button>
-        <div className="lock-quick" data-testid="lock-quick">
-          {quick && mode === 'password' && (
-            <button type="button" className="lock-unlock" data-testid="lock-quick-unlock" disabled={busy} onClick={() => void quickUnlock()}>
-              {quick === 'touchid' ? 'Unlock with Touch ID' : 'Unlock'}
-            </button>
-          )}
-        </div>
         {sandboxNote && (
           <p className="lock-sandbox-note" data-testid="lock-sandbox-note">
             {sandboxNote}

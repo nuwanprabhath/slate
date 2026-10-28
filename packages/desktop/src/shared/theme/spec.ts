@@ -111,7 +111,7 @@ export const DEFAULT_PALETTE: Record<PaletteToken, string> = {
   'text': '#e6e6e6',
   'muted': '#9a9a9a',
   'accent': '#b48ce8',
-  'accent-contrast': '#ffffff',
+  'accent-contrast': '#1b1325',
   'link': '#8ab4f8',
   'selection': 'rgba(180, 140, 232, 0.35)',
   'hover': '#333333',

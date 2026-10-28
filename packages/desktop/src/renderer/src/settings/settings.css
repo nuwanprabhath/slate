@@ -19,3 +19,18 @@
 
 /* POAM-16: Settings → Security notice while unsandboxed. */
 .security-sandbox-notice { padding: 8px 10px; margin-bottom: 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 4px; }
+
+/*
+ * The layout every section uses: a stack of fields on one left edge, 12px apart. A field is its
+ * label, then its control, then its muted help, 4px apart; a row of actions wraps rather than
+ * squeezing a column.
+ */
+.settings-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.settings-stack > * { margin: 0; max-width: 100%; }
+.settings-stack > .settings-row, .settings-stack > p { align-self: stretch; }
+.settings-field { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; }
+.settings-path { font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
+.settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.settings-pane > p { margin: 0; }
+/* Under a checkbox: on its label's edge (15px box + 8px gap), like CheckboxSetting's help. */
+.settings-indent { margin-left: 23px; }

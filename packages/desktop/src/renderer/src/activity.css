@@ -15,7 +15,7 @@
 .splitter > .collapse-button:focus-visible, .rail-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .column-rail { flex: none; width: 20px; box-sizing: border-box; display: flex; justify-content: center; padding-top: 8px; background: var(--panel); border-left: 1px solid var(--border); cursor: pointer; }
 .column-rail:hover { background: var(--hover); }
-.rail-button { width: 18px; height: 18px; padding: 0; border: none; border-radius: 4px; background: none; color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer; }
+.rail-button { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: none; border-radius: 4px; background: none; color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer; }
 .rail-button:hover { color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .splitter > .collapse-button { transition: none; } }
 body.resizing-columns { user-select: none; cursor: col-resize; }

@@ -1,0 +1,31 @@
+import { expect, MOD, test } from '../fixtures'
+import { reviewUi } from './review'
+
+/** The "Encrypt my notes" wizard, step by step, up to the confirmation of the recovery key. */
+test('UI: the encrypt wizard steps', async ({ app, page }) => {
+  test.setTimeout(240_000)
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await page.keyboard.press(`${MOD}+,`)
+  await page.getByTestId('settings-nav-security').click()
+  await page.getByTestId('security-encrypt').click()
+  const wizard = page.getByTestId('encrypt-wizard')
+  await expect(wizard).toBeVisible()
+  await reviewUi(app, page, 'wizard explain')
+  await page.getByTestId('wizard-next').click()
+  await expect(page.getByTestId('wizard-password')).toBeVisible()
+  await reviewUi(app, page, 'wizard password')
+  await page.getByTestId('wizard-password').fill('short')
+  await expect(page.getByTestId('wizard-password-strength')).not.toContainText('A few unrelated words')
+  await reviewUi(app, page, 'wizard password weak')
+  await page.getByTestId('wizard-password').fill('e2e ui wizard password')
+  await page.getByTestId('wizard-password-again').fill('e2e ui wizard password')
+  await page.getByTestId('wizard-next').click()
+  await expect(page.getByTestId('recovery-key').locator('span')).toHaveCount(14, { timeout: 60_000 })
+  await reviewUi(app, page, 'wizard recovery key')
+  await page.getByTestId('wizard-next').click()
+  await expect(page.getByTestId('recovery-confirm-input')).toBeVisible()
+  await page.getByTestId('recovery-confirm-input').fill('0000-1111')
+  await page.getByTestId('wizard-next').click()
+  await expect(page.getByTestId('wizard-error')).not.toHaveText('')
+  await reviewUi(app, page, 'wizard confirm error')
+})

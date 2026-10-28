@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { testsFailOnBase } from './testsFailOnBase.mjs'
+import { uiReviewProblems } from './uiReview.mjs'
 
 let input = {}
 try { input = JSON.parse(readFileSync(0, 'utf8')) } catch { /* no input: use the defaults */ }
@@ -84,6 +85,12 @@ const trailer = (key) => (base ? git(['log', `--format=%(trailers:key=${key},val
   if (src.length > 0 && tests.length === 0 && trailer('No-Test-Reason') === '') {
     problems.push(`── no test ──\nThis branch changes ${String(src.length)} source file(s) (${src.slice(0, 4).join(', ')}) and no test.\nAdd a test in the cheapest layer that proves the change (unit in packages/*/test, main-process in src/main/*.test.ts, e2e in packages/desktop/e2e). That is the fix.\n(Last resort, only if no test can prove it, e.g. a comment or style change: a commit trailer \`No-Test-Reason: <why>\`. merge-wp prints every trailer and the lead judges it.)`)
   }
+}
+
+// What a person sees is not broken: renderer changes come with a UI scenario (uiReview.mjs).
+{
+  const allowCount = (rev) => git(['grep', '-c', 'data-ui-allow', ...(rev ? [rev] : []), '--', 'packages/desktop/src/renderer']).split('\n').reduce((n, l) => n + (Number(l.split(':').pop()) || 0), 0)
+  problems.push(...uiReviewProblems({ changed, trailer, allowNow: allowCount(''), allowBase: base ? allowCount(base) : 0 }))
 }
 
 // Done work is committed work.

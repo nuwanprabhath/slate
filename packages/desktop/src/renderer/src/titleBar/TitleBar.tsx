@@ -24,7 +24,11 @@ export function TitleBar({ title }: { title: string }) {
       }}
     >
       {kind === 'overlay' && <MenuBar />}
-      <span className="title-bar-title" data-testid="title-bar-title">
+      <span
+        className="title-bar-title"
+        data-testid="title-bar-title"
+        data-ui-allow="clipped-text: the window title; the page and notebook names show in full in the library and its tooltips"
+      >
         {title}
       </span>
     </header>

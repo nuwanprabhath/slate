@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { COLUMN_MAX, COLUMN_MIN, fitWidth, type MeasuredRow } from './layout'
+import { SideChevronIcon } from './toolbarIcons'
+import { autoFitCap, COLUMN_MAX, COLUMN_MIN, fitWidth, type MeasuredRow } from './layout'
 
 const KEY_STEP = 16
 
@@ -42,6 +43,12 @@ interface ColumnProps {
 export function Column({ testId, width, children }: ColumnProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [fitted, setFitted] = useState(COLUMN_MIN)
+  const [cap, setCap] = useState(() => autoFitCap(window.innerWidth))
+  useLayoutEffect(() => {
+    const onResize = () => setCap(autoFitCap(window.innerWidth))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useLayoutEffect(() => {
     const root = ref.current
@@ -56,7 +63,7 @@ export function Column({ testId, width, children }: ColumnProps) {
   }, [])
 
   return (
-    <div ref={ref} className="column" data-testid={testId} style={{ width: width ?? fitted }}>
+    <div ref={ref} className="column" data-testid={testId} style={{ width: width ?? Math.min(fitted, cap) }}>
       {children}
     </div>
   )
@@ -86,7 +93,7 @@ export function Rail({ testId, label, buttonTestId, onExpand }: RailProps) {
   return (
     <div className="column-rail" data-testid={testId} onClick={onExpand}>
       <button type="button" className="rail-button" data-testid={buttonTestId} aria-label={label} title={label} onClick={onExpand}>
-        ›
+        <SideChevronIcon direction="right" />
       </button>
     </div>
   )
@@ -151,7 +158,7 @@ export function Splitter({ testId, label, width, onChange, collapse }: Props) {
           onKeyDown={(e) => e.stopPropagation()}
           onClick={collapse.onCollapse}
         >
-          ‹
+          <SideChevronIcon direction="left" />
         </button>
       )}
     </div>

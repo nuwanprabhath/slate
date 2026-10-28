@@ -70,3 +70,28 @@
 .font-combo-list li { padding: 4px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .font-combo-list li[aria-selected='true'] { background: var(--selected); }
 .font-combo-error { color: var(--danger); font-size: 12px; }
+
+/*
+ * Buttons: `.btn` (secondary), `.btn.primary` (the one main action), `.btn.danger`. A <button> with
+ * no class of its own gets the secondary look too, so none is ever left as the browser's grey
+ * default (UI audit, native-control); a component class still overrides it (:where).
+ */
+:where(.btn, button:not([class])) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 10px;
+  background: var(--hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  white-space: nowrap;
+  cursor: pointer;
+}
+:where(.btn, button:not([class])):hover:not(:disabled) { background: var(--selected); }
+:where(.btn, button:not([class])):disabled { opacity: 0.55; cursor: default; }
+:where(.btn.primary) { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+:where(.btn.primary):hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+:where(.btn.danger) { color: var(--danger); }

@@ -72,7 +72,7 @@ export function PageList({ nb, section, selectedPageId, onSelect, onDeleted }: P
                   onCancel={() => setRenaming(null)}
                 />
               ) : (
-                <span className="label">{page.title || 'Untitled page'}</span>
+                <span className="label" title={page.title || 'Untitled page'}>{page.title || 'Untitled page'}</span>
               )}
               {page.access && (
                 <span className="ai-badge" data-testid="ai-badge" title={accessTitle(page.access)}>

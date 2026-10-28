@@ -109,3 +109,12 @@ export function LockIcon() {
     </svg>
   )
 }
+
+/** A chevron pointing left (collapse) or right (expand), drawn like ChevronIcon. */
+export function SideChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === 'left' ? 'M6 2 3 5l3 3' : 'm4 2 3 3-3 3'} />
+    </svg>
+  )
+}
