@@ -46,10 +46,15 @@ createRoot(document.getElementById('root')!).render(
       <LockScreen />
     ) : (
       <>
-        <MigrationBanner />
-        <QuickUnlockOffer />
-        <VaultBanners />
-        <App />
+        <App
+          banners={
+            <>
+              <MigrationBanner />
+              <QuickUnlockOffer />
+              <VaultBanners />
+            </>
+          }
+        />
         <EncryptWizard />
       </>
     )}

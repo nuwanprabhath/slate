@@ -97,7 +97,12 @@ export function useServices(settings: Settings): EditorServices {
 const noSubscribe = () => () => {}
 const noVersion = () => 0
 
-export function App() {
+/**
+ * `banners`: the vault, migration and quick-unlock banners (main.tsx). They go under the title bar,
+ * inside the shell's height: above it they sat under the traffic lights and pushed the window's
+ * bottom edge out of view.
+ */
+export function App({ banners }: { banners?: ReactNode }) {
   const [library, setLibrary] = useState<Library | null>(null)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   useEffect(() => {
@@ -134,10 +139,16 @@ export function App() {
   // Re-renders when the first notebook arrives, to swap the waiting state for the workspace.
   useSyncExternalStore(library?.subscribe ?? noSubscribe, library?.getVersion ?? noVersion)
   if (!library) return <div className="app-loading">Loading…</div>
-  if (library.isEmpty()) return <WaitingForNotebooks library={library} />
+  if (library.isEmpty())
+    return (
+      <>
+        {banners}
+        <WaitingForNotebooks library={library} />
+      </>
+    )
   return (
     <EditorServicesContext.Provider value={services}>
-      <Workspace library={library} onShowImport={showImport} />
+      <Workspace library={library} onShowImport={showImport} banners={banners} />
       {aiActivity && <AiActivity onClose={() => setAiActivity(false)} />}
       {importOpen && <ImportDialog onClose={closeImport} initial={importOpen} />}
       {connectOpen && <ConnectAgents onClose={closeConnectAgents} />}
@@ -204,7 +215,7 @@ function Notices() {
   )
 }
 
-function Workspace({ library, onShowImport }: { library: Library; onShowImport: () => void }) {
+function Workspace({ library, onShowImport, banners }: { library: Library; onShowImport: () => void; banners: ReactNode }) {
   useSyncExternalStore(library.subscribe, library.getVersion)
   const [selection, setSelection] = useState<Selection>(loadSelection)
   const notebooks = library.notebooks()
@@ -329,6 +340,7 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
   return (
     <div className="app-shell">
       <TitleBar title={page ? `${page.title || 'Untitled page'} — ${entry.doc.name}` : entry.doc.name} />
+      {banners}
       <div className="app">
         <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
         {layout.panelOpen && (activeTool.id === 'library' ? activeTool.panel() : sidePane(activeTool.panel()))}

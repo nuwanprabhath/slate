@@ -39,7 +39,7 @@ export function DiagnosticsSection(): JSX.Element {
   }
 
   return (
-    <div data-testid="diagnostics-section">
+    <div className="settings-stack" data-testid="diagnostics-section">
       <label className="settings-row">
         <input type="checkbox" data-testid="setting-debug-log" checked={on} onChange={(e) => toggle(e.target.checked)} />
         <span>Write a diagnostic log</span>
@@ -53,12 +53,12 @@ export function DiagnosticsSection(): JSX.Element {
         imports, errors. <strong>Not</strong> your notes: no page or box text, no page or section titles, no search
         queries. Your home folder is shown as <code>~</code>, and anything shaped like a token or a password is stripped.
       </p>
-      <div className="settings-row">
+      <div className="settings-field">
         <strong>Log file</strong>
-        <code data-testid="diagnostics-path">{status?.file ?? ''}</code>
+        <code className="settings-path" data-testid="diagnostics-path">{status?.file ?? ''}</code>
         <span className="settings-help">{status && status.bytes > 0 ? formatBytes(status.bytes) : 'Nothing written yet.'}</span>
       </div>
-      <div className="settings-row">
+      <div className="settings-actions">
         <button className="btn" data-testid="diagnostics-open" onClick={() => void window.slate.diagnostics.openFolder()}>
           Open log folder
         </button>

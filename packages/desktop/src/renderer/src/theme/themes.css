@@ -125,3 +125,14 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
 .theme-fonts { display: flex; flex-direction: column; gap: 8px; }
 /* Labels share one width so the two font boxes line up. */
 .theme-fonts .settings-inline > :first-child { min-width: 80px; }
+
+/*
+ * A modal panel in Glass: its tint over the page colour, so it is opaque. The pane behind a dialog
+ * is dimmed, not hidden, and at 85% the canvas text read through the settings (UI audit,
+ * see-through-popup). Painted once, so no backdrop-filter cost.
+ */
+html[data-material='glass'] :is(.settings-dialog, .vault-dialog, .lock-card, .ai-activity, .connect-agents) {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--panel), var(--panel));
+}
+html[data-material='glass'] .lock-card { background-image: linear-gradient(var(--popover), var(--popover)); }
