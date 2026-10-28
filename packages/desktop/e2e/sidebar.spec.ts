@@ -95,3 +95,7 @@ test('notebooks can be created and switched; structure persists', async () => {
   await expect(second.page.getByTestId('section-item')).toHaveText(['Quick Notes', 'Routes'])
   await second.app.close()
 })
+
+test('the Settings button shows a gear, not a sun', async ({ page }) => {
+  await expect(page.getByTestId('activity-settings').locator('svg[data-icon="gear"]')).toBeVisible()
+})

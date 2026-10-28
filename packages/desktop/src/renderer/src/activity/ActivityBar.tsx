@@ -43,9 +43,9 @@ export function ActivityBar({ tools, activeId, panelOpen, onSelect, bottom }: Pr
           title={`Settings (${isMac ? '⌘,' : 'Ctrl+,'})`}
           onClick={() => openSettings()}
         >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <svg data-icon="gear" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M8.6 2.5h2.8l.4 1.9 1.2.5 1.6-1.1 2 2-1.1 1.6.5 1.2 1.9.4v2.8l-1.9.4-.5 1.2 1.1 1.6-2 2-1.6-1.1-1.2.5-.4 1.9H8.6l-.4-1.9-1.2-.5-1.6 1.1-2-2 1.1-1.6-.5-1.2-1.9-.4V8.6l1.9-.4.5-1.2-1.1-1.6 2-2 1.6 1.1 1.2-.5Z" />
             <circle cx="10" cy="10" r="2.5" />
-            <path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" />
           </svg>
         </button>
       </div>
