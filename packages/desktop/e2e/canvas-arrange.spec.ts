@@ -78,3 +78,23 @@ test('Re-arrange boxes is disabled when nothing overlaps', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('canvas-menu')).toHaveCount(0)
 })
+
+test('a handle over another box is always drawn, and the front box text outside it still takes the caret', async ({ page }) => {
+  const a = await boxWithText(page, 100, 100, 'front box first line\nfront box second line\nthird line')
+  const b = await boxWithText(page, 100, 400, 'back box')
+  await moveBoxTo(page, b, a, 200, 30)
+  await a.locator('.slate-box-content').click({ position: { x: 5, y: 5 } })
+  // Nothing focused, pointer away from both boxes: the covering handle must show anyway.
+  await page.getByTestId('canvas').click({ position: { x: 5, y: 5 } })
+  const cr = await rect(page.getByTestId('canvas'))
+  await page.mouse.move(cr.x + 5, cr.y + cr.height - 5)
+  await expect(b.locator('.slate-box-bar')).toHaveCSS('opacity', '1')
+  // A handle over nothing keeps the hover-only look.
+  await expect(a.locator('.slate-box-bar')).toHaveCSS('opacity', '0')
+  // Front box text left of the covering handle places the caret in the front box.
+  const h = await rect(b.getByTestId('box-handle'))
+  const ar = await rect(a)
+  await page.mouse.click(ar.x + 20, h.y + h.height / 2)
+  await expect(a.locator('[data-testid="box-editor"]')).toBeFocused()
+  expect(Math.round((await rect(b)).x)).toBe(Math.round(ar.x + 200))
+})

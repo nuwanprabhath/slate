@@ -35,6 +35,7 @@ export function CanvasMenu({ at, items, onClose }: { at: { x: number; y: number 
           key={item.testId}
           type="button"
           role="menuitem"
+          className="context-menu-item"
           data-testid={item.testId}
           disabled={item.disabled}
           onClick={() => {

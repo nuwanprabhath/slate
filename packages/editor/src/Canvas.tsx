@@ -22,6 +22,8 @@ type PendingInput = { text: string } | { enter: true } | { html: string; plain: 
 const isMod = (e: KeyboardEvent) => e.metaKey || e.ctrlKey
 /** Cmd on macOS, Ctrl elsewhere: the multi-select modifier, as in the platform's file managers. */
 const isSelectMod = (e: { metaKey: boolean; ctrlKey: boolean }) => (navigator.platform.startsWith('Mac') ? e.metaKey : e.ctrlKey)
+/** `.slate-box-bar`'s height in canvas.css. */
+const HANDLE_HEIGHT = 18
 const NO_SELECTION: ReadonlySet<string> = new Set()
 
 export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
@@ -46,6 +48,24 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     const order = [...boxes].sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     return new Map(order.map((b, i) => [b.id, i + 1]))
   }, [boxes])
+
+  // A handle bar stacks above every box body, so where one lies over another box it would catch
+  // clicks on that box's text unseen: those handles are always drawn.
+  const coveringHandles = useMemo(() => {
+    const out = new Set<string>()
+    for (const b of boxes) {
+      const top = b.y - HANDLE_HEIGHT
+      for (const o of boxes) {
+        if (o.id === b.id) continue
+        const oh = Math.max(session.heightOf(o.id) ?? 0, o.height ?? 0)
+        if (b.x < o.x + o.width && o.x < b.x + b.width && top < o.y + oh && o.y < b.y) {
+          out.add(b.id)
+          break
+        }
+      }
+    }
+    return out
+  }, [boxes, session])
 
   // A selected box that was deleted (here, by undo or on another device) leaves the selection.
   useEffect(() => {
@@ -275,6 +295,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
               onConflictClick={onConflictClick}
               layer={layers.get(b.id) ?? 1}
               selected={selection.has(b.id)}
+              handleShown={coveringHandles.has(b.id)}
               onPress={onBoxPress}
               onGroupDrag={onGroupDrag}
               groupDrag={groupDrag}

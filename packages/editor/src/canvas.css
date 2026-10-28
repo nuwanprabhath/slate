@@ -15,7 +15,7 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-box { position: absolute; display: flex; flex-direction: column; border: 1px solid transparent; border-radius: 4px; cursor: auto; }
 .slate-box-body { position: relative; z-index: var(--z); flex: 1; border-radius: 3px; background: linear-gradient(var(--page), var(--page)), var(--bg); }
 .slate-box.is-selected .slate-box-body { outline: 2px solid var(--accent); outline-offset: 1px; }
-.slate-box.is-selected .slate-box-bar { opacity: 1; }
+.slate-box.is-selected .slate-box-bar, .slate-box.handle-shown .slate-box-bar { opacity: 1; }
 .slate-box.is-selected .slate-box-handle { background: var(--accent); }
 .slate-box:hover, .slate-box:focus-within { border-color: var(--border); }
 .slate-box-bar { position: absolute; z-index: calc(var(--z) + 100000); top: -18px; left: -1px; right: -1px; height: 18px; display: flex; gap: 2px; opacity: 0; }

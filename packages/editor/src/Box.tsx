@@ -34,6 +34,8 @@ interface Props {
   onConflictClick?: (id: string) => void
   /** Position in the page's stacking order, 1 = back. */
   layer: number
+  /** The handle lies over another box: draw it always, so what catches the pointer there is visible. */
+  handleShown: boolean
   /** In the Cmd/Ctrl+click multi-selection. */
   selected: boolean
   /** Every pointer press on the box; returns true when the canvas consumed it (a Cmd/Ctrl+click). */
@@ -46,7 +48,7 @@ interface Props {
 
 type Gesture = { x: number; y: number; width: number; height?: number }
 
-function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick, layer, selected, onPress, onGroupDrag, groupDrag }: Props) {
+function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick, layer, selected, handleShown, onPress, onGroupDrag, groupDrag }: Props) {
   const onFocus = () => {
     session.bringToFront(box.id)
     onFocusBox(box.id)
@@ -157,7 +159,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
   return (
     <div
       ref={ref}
-      className={['slate-box', box.private && 'is-private', conflict && 'has-conflict', selected && 'is-selected'].filter(Boolean).join(' ')}
+      className={['slate-box', box.private && 'is-private', conflict && 'has-conflict', selected && 'is-selected', handleShown && 'handle-shown'].filter(Boolean).join(' ')}
       data-testid="box"
       data-box-id={box.id}
       aria-selected={selected}
@@ -248,6 +250,7 @@ export const Box = memo(
     a.box.height === b.box.height &&
     a.layer === b.layer &&
     a.selected === b.selected &&
+    a.handleShown === b.handleShown &&
     a.onPress === b.onPress &&
     a.onGroupDrag === b.onGroupDrag &&
     (a.selected ? a.groupDrag === b.groupDrag : true) &&
