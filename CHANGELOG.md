@@ -6,6 +6,10 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The Sections and Pages columns can each be collapsed to a slim rail: hover the column's splitter and click the chevron, then click the rail to bring it back at its previous width. The choice is remembered.
+
 ## [0.2.0] - 2026-10-27
 
 

@@ -5,8 +5,8 @@ import { ActivityBar } from './activity/ActivityBar'
 import { toolsFromViews } from './activity/tools'
 import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
-import { clampPane, clampWidth, loadLayout, loadLibraryBox, paneWidth, saveLayout, saveLibraryBox, scaleColumns, type Layout } from './layout'
-import { Column, Splitter } from './Splitter'
+import { clampPane, clampWidth, loadLayout, loadLibraryBox, paneWidth, saveLayout, saveLibraryBox, scaleExpanded, type Layout } from './layout'
+import { Column, Rail, Splitter } from './Splitter'
 import { currentSession } from './currentSession'
 import { ConnectAgents } from './ConnectAgents'
 import { findBar } from './find/FindBar'
@@ -274,14 +274,21 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
   // The Library's own splitters win over a manual Search width, so the two views stay the same width.
   const setLibraryWidth = (key: 'sectionsWidth' | 'pagesWidth', w: number | null) =>
     setLayout((l) => ({ ...l, [key]: w === null ? null : clampWidth(w), searchWidth: null }))
+  const setCollapsed = (key: 'sectionsCollapsed' | 'pagesCollapsed', value: boolean) => setLayout((l) => ({ ...l, [key]: value }))
   const resizeSearch = (w: number | null) =>
     setLayout((l) => {
       if (w === null) return { ...l, searchWidth: null }
       const box = libraryBox.current
       // The splitter measures the pane to its left; the pane's own splitter is 1 px more.
       const total = clampPane(w + 1, window.innerWidth)
-      const [sections, pages] = scaleColumns(box.sections, box.pages, total - (box.total - box.sections - box.pages))
-      return { ...l, searchWidth: total, sectionsWidth: clampWidth(sections), pagesWidth: clampWidth(pages) }
+      // A collapsed column keeps its stored width; only expanded columns take the new one.
+      const [sections, pages] = scaleExpanded(box.sections, box.pages, total - (box.total - box.sections - box.pages), l.sectionsCollapsed, l.pagesCollapsed)
+      return {
+        ...l,
+        searchWidth: total,
+        sectionsWidth: sections === null ? l.sectionsWidth : clampWidth(sections),
+        pagesWidth: pages === null ? l.pagesWidth : clampWidth(pages),
+      }
     })
   const sidePane = (panel: ReactNode) => (
     <div className="side-pane" style={{ width: paneWidth(layout.searchWidth, libraryBox.current.total, window.innerWidth) }}>
@@ -299,6 +306,9 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
         onImport={onShowImport}
       />
       <div className="sidebar-cols">
+        {layout.sectionsCollapsed ? (
+          <Rail testId="sections-column" buttonTestId="expand-sections" label="Show sections" onExpand={() => setCollapsed('sectionsCollapsed', false)} />
+        ) : (
         <Column testId="sections-column" width={layout.sectionsWidth}>
           <SectionList
             nb={entry.doc}
@@ -308,7 +318,19 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
             onDeleted={removeDocs}
           />
         </Column>
-        <Splitter testId="splitter-sections" label="Resize sections" width={layout.sectionsWidth} onChange={(w) => setLibraryWidth('sectionsWidth', w)} />
+        )}
+        {!layout.sectionsCollapsed && (
+          <Splitter
+            testId="splitter-sections"
+            label="Resize sections"
+            width={layout.sectionsWidth}
+            onChange={(w) => setLibraryWidth('sectionsWidth', w)}
+            collapse={{ label: 'Hide sections', testId: 'collapse-sections', onCollapse: () => setCollapsed('sectionsCollapsed', true) }}
+          />
+        )}
+        {layout.pagesCollapsed ? (
+          <Rail testId="pages-column" buttonTestId="expand-pages" label="Show pages" onExpand={() => setCollapsed('pagesCollapsed', false)} />
+        ) : (
         <Column testId="pages-column" width={layout.pagesWidth}>
           <PageList
             nb={entry.doc}
@@ -318,7 +340,16 @@ function Workspace({ library, onShowImport }: { library: Library; onShowImport: 
             onDeleted={removeDocs}
           />
         </Column>
-        <Splitter testId="splitter-pages" label="Resize pages" width={layout.pagesWidth} onChange={(w) => setLibraryWidth('pagesWidth', w)} />
+        )}
+        {!layout.pagesCollapsed && (
+          <Splitter
+            testId="splitter-pages"
+            label="Resize pages"
+            width={layout.pagesWidth}
+            onChange={(w) => setLibraryWidth('pagesWidth', w)}
+            collapse={{ label: 'Hide pages', testId: 'collapse-pages', onCollapse: () => setCollapsed('pagesCollapsed', true) }}
+          />
+        )}
       </div>
     </aside>
   )

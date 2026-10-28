@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { clampPane, clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, loadLibraryBox, paneWidth, PANE_MIN, saveLayout, saveLibraryBox, scaleColumns } from './layout'
+import { clampPane, clampWidth, COLUMN_MAX, COLUMN_MIN, fitWidth, loadLayout, loadLibraryBox, paneWidth, PANE_MIN, saveLayout, saveLibraryBox, scaleColumns, RAIL_WIDTH, scaleExpanded } from './layout'
 
 describe('fitWidth', () => {
   it('is the widest name plus its chrome', () => {
@@ -52,11 +52,11 @@ describe('layout storage', () => {
 
   it('migrates unversioned widths to auto but keeps the other settings', () => {
     store.set('slate:layout', JSON.stringify({ panelOpen: false, activeTool: 'x', sectionsWidth: 260, pagesWidth: 300 }))
-    expect(loadLayout()).toEqual({ panelOpen: false, activeTool: 'x', sectionsWidth: null, pagesWidth: null, searchWidth: null })
+    expect(loadLayout()).toEqual({ panelOpen: false, activeTool: 'x', sectionsWidth: null, pagesWidth: null, searchWidth: null, sectionsCollapsed: false, pagesCollapsed: false })
   })
 
   it('round-trips a manual width and an auto column', () => {
-    saveLayout({ panelOpen: true, activeTool: 'library', sectionsWidth: 222, pagesWidth: null, searchWidth: 400 })
+    saveLayout({ panelOpen: true, activeTool: 'library', sectionsWidth: 222, pagesWidth: null, searchWidth: 400, sectionsCollapsed: false, pagesCollapsed: false })
     expect(loadLayout()).toMatchObject({ sectionsWidth: 222, pagesWidth: null, searchWidth: 400 })
   })
 
@@ -93,5 +93,40 @@ describe('side pane width', () => {
 
   it('splits evenly when nothing was measured', () => {
     expect(scaleColumns(0, 0, 400)).toEqual([200, 200])
+  })
+})
+
+describe('collapsed columns', () => {
+  const store = new Map<string, string>()
+  const g = globalThis as { localStorage?: unknown }
+  beforeEach(() => {
+    store.clear()
+    g.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) }
+  })
+  afterEach(() => delete g.localStorage)
+
+  it('loads a v3 layout with both columns expanded', () => {
+    store.set('slate:layout', JSON.stringify({ version: 3, sectionsWidth: 260, pagesWidth: 300, searchWidth: 500 }))
+    expect(loadLayout()).toMatchObject({ sectionsWidth: 260, pagesWidth: 300, searchWidth: 500, sectionsCollapsed: false, pagesCollapsed: false })
+  })
+
+  it('loads and round-trips v4 collapsed flags, keeping the stored widths', () => {
+    store.set('slate:layout', JSON.stringify({ version: 4, sectionsWidth: 260, pagesWidth: 300, sectionsCollapsed: true, pagesCollapsed: false }))
+    expect(loadLayout()).toMatchObject({ sectionsWidth: 260, pagesWidth: 300, sectionsCollapsed: true, pagesCollapsed: false })
+    saveLayout({ ...loadLayout(), pagesCollapsed: true })
+    expect(loadLayout()).toMatchObject({ sectionsCollapsed: true, pagesCollapsed: true, sectionsWidth: 260 })
+  })
+
+  it('falls back to false for flags of the wrong type', () => {
+    store.set('slate:layout', JSON.stringify({ version: 4, sectionsCollapsed: 'yes', pagesCollapsed: 1 }))
+    expect(loadLayout()).toMatchObject({ sectionsCollapsed: false, pagesCollapsed: false })
+  })
+
+  it('scales only the expanded columns to a manual Search width', () => {
+    // 600 total, 41 of splitters and borders, no rails.
+    expect(scaleExpanded(100, 300, 600, false, false)).toEqual([150, 450])
+    expect(scaleExpanded(100, 300, 600, true, false)).toEqual([null, 600 - RAIL_WIDTH])
+    expect(scaleExpanded(100, 300, 600, false, true)).toEqual([600 - RAIL_WIDTH, null])
+    expect(scaleExpanded(100, 300, 600, true, true)).toEqual([null, null])
   })
 })
