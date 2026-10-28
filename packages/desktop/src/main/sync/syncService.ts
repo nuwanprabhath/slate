@@ -158,7 +158,8 @@ export class SyncService {
   private lastSyncedAt: number | undefined
   private running: Promise<SyncReport> | undefined
   private again = false
-  private timer: ReturnType<typeof setInterval> | undefined
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private interval = 0
   private soon: ReturnType<typeof setTimeout> | undefined
   private closed = false
   private readonly abort = new AbortController()
@@ -369,13 +370,23 @@ export class SyncService {
 
   /** Syncs now and then every interval. */
   start(): void {
-    const interval = this.deps.intervalMs ?? INTERVAL_MS
-    // A tick during a sync is skipped, not queued: a sync slower than the interval would
-    // otherwise run back to back forever.
-    if (interval > 0) this.timer = setInterval(() => {
-      if (!this.running) void this.now()
-    }, interval)
+    this.interval = this.deps.intervalMs ?? INTERVAL_MS
     void this.now()
+  }
+
+  /**
+   * The next timed sync, a whole interval after the last one ended. Counted from the end, not on a
+   * fixed tick: a sync about as long as the interval would otherwise be followed by the next tick at
+   * once, and the app would show "Syncing…" nearly all the time.
+   */
+  private schedule(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+    if (this.interval <= 0 || this.closed) return
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      if (!this.running) void this.now()
+    }, this.interval)
   }
 
   /** A local edit happened: sync shortly after, once edits pause. */
@@ -494,7 +505,7 @@ export class SyncService {
       if (this.again && !this.closed) {
         this.again = false
         void this.now()
-      }
+      } else this.schedule()
     })
     return this.running
   }
@@ -617,7 +628,7 @@ export class SyncService {
 
   close(): void {
     this.closed = true
-    if (this.timer) clearInterval(this.timer)
+    if (this.timer) clearTimeout(this.timer)
     if (this.soon) clearTimeout(this.soon)
     this.store.close()
   }
@@ -628,7 +639,7 @@ export class SyncService {
    */
   async stop(): Promise<void> {
     this.closed = true
-    if (this.timer) clearInterval(this.timer)
+    if (this.timer) clearTimeout(this.timer)
     if (this.soon) clearTimeout(this.soon)
     this.abort.abort()
     await this.running?.catch(() => {})

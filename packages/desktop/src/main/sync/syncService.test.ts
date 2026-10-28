@@ -38,7 +38,7 @@ let dir: string
 let drive: FakeDrive
 const devices: Device[] = []
 
-async function device(name: string, opts: { enabled?: boolean; signedIn?: boolean; keyRing?: KeyRing } = {}): Promise<Device> {
+async function device(name: string, opts: { enabled?: boolean; signedIn?: boolean; keyRing?: KeyRing; intervalMs?: number } = {}): Promise<Device> {
   const dbFile = join(dir, `${name}.db`)
   const store = new DocStore(dbFile)
   const blobs = new FileBlobStore(join(dir, `${name}-blobs`))
@@ -55,7 +55,7 @@ async function device(name: string, opts: { enabled?: boolean; signedIn?: boolea
     gitDir: join(dir, `${name}-git`),
     secrets,
     deviceName: name,
-    intervalMs: 0,
+    intervalMs: opts.intervalMs ?? 0,
     emitStatus: (s) => states.push(s),
     emitNotice: (m) => notices.push(m),
     emitOpenNotebook: (id) => opened.push(id),
@@ -97,6 +97,31 @@ afterEach(async () => {
 })
 
 describe('SyncService', () => {
+  it('waits a full interval after a sync ends before the timer starts the next, however long the sync took', async () => {
+    const interval = 100
+    const a = await device('A', { intervalMs: interval })
+    const spans: Array<{ start: number; end: number }> = []
+    const inner = a.service as unknown as { run: () => Promise<unknown> }
+    const run = inner.run.bind(a.service)
+    // Each sync outlasts two ticks, as a git sync does under the e2e's 500 ms interval.
+    inner.run = async () => {
+      const span = { start: Date.now(), end: 0 }
+      spans.push(span)
+      try {
+        return await run()
+      } finally {
+        await new Promise((r) => setTimeout(r, interval * 2.5))
+        span.end = Date.now()
+      }
+    }
+    a.service.start()
+    await new Promise((r) => setTimeout(r, interval * 12))
+    await a.service.stop()
+    const done = spans.filter((s) => s.end > 0)
+    expect(done.length).toBeGreaterThanOrEqual(2)
+    for (let i = 1; i < done.length; i++) expect(done[i]!.start - done[i - 1]!.end).toBeGreaterThanOrEqual(interval - 5)
+  })
+
   it('delivers a page from A into B as remote updates and never uploads them back', async () => {
     const a = await device('A')
     const b = await device('B')
