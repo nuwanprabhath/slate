@@ -28,6 +28,7 @@ build plan: `docs/superpowers/plans/2026-10-21-phase-1-local-editor.md`.
 | MCP server for agents | `bin/slate-mcp` (build first); register with `claude mcp add slate -- $PWD/bin/slate-mcp` |
 | Lint (whole repo; this branch's files) | `npm run lint`; `npm run lint:changed` |
 | Guard tests (and the lint rules' own tests) | `npm run guards` |
+| UI scenarios and screenshots on one page (`ui-review/index.html`) | `npm run ui:review` |
 
 ## Never
 
@@ -76,6 +77,7 @@ explain it under "Guardrail conflicts" in your report; the maintainer decides. B
 | Exception lists only shrink: allowlists (and the names inside them) and `eslint-suppressions.json` | `tools/guards/ratchet.test.ts` | G1 |
 | Every dependency is approved with a reason; registry versions with integrity hashes only | `tools/guards/dependencies.test.ts` (`allowlists/dependencies.json`) | G1 |
 | The renderer CSP never allows `'unsafe-eval'` and only shrinks; the built app's CSP is B-4's (default none, no inline script, no remote images); asar on; fuses never looser than today | `tools/guards/packaging.test.ts` (`allowlists/fuses-loosened.json`) | G1; C8 |
+| What a person sees is not broken: no clipped or squeezed text, cut-off or crowded controls, overlaps, controls off their row's or column's centre line, see-through popups, browser-default controls, clipped placeholders, low contrast; every renderer change has a UI scenario whose screenshots are looked at | UI audit (`packages/desktop/e2e/ui/audit.ts`) in every scenario (`e2e/ui/*.ui.spec.ts`, `reviewUi`, run by `npm run e2e`); `npm run ui:review`; Stop hook (`.claude/hooks/uiReview.mjs`, `tools/guards/uiReview.test.ts`): a renderer change needs a scenario, a `data-ui-allow` a `UI-Allow-Reason:`, an audit change a `UI-Gate-Change:`; `.claude/skills/ui-review/SKILL.md` | phase 13 |
 | Guard files, the unlock file, review files, user settings and git history are off limits to agents | `.claude/hooks/guard-edits.mjs` (`tools/guards/guardEdits.test.ts`); CI: guard-file commits carry `Guardrail-Change:` (`scripts/agents/check-guard-commits.mjs`) | G1 |
 | Lint on every edit; typecheck, lint, guards and tests at every stop; a branch with security paths, allowlisted files or risky additions is reviewed before merge | `.claude/hooks/lint-edited.mjs`, `definition-of-done.mjs`, `tools/guards/hooks.test.ts`; `tools/guards/security-paths.txt`, `scripts/agents/review-gate.mjs`, `scripts/agents/merge-wp.sh` (`tools/guards/reviewGate.test.ts`) | G1 |
 | Commits: Conventional, no AI attribution, on a branch, lint-clean, never `--no-verify` | `.githooks/commit-msg`, `.githooks/pre-commit`, `guard-edits.mjs`; merge-wp re-checks subjects | phase 1; lint G1 |
