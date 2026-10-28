@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LoroDoc } from 'loro-crdt'
+import { LoroDoc, LoroMap } from 'loro-crdt'
 import { PageDoc } from '../src/page'
 
 function recordUpdates(doc: LoroDoc): Uint8Array[] {
@@ -75,5 +75,86 @@ describe('PageDoc', () => {
     expect(two.needsLayout()).toBe(true)
     two.setNeedsLayout(false)
     expect(two.needsLayout()).toBe(false)
+  })
+})
+
+describe('PageDoc stacking and min height', () => {
+  it('reads a box saved without z or height as z 0 and no min height', () => {
+    const doc = new LoroDoc()
+    const m = doc.getMap('boxes').setContainer('old', new LoroMap())
+    m.set('x', 1)
+    m.set('y', 2)
+    m.set('width', 300)
+    m.set('private', false)
+    m.setContainer('content', new LoroMap())
+    doc.commit()
+    const box = new PageDoc(doc).getBox('old')!
+    expect(box.z).toBe(0)
+    expect(box.height).toBeUndefined()
+  })
+
+  it('puts a new box on top', () => {
+    const page = new PageDoc()
+    const a = page.addBox({ x: 0, y: 0, width: 100 })
+    const b = page.addBox({ x: 0, y: 0, width: 100 })
+    expect(page.getBox(b)!.z).toBeGreaterThan(page.getBox(a)!.z)
+  })
+
+  it('brings a box to the front, and does nothing when it already is', () => {
+    const page = new PageDoc()
+    const a = page.addBox({ x: 0, y: 0, width: 100 })
+    const b = page.addBox({ x: 0, y: 0, width: 100 })
+    expect(page.bringToFront(a)).toBe(true)
+    expect(page.getBox(a)!.z).toBeGreaterThan(page.getBox(b)!.z)
+    const updates = recordUpdates(page.doc)
+    expect(page.bringToFront(a)).toBe(false)
+    expect(updates).toHaveLength(0)
+  })
+
+  it('stacks boxes by z, then id', () => {
+    const page = new PageDoc()
+    const a = page.addBox({ x: 0, y: 0, width: 100 })
+    const b = page.addBox({ x: 0, y: 0, width: 100 })
+    page.bringToFront(a)
+    expect(page.stackOrder()).toEqual([b, a])
+  })
+
+  it('a bring-to-front survives a reload from updates', () => {
+    const page = new PageDoc()
+    const updates = recordUpdates(page.doc)
+    const a = page.addBox({ x: 0, y: 0, width: 100 })
+    page.addBox({ x: 0, y: 0, width: 100 })
+    page.bringToFront(a)
+    expect(PageDoc.fromUpdates(updates).stackOrder().at(-1)).toBe(a)
+  })
+
+  it('stores and clears a min height', () => {
+    const page = new PageDoc()
+    const a = page.addBox({ x: 0, y: 0, width: 100 })
+    page.updateBox(a, { height: 240 })
+    expect(page.getBox(a)!.height).toBe(240)
+    page.updateBox(a, { height: null })
+    expect(page.getBox(a)!.height).toBeUndefined()
+  })
+
+  it('patches several boxes in one commit', () => {
+    const page = new PageDoc()
+    const a = page.addBox({ x: 0, y: 0, width: 100 })
+    const b = page.addBox({ x: 0, y: 50, width: 100 })
+    const updates = recordUpdates(page.doc)
+    page.updateBoxes(new Map([[a, { x: 10, y: 20 }], [b, { x: 30 }]]))
+    expect(page.getBox(a)).toMatchObject({ x: 10, y: 20 })
+    expect(page.getBox(b)).toMatchObject({ x: 30, y: 50 })
+    expect(updates).toHaveLength(1)
+  })
+
+  it('deletes several boxes in one commit', () => {
+    const page = new PageDoc()
+    const a = page.addBox({ x: 0, y: 0, width: 100 })
+    const b = page.addBox({ x: 0, y: 50, width: 100 })
+    const updates = recordUpdates(page.doc)
+    page.deleteBoxes([a, b])
+    expect(page.listBoxes()).toHaveLength(0)
+    expect(updates).toHaveLength(1)
   })
 })
