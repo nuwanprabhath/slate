@@ -3,7 +3,7 @@ import type { ChainedCommands, Editor } from '@tiptap/core'
 import { activeEditor } from '@slate/editor'
 import { SyncStatus } from './sync/SyncStatus'
 import { ColorPalette } from './ColorPalette'
-import { BulletListIcon, ChevronIcon, ClearFormattingIcon, HighlightIcon, NumberedListIcon, TableIcon, TextColorIcon } from './toolbarIcons'
+import { BulletListIcon, ChevronIcon, ClearFormattingIcon, HighlightIcon, LockIcon, NumberedListIcon, TableIcon, TextColorIcon } from './toolbarIcons'
 
 const FONTS = [
   { label: 'Default font', value: '' },
@@ -98,8 +98,24 @@ function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STY
   )
 }
 
+const isMac = navigator.platform.toLowerCase().includes('mac')
+
+/** The lock replaces this window, so one answer at mount is enough: only an encrypted, unlocked vault gets the button. */
+function useVaultUnlocked(): boolean {
+  const [unlocked, setUnlocked] = useState(false)
+  useEffect(() => {
+    let live = true
+    void window.slate.vault.status().then((s) => live && setUnlocked(s.state === 'unlocked'))
+    return () => {
+      live = false
+    }
+  }, [])
+  return unlocked
+}
+
 export function Toolbar() {
   const editor = useActiveEditor()
+  const vaultUnlocked = useVaultUnlocked()
   const run = (fn: (chain: ChainedCommands) => ChainedCommands) => () => {
     if (editor) fn(editor.chain().focus()).run()
   }
@@ -202,6 +218,19 @@ export function Toolbar() {
         onPick={(color) => run((c) => (color ? c.setHighlight({ color }) : c.unsetHighlight()))()}
       />
       {button('clear', <ClearFormattingIcon />, 'Clear all formatting', false, run((c) => c.unsetAllMarks().clearNodes()))}
+      {vaultUnlocked && (
+        <button
+          type="button"
+          className="toolbar-lock"
+          data-testid="toolbar-lock"
+          aria-label="Lock Slate"
+          title={`Lock Slate (${isMac ? '⌘⇧L' : 'Ctrl+Shift+L'})`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => window.slate.vault.lock()}
+        >
+          <LockIcon />
+        </button>
+      )}
       <SyncStatus />
     </div>
   )
