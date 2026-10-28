@@ -44,13 +44,13 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
         </button>
       )}
       {open && (
-        <div className="notebook-menu" role="menu">
+        <div className="notebook-menu has-checks" role="menu">
           {library.notebooks().map((n) => (
             <button
               key={n.id}
               type="button"
               role="menuitem"
-              className={cls(n.id === current.id && 'selected')}
+              className={cls('menu-item', n.id === current.id && 'selected')}
               onClick={() => {
                 onSelect(n.id)
                 close()
@@ -63,6 +63,7 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
           <button
             type="button"
             role="menuitem"
+            className="menu-item"
             data-testid="new-notebook"
             onClick={() => {
               onSelect(library.createNotebook('New notebook').id)
@@ -75,6 +76,7 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
           <button
             type="button"
             role="menuitem"
+            className="menu-item"
             data-testid="import-onenote"
             onClick={() => {
               close()
@@ -86,6 +88,7 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
           <button
             type="button"
             role="menuitem"
+            className="menu-item"
             onClick={() => {
               close()
               setRenaming(true)
@@ -99,11 +102,13 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
                 key={item.label}
                 type="button"
                 role="menuitem"
+                className="menu-item"
                 onClick={() => {
                   item.onSelect()
                   close()
                 }}
               >
+                {item.checked === true && <span className="menu-check">✓ </span>}
                 {item.label}
               </button>
             ) : null,
@@ -111,7 +116,7 @@ export function NotebookPicker({ library, current, onSelect, onImport }: Props) 
           <button
             type="button"
             role="menuitem"
-            className="danger"
+            className="menu-item danger"
             onClick={() => {
               if (!armedDelete) return setArmedDelete(true)
               void library.deleteNotebook(current.id)
