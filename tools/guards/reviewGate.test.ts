@@ -96,6 +96,11 @@ describe('review gate: which branches need the security review (red team, cross-
     expect(isGuardFile('packages/core/test/page.test.ts')).toBe(false)
   })
 
+  it('the UI audit and reviewUi are guard files; the scenarios that use them are not (phase 13)', () => {
+    for (const f of ['packages/desktop/e2e/ui/audit.ts', 'packages/desktop/e2e/ui/review.ts']) expect(isGuardFile(f), f).toBe(true)
+    for (const f of ['packages/desktop/e2e/ui/canvas.ui.spec.ts', 'packages/desktop/e2e/ui/states.ts']) expect(isGuardFile(f), f).toBe(false)
+  })
+
   it('lists the No-*-Reason trailers for the lead to judge', () => {
     expect(reasonTrailers('fix: x\n\nNo-Red-Test-Reason: refactor\n---\nfeat: y\n\nNo-Test-Reason: docs only')).toEqual(['No-Red-Test-Reason: refactor', 'No-Test-Reason: docs only'])
   })
