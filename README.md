@@ -229,4 +229,4 @@ plugins (`packages/desktop/src/renderer/src/plugins/README.md`).
 
 ## Licence
 
-MIT
+Apache License 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE).
