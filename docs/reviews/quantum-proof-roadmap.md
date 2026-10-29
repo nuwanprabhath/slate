@@ -168,7 +168,7 @@ POAM-11 already records. PQ-C* change *configuration and observation* of those s
 | INV-PQ-2 | No ciphertext of note data changes during the format upgrade | T-PQ-B3-02 (byte-compare) |
 | INV-PQ-3 | The password, the recovery key and quick unlock keep working across the upgrade, without being re-entered | T-PQ-B3-01 |
 | INV-PQ-4 | Once a device adopted v3, it refuses every v2 copy of that vault's header | T-PQ-B3-05 (`profile-floor.json` `minHeaderVersion = 3`) |
-| INV-PQ-5 | No header v3 is written while any device record lacks `pq ≥ 1` or cannot be read | T-PQ-B2-02, T-PQ-B3-04 |
+| INV-PQ-5 | No header v3 is written while any device record other than this device's own (`devices/<deviceId>.json`) lacks `pq ≥ 1` or cannot be read | T-PQ-B2-02, T-PQ-B3-04; `deviceGate.test.ts` and `pqUpgrade.test.ts` (own record) |
 | INV-PQ-6 | `GIT_SSH_COMMAND` contains only literal, allowlisted algorithm names, never probe output | T-PQ-C1-03 |
 | INV-PQ-7 | Main sets TLS groups only in `tlsPolicy.ts`, and the default client offers `X25519MLKEM768` | T-PQ-C3-01, T-PQ-C3-03 |
 | INV-PQ-8 | A build that pins a hybrid update key never accepts an Ed25519-only signature | T-PQ-A2-03 |

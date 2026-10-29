@@ -112,7 +112,7 @@ Hybrid key id: first 16 hex digits of SHA-256(Ed25519 SPKI DER ‖ ML-DSA SPKI D
 | INV-PQ-2 | No note ciphertext changes during the upgrade | T-PQ-B3-02 (`pqUpgrade.test.ts`); T-PQ-B3-10 checks a note survives end to end |
 | INV-PQ-3 | Password, recovery key and quick unlock keep working | T-PQ-B3-01, T-PQ-B3-10 |
 | INV-PQ-4 | After v3, every v2 copy of the header is refused | T-PQ-B3-05 |
-| INV-PQ-5 | No v3 while any device lacks `pq ≥ 1` or cannot be read | T-PQ-B2-02, T-PQ-B3-04 |
+| INV-PQ-5 | No v3 while any device other than this one lacks `pq ≥ 1` or cannot be read (0.4.1: this device's own record no longer counts) | T-PQ-B2-02, T-PQ-B3-04; own-record tests in `deviceGate.test.ts`, `pqUpgrade.test.ts` |
 | INV-PQ-6 | `GIT_SSH_COMMAND` holds only literal algorithm names | T-PQ-C1-03 |
 | INV-PQ-7 | TLS groups set only in `tlsPolicy.ts`; default offers `X25519MLKEM768` | T-PQ-C3-01, T-PQ-C3-03 |
 | INV-PQ-8 | A hybrid-pinned build never accepts an Ed25519-only signature | T-PQ-A2-03 |

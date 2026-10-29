@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { devicesLacking, pqGateBlocking, PQ_CAPABILITY } from './deviceGate'
+import { devicesBlocking, devicesLacking, pqGateBlocking, PQ_CAPABILITY } from './deviceGate'
 import { SYNCED_FILE } from './unlock'
 
 const rec = (extra: Record<string, number> = {}, name = 'D') => ({ name, ...extra })
@@ -23,6 +23,11 @@ describe('deviceGate', () => {
     const e0 = rec({ pq: 1 }, 'e0')
     expect(devicesLacking([e1, e0], 'epochs', 1)).toEqual([e0])
     expect(devicesLacking([e1], 'pq', 2)).toEqual([e1])
+  })
+
+  it("the key-epoch gate still counts this device's own record: only the PQ gate leaves it out", () => {
+    const own = { name: 'This Mac', own: true }
+    expect(devicesBlocking([own])).toEqual([own])
   })
 
   it('T-PQ-B2-02: a record whose capability is not a number is listed', () => {
