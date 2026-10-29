@@ -1,4 +1,5 @@
 import { parseColor, toHex8 } from './color'
+import { deriveControlBorder } from './readability'
 import { DEFAULT_GLASS, DEFAULT_PALETTE, PALETTE_TOKENS, SURFACES, type PaletteToken, type ThemeSpec } from './spec'
 
 const white = (alpha: number): string => `rgba(255, 255, 255, ${alpha.toFixed(3)})`
@@ -34,6 +35,7 @@ export function themeToCssVars(spec: ThemeSpec): Record<string, string> {
   for (const t of PALETTE_TOKENS) out[`--${t}`] = colour(t)
   // A theme saved before controls had a colour of their own: its raised surface, not Dark's.
   if (spec.palette['control-bg'] === undefined && spec.palette['panel-2'] !== undefined) out['--control-bg'] = spec.palette['panel-2']
+  if (spec.palette['control-border'] === undefined) out['--control-border'] = deriveControlBorder(spec.palette)
   if (spec.material === 'glass') Object.assign(out, glassVars(spec))
   for (const s of SURFACES) {
     const g = spec.surfaces?.[s]?.gradient

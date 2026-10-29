@@ -32,6 +32,7 @@
   --code-comment: #7f848e;
   --code-title: #82aaff;
   --control-bg: #2d2d2d;
+  --control-border: #7a7a7a;
   --radius-control: 5px;
   /* applyTheme replaces both from shared/theme/fonts.ts; every piece of chrome reads --font-ui. */
   --font-ui: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;

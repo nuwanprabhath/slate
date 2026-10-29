@@ -14,7 +14,7 @@ export const PALETTE_TOKENS = [
   'bg', 'page', 'panel', 'panel-2', 'toolbar-bg', 'sidebar-bg', 'popover', 'overlay',
   'box-bg', 'box-border', 'border',
   'text', 'muted', 'accent', 'accent-contrast', 'link', 'selection',
-  'hover', 'selected', 'danger', 'warning', 'control-bg',
+  'hover', 'selected', 'danger', 'warning', 'control-bg', 'control-border',
   'find-match', 'find-current', 'scrollbar-thumb',
   'code-keyword', 'code-string', 'code-number', 'code-comment', 'code-title',
 ] as const
@@ -119,6 +119,7 @@ export const DEFAULT_PALETTE: Record<PaletteToken, string> = {
   'danger': '#e45b5b',
   'warning': '#c9a227',
   'control-bg': '#2d2d2d',
+  'control-border': '#7a7a7a',
   'find-match': 'rgba(234, 92, 0, 0.33)',
   'find-current': 'rgba(255, 166, 0, 0.75)',
   'scrollbar-thumb': 'rgba(128, 128, 128, 0.4)',
