@@ -6,6 +6,25 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
+### Changed
+
+- Slate is now licensed under the Apache License 2.0 (it was MIT).
+- Buttons have a clear outline and fill in every theme; in Folio and the other light themes they no longer blend into the panel.
+- A focused field or dropdown shows one ring, the same everywhere, instead of two.
+- Settings keeps its heading and close button in view while the section scrolls.
+- Settings → Security → Post-quantum readiness: **Check now** says when it ran and what it found (the key exchange and when it was seen), and the vault format line names the devices it is waiting for and says this computer is ready.
+
+### Fixed
+
+- The vault format upgrade could wait for this computer itself, when its own device record was still the one 0.3.0 wrote.
+- "Waiting for 1 device" was shown when sync was off or the device list could not be read; it now says which.
+
+### Documentation
+
+- A report of what the post-quantum release built and what is still open (`docs/reviews/quantum-proof-implementation.md`).
+
 ## [0.4.0] - 2026-10-29
 
 ### Added
