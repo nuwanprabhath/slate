@@ -107,4 +107,6 @@ export const CH = {
   vaultRekeyPrepare: 'vault:rekey-prepare',
   vaultRekeyRun: 'vault:rekey-run',
   vaultReplaceHistory: 'vault:replace-history',
+  vaultPqReadiness: 'vault:pq-readiness',
+  syncCheckTransport: 'sync:check-transport',
 } as const

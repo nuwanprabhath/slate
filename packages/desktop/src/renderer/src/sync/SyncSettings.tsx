@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { DeviceCode, GitAuthInfo, GitAuthMode, GitCheck, GitSettings, SyncProvider } from '../../../shared/api'
 import { SyncTokenField } from './SyncTokenField'
+import { classicalWarning, REQUIRE_PQ_CHECKING, REQUIRE_PQ_CHECK_FAILED, REQUIRE_PQ_HELP, REQUIRE_PQ_LABEL, requirePqAvailability } from './requirePqText'
 
 const AUTH_LABELS: Record<GitAuthMode, string> = {
   system: "Use this computer's git setup (SSH key or credential helper)",
@@ -26,10 +27,13 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
   const [repoName, setRepoName] = useState('slate-notes')
   const [deviceCode, setDeviceCode] = useState<DeviceCode | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [requirePq, setRequirePq] = useState(false)
+  const [pqNote, setPqNote] = useState<{ text: string; warn: boolean } | null>(null)
 
   useEffect(() => {
     void Promise.all([window.slate.settings.get(), window.slate.sync.gitAuthInfo()]).then(([settings, authInfo]) => {
       setProvider(settings.syncProvider)
+      setRequirePq(settings.syncRequirePq)
       if (settings.git) {
         setRemoteUrl(settings.git.remoteUrl)
         setBranch(settings.git.branch)
@@ -71,6 +75,27 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
       if (result.ok) setInfo(await window.slate.sync.gitAuthInfo())
       return result
     })
+  // Saved at once, apart from Save & sync: it is a policy about the connection, not part of the remote's details.
+  const toggleRequirePq = async (on: boolean) => {
+    setRequirePq(on)
+    setPqNote(null)
+    try {
+      if (on) {
+        setPqNote({ text: REQUIRE_PQ_CHECKING, warn: false })
+        try {
+          const warning = classicalWarning(await window.slate.sync.checkTransport())
+          setPqNote(warning === null ? null : { text: warning, warn: true })
+        } catch {
+          setPqNote({ text: REQUIRE_PQ_CHECK_FAILED, warn: true })
+        }
+      }
+      await window.slate.settings.set({ syncRequirePq: on })
+    } catch (err) {
+      setRequirePq(!on)
+      setPqNote({ text: err instanceof Error ? err.message : String(err), warn: true })
+    }
+  }
+  const pq = requirePqAvailability(provider, remoteUrl)
   const save = async () => {
     if (provider === 'git' && !remoteUrl.trim()) {
       setCheck({ ok: false, message: 'Enter the repository URL' })
@@ -154,6 +179,22 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
                   </div>
                 )}
               </>
+            )}
+            {pq && (
+              <div className="sync-pq" data-testid="sync-require-pq">
+                <label>
+                  <input type="checkbox" data-testid="sync-require-pq-toggle" checked={requirePq} disabled={!pq.enabled} aria-describedby="sync-require-pq-help" onChange={(e) => void toggleRequirePq(e.target.checked)} />
+                  {REQUIRE_PQ_LABEL}
+                </label>
+                <p className="sync-pq-help" id="sync-require-pq-help" data-testid="sync-require-pq-help">
+                  {pq.enabled ? REQUIRE_PQ_HELP : pq.reason}
+                </p>
+                {pqNote && (
+                  <p className={`sync-pq-note${pqNote.warn ? ' warn' : ''}`} data-testid="sync-require-pq-note" role="status">
+                    {pqNote.text}
+                  </p>
+                )}
+              </div>
             )}
             {check && (
               <div className={`sync-check ${check.ok ? 'ok' : 'failed'}`} data-testid="sync-check" role="status">

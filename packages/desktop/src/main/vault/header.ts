@@ -1,7 +1,9 @@
-// `vault.json`: header v1 (suite 0x01, read and kept as it is until C9) and header v2 (audit §4.5.2: a
-// profile, suite 0x02, a key epoch and explicit algorithm identifiers), each authenticated by `check` once
-// MK is known. Every vault created since C5 is v2.
+// `vault.json`: header v1 (suite 0x01, read and kept as it is until C9), header v2 (audit §4.5.2: a
+// profile, suite 0x02, a key epoch and explicit algorithm identifiers) and header v3 (v2 plus `pq` and hybrid
+// device slots, docs/reviews/quantum-proof-roadmap.md §3.2), each authenticated by `check` once MK is known.
+// Every vault created since C5 is v2; v3 is made from v2 by `buildHeaderV3From` with the same keys.
 import { newId } from '@slate/core'
+import { LOCAL_JSON_CAP } from './atomic'
 import { nativeErrorCode, type KeyHandle } from '@slate/native'
 import { decodeB64, defaultKdf, deriveKek, kdfForProfile, validateKdf, type Argon2idParams, type KdfParams, type WeakKdfOption } from './kdf'
 import { deriveSubkey } from './keyring'
@@ -58,7 +60,29 @@ export interface VaultHeaderV2 {
   check: string
 }
 
-export type VaultHeader = VaultHeaderV1 | VaultHeaderV2
+/** A hybrid ML-KEM device slot (roadmap §3.2): parsed and carried through unchanged; this build never opens one. */
+export type DeviceWrapAlg = 'mlkem768-x25519-kdf56c' | 'mlkem1024-p384-kdf56c'
+export type DeviceSlotName = `device-${string}`
+
+export interface DeviceWrap {
+  alg: DeviceWrapAlg
+  pkHash: string
+  kemCt: string
+  ecdhPub: string
+  nonce: string
+  ct: string
+  addedAt: number
+  addedBy: string
+}
+
+/** `vault.json` v3 (docs/compliance/schemas/vault-header-v3.schema.json): v2's keys and wraps, plus `pq`. */
+export interface VaultHeaderV3 extends Omit<VaultHeaderV2, 'version' | 'wraps'> {
+  version: 3
+  wraps: { password: WrapV2; recovery?: WrapV2; [slot: DeviceSlotName]: DeviceWrap }
+  pq: { kem: 'hybrid-only'; minCapability: number }
+}
+
+export type VaultHeader = VaultHeaderV1 | VaultHeaderV2 | VaultHeaderV3
 
 export class BadHeader extends Error {
   override name = 'BadHeader'
@@ -74,11 +98,11 @@ export class WrongSecret extends Error {
 
 /** Header v1 is always the standard profile. */
 export function profileOf(header: VaultHeader): ProfileId {
-  return header.version === 2 ? header.profile : 'standard'
+  return header.version === 1 ? 'standard' : header.profile
 }
 
 export function scheduleOf(header: Pick<VaultHeader, 'version' | 'vaultId'> & { profile?: ProfileId; keyEpoch?: number }): KeySchedule {
-  return header.version === 2 ? scheduleV2(header.vaultId, header.profile ?? 'standard', header.keyEpoch ?? 0) : SCHEDULE_V1
+  return header.version === 1 ? SCHEDULE_V1 : scheduleV2(header.vaultId, header.profile ?? 'standard', header.keyEpoch ?? 0)
 }
 
 /**
@@ -89,16 +113,16 @@ export function isDowngrade(
   header: Pick<VaultHeader, 'version'> & { profile?: ProfileId; keyEpoch?: number },
   than: { version: number; profile: ProfileId; keyEpoch?: number },
 ): boolean {
-  const profile = header.version === 2 && header.profile ? header.profile : 'standard'
+  const profile = header.version >= 2 && header.profile ? header.profile : 'standard'
   // Review C9 L2: an earlier key epoch is a downgrade too (a retired master key re-signing its header at a higher
   // revision); the floor is the epoch of this device's own header, the highest it adopted.
-  const epochBack = header.version === 2 && than.keyEpoch !== undefined && (header.keyEpoch ?? 0) < than.keyEpoch
+  const epochBack = header.version >= 2 && than.keyEpoch !== undefined && (header.keyEpoch ?? 0) < than.keyEpoch
   return header.version < than.version || profileRank(profile) < profileRank(than.profile) || epochBack
 }
 
 /** The downgrade floor a header sets: its version, profile and key epoch. */
 export function floorOf(header: VaultHeader): { version: number; profile: ProfileId; keyEpoch: number } {
-  return { version: header.version, profile: profileOf(header), keyEpoch: header.version === 2 ? header.keyEpoch : 0 }
+  return { version: header.version, profile: profileOf(header), keyEpoch: header.version === 1 ? 0 : header.keyEpoch }
 }
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json }
@@ -241,14 +265,25 @@ function parseKdfV2(v: unknown, opts: WeakKdfOption): KdfParams {
   throw new BadHeader('Unsupported key derivation')
 }
 
+const V2_KEYS = ['format', 'version', 'vaultId', 'revision', 'createdAt', 'profile', 'suite', 'keyEpoch', 'kdf', 'wraps', 'check']
+
 /**
  * Header v2: exactly the documents the JSON Schema accepts (docs/compliance/schemas/vault-header-v2.schema.json)
  * that also keep semantic rules 1–3 of audit §4.5.2; rule 4 (the 64 KiB cap) is the reader's (`readJsonCapped`).
  * Every refusal is a BadHeader, before any derivation. What it returns is the input, field for field.
  */
 export function parseHeaderV2(json: unknown, opts: WeakKdfOption = {}): VaultHeaderV2 {
-  const h = exactKeys(json, ['format', 'version', 'vaultId', 'revision', 'createdAt', 'profile', 'suite', 'keyEpoch', 'kdf', 'wraps', 'check'], ['history'])
+  const h = exactKeys(json, V2_KEYS, ['history'])
   if (h.format !== 'slate-vault' || h.version !== 2) throw new BadHeader('Not a Slate vault header')
+  const { wraps: _w, ...fields } = parseV2Fields(h, opts)
+  const w = exactKeys(h.wraps, ['password'], ['recovery'])
+  const wraps: VaultHeaderV2['wraps'] = { password: parseWrapV2(w.password, 'password') }
+  if (w.recovery !== undefined) wraps.recovery = parseWrapV2(w.recovery, 'recovery')
+  return { ...fields, version: 2, wraps }
+}
+
+/** Every field v2 and v3 share, with rules 1–3; the caller has checked the keys, `format` and `version`. */
+function parseV2Fields(h: Record<string, unknown>, opts: WeakKdfOption): Omit<VaultHeaderV2, 'version'> {
   if (typeof h.vaultId !== 'string' || !UUID4.test(h.vaultId)) throw new BadHeader('Bad vaultId')
   const revision = intIn(h.revision, 1, Number.MAX_SAFE_INTEGER, 'revision')
   const createdAt = intIn(h.createdAt, 0, Number.MAX_SAFE_INTEGER, 'createdAt')
@@ -259,10 +294,18 @@ export function parseHeaderV2(json: unknown, opts: WeakKdfOption = {}): VaultHea
   const kdf = parseKdfV2(h.kdf, opts)
   // Rule 2: the profile fixes the password KDF.
   if ((h.profile === 'fips-140-3') !== (kdf.alg === 'pbkdf2-hmac-sha512')) throw new BadHeader('The key derivation does not match the profile')
-  const w = exactKeys(h.wraps, ['password'], ['recovery'])
-  const wraps: VaultHeaderV2['wraps'] = { password: parseWrapV2(w.password, 'password') }
-  if (w.recovery !== undefined) wraps.recovery = parseWrapV2(w.recovery, 'recovery')
-  const out: VaultHeaderV2 = { format: 'slate-vault', version: 2, vaultId: h.vaultId, revision, createdAt, profile: h.profile, suite: SUITE.KBKDF_AES256GCM, keyEpoch, kdf, wraps, check: '' }
+  const out: Omit<VaultHeaderV2, 'version'> = {
+    format: 'slate-vault',
+    vaultId: h.vaultId,
+    revision,
+    createdAt,
+    profile: h.profile,
+    suite: SUITE.KBKDF_AES256GCM,
+    keyEpoch,
+    kdf,
+    wraps: { password: { alg: 'aes-256-gcm', nonce: '', ct: '' } },
+    check: '',
+  }
   if (h.history !== undefined) {
     if (!Array.isArray(h.history) || h.history.length > 4) throw new BadHeader('Bad history')
     const seen = new Set<number>()
@@ -280,22 +323,119 @@ export function parseHeaderV2(json: unknown, opts: WeakKdfOption = {}): VaultHea
   return out
 }
 
-/** Header v1 or v2, by its `version`; anything else is a BadHeader. */
+// docs/compliance/schemas/vault-header-v3.schema.json, byte for byte.
+const DEVICE_SLOT = /^device-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+const B64 = SALT_B64
+const MAX_WRAPS = 18
+/** §3.2's size budget: 16 device slots at most, whatever else `wraps` holds (the schema counts only all wraps). */
+const MAX_DEVICE_SLOTS = 16
+/** Rule 7: the exact decoded sizes of each hybrid slot's ML-KEM ciphertext and ECDH public key. A Map, so no
+ * inherited name (`constructor`, `__proto__`) is ever an algorithm. */
+const DEVICE_ALGS = new Map<string, { kemCt: number; ecdhPub: number; uncompressedPoint: boolean }>([
+  ['mlkem768-x25519-kdf56c', { kemCt: 1088, ecdhPub: 32, uncompressedPoint: false }],
+  ['mlkem1024-p384-kdf56c', { kemCt: 1568, ecdhPub: 97, uncompressedPoint: true }],
+])
+
+/** Schema text bounds, then rule 7's exact size; canonical base64 only, so a carried slot has one text. */
+function b64Sized(v: unknown, minLen: number, maxLen: number, bytes: number, what: string): Buffer {
+  if (typeof v !== 'string' || v.length < minLen || v.length > maxLen || !B64.test(v)) throw new BadHeader(`Bad ${what}`)
+  const b = decodeB64(v)
+  if (!b || b.length !== bytes) throw new BadHeader(`Bad ${what}`)
+  return b
+}
+
+function parseDeviceWrap(v: unknown, profile: ProfileId): DeviceWrap {
+  const w = exactKeys(v, ['alg', 'pkHash', 'kemCt', 'ecdhPub', 'nonce', 'ct', 'addedAt', 'addedBy'])
+  // INV-PQ-1: only hybrid identifiers with an ML-KEM component.
+  const size = typeof w.alg === 'string' ? DEVICE_ALGS.get(w.alg) : undefined
+  if (!size) throw new BadHeader('Unsupported device slot algorithm')
+  const alg = w.alg as DeviceWrapAlg
+  // Rule 8: a fips-140-3 vault holds only the CNSA 2.0 pairing.
+  if (profile === 'fips-140-3' && alg !== 'mlkem1024-p384-kdf56c') throw new BadHeader('Device slot algorithm not allowed in this profile')
+  const pkHash = str(w.pkHash, CHECK_B64, 'device slot pkHash')
+  b64Sized(w.kemCt, 1452, 2092, size.kemCt, 'device slot kemCt')
+  const pub = b64Sized(w.ecdhPub, 44, 132, size.ecdhPub, 'device slot ecdhPub')
+  if (size.uncompressedPoint && pub[0] !== 0x04) throw new BadHeader('Bad device slot ecdhPub')
+  return {
+    alg,
+    pkHash,
+    kemCt: w.kemCt as string,
+    ecdhPub: w.ecdhPub as string,
+    nonce: str(w.nonce, NONCE_B64, 'device slot nonce'),
+    ct: str(w.ct, CT_B64, 'device slot wrap'),
+    addedAt: intIn(w.addedAt, 0, Number.MAX_SAFE_INTEGER, 'device slot addedAt'),
+    addedBy: str(w.addedBy, UUID4, 'device slot addedBy'),
+  }
+}
+
+/** Rule 4 restated for a header that did not come through `readJsonCapped` (a remote snapshot, a test). */
+function withinCap(json: unknown): void {
+  let text: string | undefined
+  try {
+    text = JSON.stringify(json)
+  } catch {
+    throw new BadHeader('Not JSON')
+  }
+  if (typeof text !== 'string' || Buffer.byteLength(text) > LOCAL_JSON_CAP) throw new BadHeader('The header is larger than 64 KiB')
+}
+
+/**
+ * Header v3: exactly the documents docs/compliance/schemas/vault-header-v3.schema.json accepts that also keep
+ * rules 1–8 of roadmap §3.3. Every refusal is a BadHeader, before any derivation and without a native call.
+ * What it returns is the input, field for field, device slots included (rule 10 carries them through).
+ */
+export function parseHeaderV3(json: unknown, opts: WeakKdfOption = {}): VaultHeaderV3 {
+  withinCap(json)
+  const h = exactKeys(json, [...V2_KEYS, 'pq'], ['history'])
+  if (h.format !== 'slate-vault' || h.version !== 3) throw new BadHeader('Not a Slate vault header')
+  const { wraps: _w, ...fields } = parseV2Fields(h, opts)
+  const w = exactKeys(h.wraps, ['password'], Object.keys(isObject(h.wraps) ? h.wraps : {}))
+  const keys = Object.keys(w)
+  if (keys.length > MAX_WRAPS) throw new BadHeader('Too many wraps')
+  const wraps: VaultHeaderV3['wraps'] = { password: parseWrapV2(w.password, 'password') }
+  let devices = 0
+  for (const k of keys) {
+    if (k === 'password') continue
+    if (k === 'recovery') wraps.recovery = parseWrapV2(w.recovery, 'recovery')
+    else if (DEVICE_SLOT.test(k)) {
+      wraps[k as DeviceSlotName] = parseDeviceWrap(w[k], fields.profile)
+      devices++
+    } else throw new BadHeader(`Unexpected ${k}`)
+  }
+  if (devices > MAX_DEVICE_SLOTS) throw new BadHeader('Too many device slots')
+  const pq = exactKeys(h.pq, ['kem', 'minCapability'])
+  // Rule 5: restated here so a later schema cannot relax it silently.
+  if (pq.kem !== 'hybrid-only') throw new BadHeader('Unsupported pq.kem')
+  const minCapability = intIn(pq.minCapability, 1, 255, 'pq.minCapability')
+  // Rule 6: a device slot is readable only by a device of capability 2.
+  if (devices > 0 && minCapability < 2) throw new BadHeader('Device slots need pq.minCapability 2')
+  return { ...fields, version: 3, wraps, pq: { kem: 'hybrid-only', minCapability } }
+}
+
+/** Header v1, v2 or v3, by its `version`, before any derivation; anything else is a BadHeader. */
 export function parseHeader(json: unknown, opts: WeakKdfOption = {}): VaultHeader {
+  if (isObject(json) && json.version === 3) return parseHeaderV3(json, opts)
   if (isObject(json) && json.version === 2) return parseHeaderV2(json, opts)
   return parseHeaderV1(json, opts)
 }
 
-type AadFields = Pick<VaultHeaderV1, 'version' | 'vaultId' | 'kdf'> | Pick<VaultHeaderV2, 'version' | 'vaultId' | 'kdf' | 'profile' | 'keyEpoch'>
+type AadFields =
+  | Pick<VaultHeaderV1, 'version' | 'vaultId' | 'kdf'>
+  | Pick<VaultHeaderV2, 'version' | 'vaultId' | 'kdf' | 'profile' | 'keyEpoch'>
+  | Pick<VaultHeaderV3, 'version' | 'vaultId' | 'kdf' | 'profile' | 'keyEpoch'>
 
-/** v2 (audit §4.5.2): the slot, profile, suite, key epoch and KDF are all bound, so none can be swapped. */
+/**
+ * v2 (audit §4.5.2): the slot, profile, suite, key epoch and KDF are all bound, so none can be swapped. A v3 header's
+ * password and recovery wraps use this AAD byte for byte (roadmap §3.3 rule 9): the label names the wrap format, not
+ * the header version, which is why v2 → v3 copies the wraps and needs neither secret.
+ */
 function wrapAad(header: AadFields, slot: Slot): Uint8Array {
   if (header.version === 1) return utf8(`slate-vault/v1|${header.vaultId}|${slot}|${canonicalJson(header.kdf)}`)
   const epoch = header.keyEpoch
   return utf8(`slate-vault/v2|${header.vaultId}|${slot}|${header.profile}|${SUITE.KBKDF_AES256GCM}|${epoch}|${canonicalJson(header.kdf)}`)
 }
 
-type HeaderBody = Omit<VaultHeaderV1, 'check'> | Omit<VaultHeaderV2, 'check'>
+type HeaderBody = Omit<VaultHeaderV1, 'check'> | Omit<VaultHeaderV2, 'check'> | Omit<VaultHeaderV3, 'check'>
 
 function computeCheck(header: HeaderBody, mk: KeyHandle): Uint8Array {
   const { check: _drop, ...rest } = header as VaultHeader
@@ -313,7 +453,7 @@ export function verifyCheck(header: VaultHeader, mk: KeyHandle): boolean {
 
 function toWrap(header: Pick<VaultHeader, 'version'>, sealed: Uint8Array): Wrap | WrapV2 {
   const w = { nonce: toBase64(sealed.subarray(0, 12)), ct: toBase64(sealed.subarray(12)) }
-  return header.version === 2 ? { alg: 'aes-256-gcm', ...w } : w
+  return header.version === 1 ? w : { alg: 'aes-256-gcm', ...w }
 }
 
 /** A fresh MK (createVault) wrapped under a password-class KEK; neither key leaves the module. */
@@ -377,15 +517,22 @@ export interface CreateVaultInput {
    * callers); otherwise the profile's calibrated default.
    */
   kdf?: KdfParams | Pick<Argon2idParams, 'memoryKiB' | 'passes'>
+  /** 3 when the upgrade gate allows it (PQ-B4: every device reads v3, or sync was never used); 2 otherwise. */
+  headerVersion?: 2 | 3
 }
 
+/** The `pq` member of every v3 header this build writes itself: no device slots, so capability 1. */
+const PQ_V3 = { kem: 'hybrid-only', minCapability: 1 } as const
+
 /**
- * A new header-v2 vault (criterion 3), in memory: for fips-140-3 the module must be in approved mode. Nothing
+ * A new header-v2 or header-v3 vault (criterion 3; roadmap §3.5 `Created`), in memory: for fips-140-3 the module must be in approved mode. Nothing
  * is latched here (the wizard may still be cancelled); the caller latches when it commits the vault
  * (`latchProfile`, review C5 M1). Only approved services run before that. Returns MK, which the caller owns.
  * Every KEK is destroyed and the recovery secret wiped here.
  */
-export async function createVault(input: CreateVaultInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2; mk: KeyHandle; recoveryKey: string | null }> {
+export async function createVault(input: CreateVaultInput & { headerVersion?: 2 }, opts?: WeakKdfOption): Promise<{ header: VaultHeaderV2; mk: KeyHandle; recoveryKey: string | null }>
+export async function createVault(input: CreateVaultInput, opts?: WeakKdfOption): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: string | null }>
+export async function createVault(input: CreateVaultInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: string | null }> {
   const profile = input.profile ?? 'standard'
   checkProfileUsable(profile)
   const kdf: KdfParams = input.kdf === undefined ? await kdfForProfile(profile) : 'alg' in input.kdf ? input.kdf : { ...defaultKdf(), ...input.kdf }
@@ -414,7 +561,9 @@ export async function createVault(input: CreateVaultInput, opts: WeakKdfOption =
       recoveryKey = sealed.recoveryKey
       body.wraps.recovery = sealed.wrap
     }
-    return { header: finish(body, mk), mk, recoveryKey }
+    // The wraps' AAD is the same for v2 and v3 (rule 9), so v3 is v2's body plus `pq`.
+    const header = input.headerVersion === 3 ? finish({ ...body, version: 3 as const, pq: { ...PQ_V3 } }, mk) : finish(body, mk)
+    return { header, mk, recoveryKey }
   } catch (e) {
     destroyKey(mk)
     throw e
@@ -527,6 +676,15 @@ function next(base: VaultHeader, mk: KeyHandle): HeaderBody {
 }
 
 /**
+ * Header v3 from a v2 header `mk` verifies (roadmap §3.4): the same keys, every wrap copied as it is (rule 9), `pq`
+ * set, the next revision, `check` under K_check of `mk`. Pure: nothing is written, and neither secret is needed.
+ */
+export function buildHeaderV3From(v2: VaultHeaderV2, mk: KeyHandle): VaultHeaderV3 {
+  const body = next(v2, mk) as Omit<VaultHeaderV2, 'check'>
+  return finish({ ...body, version: 3, pq: { ...PQ_V3 } }, mk)
+}
+
+/**
  * Keeps the KDF salt and parameters: they are in every slot's AAD, and the recovery slot cannot
  * be rewrapped without the recovery key. A new password under the same salt still gives a new KEK.
  * `proof` (from `proveSecret` with the current password or recovery key) is where MK comes from.
@@ -615,7 +773,7 @@ export class RotationRefused extends Error {
 export const MAX_HISTORY = 4
 
 /**
- * What a rekey does: `rotate` (R-1, a new epoch), `upgrade` (R-5, a header-v1 vault to v2 by a rotation, same
+ * What a rekey does: `rotate` (R-1, a new epoch), `upgrade` (R-5, a header-v1 vault to v2 or v3 by a rotation, same
  * profile), `convert` (R-3, standard to fips-140-3: a rotation that empties `history`).
  */
 export type RekeyKind = 'rotate' | 'upgrade' | 'convert'
@@ -633,6 +791,11 @@ export interface RekeyInput {
   /** The new header's KDF, with a fresh salt (R-1); PBKDF2 for convert. */
   kdf: KdfParams
   profile: ProfileId
+  /**
+   * `upgrade` only: 3 when the upgrade gate allows it (PQ-B4, roadmap §3.6), so a v1 vault reaches v3 in one step;
+   * 2 otherwise. Rotate and convert keep the base's version.
+   */
+  headerVersion?: 2 | 3
 }
 
 /** `vid || uint32be(e)`: the KBKDF Context of K_hist,e (audit §4.5.2). */
@@ -664,20 +827,36 @@ const isAuthFailure = (e: unknown) => nativeErrorCode(e) === 'SCC_11'
  */
 export function isNewerKeys(header: VaultHeader, than: VaultHeader): boolean {
   if (header.vaultId !== than.vaultId) return false
-  if (header.version !== than.version) return header.version > than.version
+  // v1 → v2 is a rotation (R-5); v2 → v3 keeps every key (roadmap §3.4), so only epoch and profile tell them apart.
+  if (header.version === 1 || than.version === 1) {
+    if (header.version !== than.version) return header.version > than.version
+  }
   if (profileRank(profileOf(header)) !== profileRank(profileOf(than))) return profileRank(profileOf(header)) > profileRank(profileOf(than))
-  return header.version === 2 && than.version === 2 && header.keyEpoch > than.keyEpoch
+  return header.version !== 1 && than.version !== 1 && header.keyEpoch > than.keyEpoch
+}
+
+/** The device slots of a v3 header (rule 10: carried, never opened, by this build). */
+function deviceSlots(header: VaultHeader): [DeviceSlotName, DeviceWrap][] {
+  if (header.version !== 3) return []
+  return Object.entries(header.wraps).filter((e): e is [DeviceSlotName, DeviceWrap] => e[0].startsWith('device-'))
+}
+
+/** Rule 8: a fips-140-3 header holds only `mlkem1024-p384-kdf56c` device slots, so a conversion can carry only those. */
+export function deviceSlotsAllow(header: VaultHeader, profile: ProfileId): boolean {
+  return profile !== 'fips-140-3' || deviceSlots(header).every(([, w]) => w.alg === 'mlkem1024-p384-kdf56c')
 }
 
 /**
- * R-1/R-3/R-5: header v2 at the next key epoch under a fresh MK (`keyRandom`) and a new recovery key (its slot cannot
+ * R-1/R-3/R-5: header v2 (v3 for a v3 base, or an upgrade the gate lets reach v3) at the next key epoch under a fresh MK (`keyRandom`) and a new recovery key (its slot cannot
  * be rewrapped without the old one), the password wrapped under a KEK from a fresh salt. Rotate and upgrade file the
  * old MK in `history` under K_hist of the new one (moved there from the password's proof, never as bytes) and move
  * the older entries along; convert leaves `history` empty (IG 2.4.A: an Argon2id-protected MK must not enter an
  * approved key tree). `createdAt` is when the current master key was made, so R-4's cryptoperiod counts from it.
+ * A v3 base stays v3: `pq` and every device slot are copied byte for byte (rule 10); those slots still wrap the old MK
+ * and stay unopened by this build.
  * Returns the new MK, which the caller owns; the recovery secret and every KEK are wiped here.
  */
-export async function rekeyHeader(input: RekeyInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2; mk: KeyHandle; recoveryKey: string }> {
+export async function rekeyHeader(input: RekeyInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: string }> {
   const { kind, base, proof } = input
   if (!verifyCheck(base, input.mk)) throw new WrongSecret()
   // The proof must be the base's own password wrap: what moves into history is then the MK `check` just verified.
@@ -689,13 +868,14 @@ export async function rekeyHeader(input: RekeyInput, opts: WeakKdfOption = {}): 
   if (kind === 'convert' ? !(from === 'standard' && input.profile === 'fips-140-3') : input.profile !== from) {
     throw new RotationRefused(kind === 'convert' ? 'Only a standard vault converts, and only to FIPS 140-3' : 'A key rotation keeps the vault’s profile')
   }
-  if (kind === 'upgrade' && base.version !== 1) throw new RotationRefused('This vault already uses the version 2 format')
-  if (kind === 'rotate' && base.version !== 2) throw new RotationRefused('Upgrade this vault’s format first')
+  if (kind === 'upgrade' && base.version !== 1) throw new RotationRefused(`This vault already uses the version ${base.version} format`)
+  if (kind === 'rotate' && base.version === 1) throw new RotationRefused('Upgrade this vault’s format first')
+  if (!deviceSlotsAllow(base, input.profile)) throw new RotationRefused('This vault holds a device key a FIPS 140-3 vault cannot keep')
   if ((input.profile === 'fips-140-3') !== (input.kdf.alg === 'pbkdf2-hmac-sha512')) throw new RotationRefused(`A ${input.profile} vault cannot use ${input.kdf.alg}`)
   validateKdf(input.kdf, opts)
   checkProfileUsable(input.profile)
-  const oldEpoch = base.version === 2 ? base.keyEpoch : 0
-  const older = base.version === 2 ? (base.history ?? []) : []
+  const oldEpoch = base.version === 1 ? 0 : base.keyEpoch
+  const older = base.version === 1 ? [] : (base.history ?? [])
   if (oldEpoch >= U32_MAX - 1) throw new RotationRefused('This vault has no key epoch left')
   if (kind !== 'convert' && older.length >= MAX_HISTORY) {
     throw new RotationRefused('Keys were rotated four times since the oldest files were replaced. Let sync finish on every device, then rotate again.')
@@ -730,10 +910,16 @@ export async function rekeyHeader(input: RekeyInput, opts: WeakKdfOption = {}): 
       const oldSuite = base.version === 1 ? SUITE.HKDF_AES256GCM : SUITE.KBKDF_AES256GCM
       const entry = n.historySeal(proof.kek, proof.iv, proof.aad, proof.ct, reopened, historyContext(base.vaultId, oldEpoch), historyAad(body, oldEpoch, oldSuite))
       const history: HistoryEntry[] = [{ epoch: oldEpoch, ...(toWrap(body, entry) as WrapV2) }]
-      for (const h of older) history.push({ epoch: h.epoch, ...(toWrap(body, rewrapHistory(base as VaultHeaderV2, h, proof, reopened, body)) as WrapV2) })
+      for (const h of older) history.push({ epoch: h.epoch, ...(toWrap(body, rewrapHistory(base as VaultHeaderV2 | VaultHeaderV3, h, proof, reopened, body)) as WrapV2) })
       body.history = history
     }
-    return { header: finish(body, mk), mk, recoveryKey: sealed.recoveryKey }
+    // Every wrap above used v2's AAD, which v3 shares (rule 9): v3 is the same body plus `pq` and the carried slots.
+    const toV3 = base.version === 3 || (kind === 'upgrade' && input.headerVersion === 3)
+    if (!toV3) return { header: finish(body, mk), mk, recoveryKey: sealed.recoveryKey }
+    const pq = base.version === 3 ? structuredClone(base.pq) : { ...PQ_V3 }
+    const wraps: VaultHeaderV3['wraps'] = { ...body.wraps }
+    for (const [name, w] of deviceSlots(base)) wraps[name] = structuredClone(w)
+    return { header: finish({ ...body, version: 3 as const, wraps, pq }, mk), mk, recoveryKey: sealed.recoveryKey }
   } catch (e) {
     destroyKey(mk)
     throw e
@@ -744,7 +930,7 @@ export async function rekeyHeader(input: RekeyInput, opts: WeakKdfOption = {}): 
 }
 
 /** One older entry moved from K_hist of the base's MK (shown by the proof) to K_hist of the new MK, keeping its suite. */
-function rewrapHistory(base: VaultHeaderV2, h: HistoryEntry, proof: WrapProof, mkNew: KeyHandle, body: Pick<VaultHeaderV2, 'vaultId' | 'profile'>): Uint8Array {
+function rewrapHistory(base: VaultHeaderV2 | VaultHeaderV3, h: HistoryEntry, proof: WrapProof, mkNew: KeyHandle, body: Pick<VaultHeaderV2, 'vaultId' | 'profile'>): Uint8Array {
   const n = vaultNative()
   const ctx = historyContext(base.vaultId, h.epoch)
   const iv = Buffer.from(h.nonce, 'base64')
@@ -771,7 +957,7 @@ export interface EpochKey {
  */
 export function openHistory(header: VaultHeader, mk: KeyHandle): Map<number, EpochKey> {
   const out = new Map<number, EpochKey>()
-  if (header.version !== 2) return out
+  if (header.version === 1) return out
   const n = vaultNative()
   for (const h of header.history ?? []) {
     for (const suite of entrySuites(header, h.epoch)) {
@@ -791,10 +977,10 @@ export function openHistory(header: VaultHeader, mk: KeyHandle): Map<number, Epo
 }
 
 /** R-2: `history` without `epochs` (no file of theirs is left), at the next revision. */
-export function pruneHistory(base: VaultHeaderV2, mk: KeyHandle, epochs: readonly number[]): VaultHeaderV2 {
-  const body = next(base, mk) as Omit<VaultHeaderV2, 'check'>
+export function pruneHistory<H extends VaultHeaderV2 | VaultHeaderV3>(base: H, mk: KeyHandle, epochs: readonly number[]): H {
+  const body = next(base, mk) as Omit<VaultHeaderV2 | VaultHeaderV3, 'check'> & { history?: HistoryEntry[] }
   const kept = (base.history ?? []).filter((h) => !epochs.includes(h.epoch))
   if (kept.length > 0) body.history = kept
   else delete body.history
-  return finish(body, mk)
+  return finish(body as HeaderBody, mk) as H
 }

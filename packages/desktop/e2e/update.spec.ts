@@ -1,7 +1,15 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, launchApp, test } from './fixtures'
+
+const readSecurityLog = (userData: string): string => {
+  try {
+    return readFileSync(join(userData, 'security-log', 'slate.log'), 'utf8')
+  } catch {
+    return ''
+  }
+}
 
 test('the update banner offers the fake release, copies the install command and dismisses', async () => {
   const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
@@ -79,6 +87,30 @@ test('T-UPD-01: a feed signed by a key that is not pinned is never offered', asy
     await section.getByTestId('update-check-now').click()
     await expect(section.getByTestId('update-check-result')).toContainText(/Could not check: .*is not pinned/)
     await expect(page.getByTestId('update-banner')).toHaveCount(0)
+  } finally {
+    await app.close()
+  }
+})
+
+test('T-PQ-A2-06: the fake feed with a hybrid signature is offered; with the ML-DSA half stripped it is not, and the log says so', async () => {
+  const good = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  try {
+    await expect(good.page.getByTestId('update-banner')).toContainText('Slate 9.9.9 is available')
+  } finally {
+    await good.app.close()
+  }
+
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const { app, page } = await launchApp(userData, { SLATE_FAKE_UPDATE: 'deb-nomldsa' })
+  try {
+    await expect(page.getByTestId('canvas')).toBeVisible()
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send('menu:command', { cmd: 'show-settings', section: 'updates' }))
+    const section = page.getByTestId('updates-section')
+    await section.getByTestId('update-check-now').click()
+    await expect(section.getByTestId('update-check-result')).toContainText(/Could not check: .*ed25519 and mldsa65/)
+    await expect(page.getByTestId('update-banner')).toHaveCount(0)
+    // The security log is always on (securityEvents.ts), so a default install records the refusal.
+    await expect.poll(() => readSecurityLog(userData)).toContain('update.signature.failed')
   } finally {
     await app.close()
   }

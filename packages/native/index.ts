@@ -53,6 +53,13 @@ export interface NativeStatus {
   defaultContextProviders: string
   /** What the loaded FIPS provider reports about itself (F-FIPS-08); null when no provider is loaded. */
   fipsModule: { name: string; version: string } | null
+  /**
+   * PQ-A1: the post-quantum algorithms the standard library context can create keys for, among ML-KEM-768,
+   * ML-KEM-1024, ML-DSA-65, ML-DSA-87 and SLH-DSA-SHA2-256s. Empty before `init`.
+   */
+  pqAlgorithms: string[]
+  /** PQ-A1: the loaded FIPS provider itself offers ML-KEM-768 and ML-DSA-65. False with provider 3.1.2 and without one. */
+  pqInFipsBoundary: boolean
 }
 
 export interface SlateNative {
@@ -190,6 +197,13 @@ export interface SlateNative {
   aesCtr(key: KeyHandle, icb: Uint8Array, data: Uint8Array): Uint8Array
   sha256(data: Uint8Array): Uint8Array
   randomBytes(n: number): Uint8Array
+  /**
+   * PQ-A1: FIPS 204 ML-DSA verification, "pure" mode with context string `ctx` (at most 255 bytes), over public
+   * bytes only: `spkiDer` is exactly an id-ml-dsa-65/-87 SubjectPublicKeyInfo for `level`, `sig` exactly that
+   * level's signature length. False for a signature that does not verify; SCC_1 for any malformed input. Runs
+   * outside the FIPS boundary (provider 3.1.2 has no ML-DSA) and is still served after `requireApprovedKeys`.
+   */
+  mldsaVerify(level: 65 | 87, spkiDer: Uint8Array, msg: Uint8Array, ctx: Uint8Array, sig: Uint8Array): boolean
   /** SQLCipher and the vendored better-sqlite3 binding (audit C3); reach it through `databaseClass`. */
   readonly sqlite: object
 }

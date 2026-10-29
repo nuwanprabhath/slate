@@ -32,6 +32,13 @@ function sources(dir: string = MAIN): string[] {
   return out
 }
 
+const REPO = join(MAIN, '../../../..')
+/** Every file that runs in the main process: all of src/main and the packages it loads (red team re-run R4; `MAIN_PROCESS`). */
+const mainProcessSources = (): string[] => [...sources(), ...['sync', 'mcp', 'importer'].flatMap((p) => sources(join(REPO, 'packages', p, 'src'))), join(REPO, 'packages/native/index.ts')]
+
+/** INV-PQ-7: the TLS group settings, which only `tlsPolicy.ts` may touch. */
+const TLS_GROUP_SETTING = /\b(?:ecdhCurve|DEFAULT_ECDH_CURVE)\b/
+
 /** The audit's identifier pattern for key material (§6.8, T-STATIC-01). */
 const KEY_NAME = /(^|_)(mk|lk|kek|key|secret|qu|password)($|[A-Z_])/i
 
@@ -169,11 +176,8 @@ describe('T-STATIC source checks (audit §6.8)', () => {
   it('T-STATIC-01: no Buffer.from, Buffer.concat, .toString or template literal on a key anywhere in the main process', () => {
     const allowed = keyTextAllowlist()
     const found: string[] = []
-    // Every file that runs in the main process: all of src/main and the packages it loads (red team re-run R4).
-    const repo = join(MAIN, '../../../..')
-    const mainProcess = [...sources(), ...['sync', 'mcp', 'importer'].flatMap((p) => sources(join(repo, 'packages', p, 'src'))), join(repo, 'packages/native/index.ts')]
-    for (const file of mainProcess) {
-      const rel = relative(repo, file).split('\\').join('/')
+    for (const file of mainProcessSources()) {
+      const rel = relative(REPO, file).split('\\').join('/')
       for (const name of keyTextUses(readFileSync(file, 'utf8'))) if (!allowed[rel]?.includes(name)) found.push(`${rel}: ${name}`)
     }
     expect(found.map((f) => `${f}: keep key bytes in one owner and zero them (audit Z-1..Z-3); never copy or stringify them`)).toEqual([])
@@ -319,5 +323,17 @@ describe('T-STATIC source checks (audit §6.8)', () => {
     const found = new Set<string>()
     for (const file of sources()) if (/\.gcmSeal(?:Key|IvInAad)?\(/.test(readFileSync(file, 'utf8').replace(/\/\/.*$/gm, ''))) found.add(relative(MAIN, file))
     expect([...found].sort()).toEqual([...recorded].sort())
+  })
+
+  it('T-PQ-C3-03: no main-process file except tlsPolicy.ts contains ecdhCurve or DEFAULT_ECDH_CURVE (INV-PQ-7)', () => {
+    const files = mainProcessSources()
+    expect(files).toContain(join(MAIN, 'tlsPolicy.ts'))
+    const found = files.filter((f) => f !== join(MAIN, 'tlsPolicy.ts') && TLS_GROUP_SETTING.test(readFileSync(f, 'utf8'))).map((f) => relative(REPO, f).split('\\').join('/'))
+    expect(found.map((f) => `${f}: set TLS groups only through applyTlsPolicy() in src/main/tlsPolicy.ts`)).toEqual([])
+  })
+
+  it('T-PQ-C3-03: the check sees either setting in any spelling a lint rule would miss (self-test)', () => {
+    for (const text of ["tls.connect({ ecdhCurve: 'X25519' })", "tls['DEFAULT_ECDH_CURVE'] = 'P-256'", 'const { DEFAULT_ECDH_CURVE } = tls']) expect(TLS_GROUP_SETTING.test(text), text).toBe(true)
+    expect(TLS_GROUP_SETTING.test('const ecdhCurves = 1; myDEFAULT_ECDH_CURVE_X')).toBe(false)
   })
 })

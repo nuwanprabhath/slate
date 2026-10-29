@@ -53,6 +53,8 @@ describe('security audit events (audit §4.8)', () => {
     securityEvent.locked({ trigger: 'idle', destroyedHandles: 9 })
     securityEvent.headerAdopted({ fromRevision: 1, toRevision: 2 })
     securityEvent.headerRefused({ reason: 'downgrade' })
+    securityEvent.headerUpgraded({ fromRevision: 2, toRevision: 3 })
+    securityEvent.headerUpgradeWaiting({ devices: 1 })
     securityEvent.passwordChanged({ revision: 4 })
     securityEvent.recoveryRotated({ revision: 5 })
     securityEvent.keyRotated({ fromEpoch: 1, toEpoch: 2 })
@@ -72,6 +74,8 @@ describe('security audit events (audit §4.8)', () => {
       'vault.locked': ['destroyedHandles', 'trigger'],
       'vault.header.adopted': ['fromRevision', 'toRevision'],
       'vault.header.refused': ['reason'],
+      'vault.header.upgraded': ['fromRevision', 'toRevision'],
+      'vault.header.upgrade-waiting': ['devices'],
       'vault.password.changed': ['revision'],
       'vault.recovery.rotated': ['revision'],
       'vault.key.rotated': ['fromEpoch', 'toEpoch'],

@@ -1,11 +1,13 @@
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { artifactMessage, keyIdOf, manifestMessage, UpdateSignatureError, type PinnedUpdateKey } from './signature'
+import { FAKE_FILES, FAKE_HYBRID_KEY, FAKE_VERSION, fakeBackend, type FakeSignature } from './fakeBackend'
+import { FAKE_MLDSA65_SIGS } from './fakeHybridKey'
+import { artifactMessage, keyIdOf, manifestMessage, UpdateSignatureError, type Ed25519UpdateKey, type PinnedUpdateKey } from './signature'
 import { createUpdateVerifier, sameRelease } from './verifier'
 
 function keyPair() {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-  const key: PinnedUpdateKey = { alg: 'ed25519', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }
+  const key: Ed25519UpdateKey = { alg: 'ed25519', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }
   const sigFile = (m: Uint8Array) =>
     JSON.stringify({ format: 'slate-update-signature', version: 1, alg: 'ed25519', keyId: keyIdOf(key.publicKeyPem), signature: sign(null, m, privateKey).toString('base64') })
   return { key, sigFile }
@@ -106,5 +108,48 @@ describe('update verifier (C12 criterion 1)', () => {
     const verified = await v.release(found)
     await expect(v.artifact(verified, found.files[0]!)).rejects.toThrow(/missing/)
     await expect(v.artifact(verified, { ...found.files[1]!, sha512: 'b3RoZXI=' })).rejects.toThrow(UpdateSignatureError)
+  })
+
+  describe('with the hybrid key pinned (PQ-A2)', () => {
+    const fakeFound = { version: FAKE_VERSION, files: FAKE_FILES }
+    const fake = (manifestName: string, signature: FakeSignature = 'good') => fakeBackend({ downloadsDir: '/nowhere', copy: () => {}, manifestName, signature })
+    const hybridVerifier = (fetchAsset: (version: string, name: string) => Promise<Uint8Array | null>, manifestName = NAME) =>
+      createUpdateVerifier({ keys: [FAKE_HYBRID_KEY], manifestName, currentVersion: '0.1.0', fetchAsset })
+
+    it('T-PQ-A2-01: the fake feed and every artefact verify through .pq.sig (and the precomputed ML-DSA halves have not drifted)', async () => {
+      for (const manifestName of ['latest-mac.yml', 'latest-linux.yml']) {
+        const backend = fake(manifestName)
+        const fetched: string[] = []
+        const v = hybridVerifier(async (version, name) => {
+          fetched.push(name)
+          return backend.fetchAsset(version, name)
+        }, manifestName)
+        const verified = await v.release(fakeFound)
+        for (const f of FAKE_FILES) await v.artifact(verified, f)
+        expect(fetched.filter((n) => n.endsWith('.sig'))).toEqual([`${manifestName}.pq.sig`, ...FAKE_FILES.map((f) => `${f.url}.pq.sig`)])
+      }
+      // Every precomputed signature is used by a test (no stale fixture).
+      expect(Object.keys(FAKE_MLDSA65_SIGS).sort()).toEqual(['latest-linux.yml', 'latest-mac.yml', 'unbound:latest-linux.yml', ...FAKE_FILES.map((f) => f.url)].sort())
+    })
+
+    it('T-PQ-A2-03: a release with a correct v1 .sig but no .pq.sig is refused, for the feed and for an artefact', async () => {
+      const k = keyPair()
+      const v1 = release(k)
+      const both = verifier(v1, [k.key, FAKE_HYBRID_KEY])
+      await expect(both.release(found)).rejects.toThrow(UpdateSignatureError)
+      await expect(both.release(found)).rejects.toThrow(/post-quantum signature missing/)
+
+      const backend = fake(NAME)
+      const noPqArtefact = hybridVerifier(async (version, name) => (name === `${FAKE_FILES[0]!.url}.pq.sig` ? null : backend.fetchAsset(version, name)))
+      const verified = await noPqArtefact.release(fakeFound)
+      await expect(noPqArtefact.artifact(verified, FAKE_FILES[0]!)).rejects.toThrow(/post-quantum signature missing/)
+    })
+
+    it('a feed whose .pq.sig lost its ML-DSA half, or is by a key that is not pinned, is refused', async () => {
+      const stripped = fake(NAME, 'stripped')
+      await expect(hybridVerifier((v, n) => stripped.fetchAsset(v, n)).release(fakeFound)).rejects.toThrow(/ed25519 and mldsa65/)
+      const unpinned = fake(NAME, 'unpinned')
+      await expect(hybridVerifier((v, n) => unpinned.fetchAsset(v, n)).release(fakeFound)).rejects.toThrow(/not pinned/)
+    })
   })
 })

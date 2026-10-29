@@ -3,11 +3,12 @@
 // efcbb2d) through the audited vault/crypto.ts, header.ts, localKeys.ts, names.ts, quickUnlock.ts and
 // preunlock.ts; it is never regenerated. The reference below is that construction in node:crypto.
 import { createDecipheriv, hkdfSync } from 'node:crypto'
-import { cpSync, mkdtempSync, readFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
+import { LoroDoc } from 'loro-crdt'
 import type { KeyHandle } from '@slate/native'
 import type { EnvelopeKeys } from './envelope'
 import { PROFILES } from './profile'
@@ -21,7 +22,9 @@ import { openEnvelope, sealEnvelope } from './envelope'
 import { blobRemoteName, decodeId, encodeId } from './names'
 import { readPreunlock, verifyPreunlock } from './preunlock'
 import { openQuickUnlock, type QuickUnlockPlatform } from './quickUnlock'
-import { unlockVault } from './unlock'
+import { unlockVault, VAULT_FILE } from './unlock'
+import { canonicalJson, parseHeader } from './header'
+import type { UnlockSecret } from './unlock'
 import { secretBytes } from '../../shared/secret'
 
 const FIXTURES = join(__dirname, 'fixtures', 'c4')
@@ -154,5 +157,74 @@ describe('C4 cross-version fixtures (criterion 2, T-KAT-03)', () => {
     } finally {
       keyRing.close()
     }
+  })
+})
+
+// ---- PQ-B4 (T-PQ-B4-04): every header version this build has written opens, with its notes ----
+
+const V2_FIXTURE = join(__dirname, '..', '..', '..', 'e2e', 'fixtures', 'pq-v2-0.3.0')
+const V3_FIXTURE = join(__dirname, 'fixtures', 'pq-v3')
+const v2Secrets = JSON.parse(readFileSync(join(V2_FIXTURE, 'secrets.json'), 'utf8')) as { password: string; recoveryKey: string; note: string }
+const v3Manifest = JSON.parse(readFileSync(join(V3_FIXTURE, 'manifest.json'), 'utf8')) as { device: string }
+
+/** A scratch copy of a fixture's data folder, `vault.json` replaced by `header` when given. */
+function copyOf(data: string, header?: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'slate-pq-fixture-'))
+  cpSync(data, dir, { recursive: true })
+  if (header) writeFileSync(join(dir, VAULT_FILE), readFileSync(header))
+  return dir
+}
+
+/** Every note's text (the JSON of each document) and the idle setting, as the unlocked vault reads them. */
+async function notesOf(dir: string, secret: UnlockSecret): Promise<{ docs: string[]; idleMinutes: number }> {
+  const { keyRing, dbFile } = await unlockVault(dir, secret, weak)
+  try {
+    const store = storeWithLk(keyRing, dbFile)
+    try {
+      const docs = store.list('').map((id) => {
+        const doc = new LoroDoc()
+        doc.importBatch(store.load(id))
+        return `${id} ${JSON.stringify(doc.toJSON())}`
+      })
+      return { docs, idleMinutes: readSettings(store).idleMinutes }
+    } finally {
+      store.close()
+    }
+  } finally {
+    keyRing.close()
+  }
+}
+
+describe('PQ-B4: header v1, v2 (0.3.0) and v3 fixtures', () => {
+  it('T-PQ-B4-04: the v1, v2 and v3 fixtures each unlock with the password and the recovery key, and their notes match', async () => {
+    const cases = [
+      { label: 'v1', version: 1, data: join(FIXTURES, 'data'), header: undefined, password: manifest.password, recoveryKey: manifest.recoveryKey },
+      { label: 'v2', version: 2, data: join(V2_FIXTURE, 'data'), header: undefined, password: v2Secrets.password, recoveryKey: v2Secrets.recoveryKey },
+      { label: 'v3', version: 3, data: join(V2_FIXTURE, 'data'), header: join(V3_FIXTURE, 'vault.json'), password: v2Secrets.password, recoveryKey: v2Secrets.recoveryKey },
+    ]
+    const seen = new Map<string, Awaited<ReturnType<typeof notesOf>>>()
+    for (const c of cases) {
+      for (const [how, secret] of [
+        ['password', () => ({ password: secretBytes(c.password) })],
+        ['recovery key', () => ({ recoveryKey: secretBytes(c.recoveryKey) })],
+      ] as const) {
+        const dir = copyOf(c.data, c.header)
+        try {
+          expect(parseHeader(JSON.parse(readFileSync(join(dir, VAULT_FILE), 'utf8')), weak).version).toBe(c.version)
+          const notes = await notesOf(dir, secret())
+          const first = seen.get(c.label)
+          if (first) expect(notes, `${c.label} by ${how}`).toEqual(first)
+          else seen.set(c.label, notes)
+          // The device slot is carried, never opened: the header on disk still holds it after the unlock.
+          if (c.version === 3) expect(canonicalJson(JSON.parse(readFileSync(join(dir, VAULT_FILE), 'utf8')).wraps[v3Manifest.device])).toBe(canonicalJson(JSON.parse(readFileSync(c.header!, 'utf8')).wraps[v3Manifest.device]))
+        } finally {
+          rmSync(dir, { recursive: true, force: true })
+        }
+      }
+    }
+    expect(seen.get('v1')).toEqual({ docs: [], idleMinutes: manifest.settings.idleMinutes })
+    expect(seen.get('v2')!.docs.some((d) => d.includes(v2Secrets.note))).toBe(true)
+    // v3 is v2's data folder under the upgraded header: the very same notes.
+    expect(seen.get('v3')).toEqual(seen.get('v2'))
   })
 })

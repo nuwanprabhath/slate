@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseHeader, proveSecret } from './header'
+import { buildHeaderV3From, parseHeader, proveSecret, type VaultHeaderV2 } from './header'
 import {
   enableQuickUnlock,
   forgetQuickUnlock,
@@ -143,5 +143,20 @@ describe('quick unlock (§8)', () => {
     expect(existsSync(join(dir, QUICK_UNLOCK_FILE))).toBe(false)
     await forgetQuickUnlock(dir)
     await expect(openQuickUnlock(dir, fakePlatform().p)).rejects.toThrow(QuickUnlockFailed)
+  })
+
+  it('T-PQ-B1-09: quick unlock opens a header-v3 vault, made from v2 without re-entering a secret (INV-PQ-3)', async () => {
+    const { dir, mk } = await vault()
+    const v2 = parseHeader(JSON.parse(readFileSync(join(dir, 'vault.json'), 'utf8')), weak) as VaultHeaderV2
+    const v3 = buildHeaderV3From(v2, mk)
+    writeFileSync(join(dir, 'vault.json'), JSON.stringify(v3))
+    const proof = await proveSecret(v3, { password: secretBytes('correct horse') }, weak)
+    const { p } = fakePlatform()
+    await enableQuickUnlock(dir, proof, p, scheduleOf(v3))
+    const got = await openQuickUnlock(dir, p)
+    expect(sameMaster(got, mk)).toBe(true)
+    const opened = await unlockVault(dir, { mk: got }, weak)
+    expect(sameMaster(opened.keyRing.get('mk'), mk)).toBe(true)
+    opened.keyRing.close()
   })
 })

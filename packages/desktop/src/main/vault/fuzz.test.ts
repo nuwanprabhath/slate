@@ -4,17 +4,18 @@
 import { randomBytes } from 'node:crypto'
 import fc from 'fast-check'
 import { describe, expect, it, vi } from 'vitest'
-import { apply, fcParams, forAll, fuzzTimeout, jsonValue, mutation, Rng } from '../../../test/fuzz'
+import { apply, fcParams, FUZZ_RUNS, forAll, fuzzTimeout, jsonValue, mutation, Rng, type Mutation } from '../../../test/fuzz'
 import { importKey, knownDataKey, samePasswordKey } from '../../../test/vaultKeys'
 import { openEnvelope, parseEnvelope, sealEnvelope, UnverifiableFile } from './envelope'
 import { PROFILES } from './profile'
 import { SUITE } from './suite'
 import type { KeyHandle } from '@slate/native'
 import { secretBytes } from '../../shared/secret'
-import { BadHeader, canonicalJson, parseHeader, parseHeaderV2 } from './header'
+import { BadHeader, buildHeaderV3From, canonicalJson, createVault, parseHeader, parseHeaderV2, scheduleOf, unlockWithRecovery, WrongSecret, type VaultHeaderV3 } from './header'
+import { deriveSubkey } from './keyring'
 import { parseLocalKeys, BadLocalKeys } from './localKeys'
 import { decodeIdV2, encodeIdV2 } from './names'
-import { vaultNative } from './native'
+import { destroyKey, toBase64, utf8, vaultNative } from './native'
 import { parsePreunlockFile } from './preunlock'
 import { parseProfileFloor } from './profileFloor'
 import { parseQuickUnlock } from './quickUnlock'
@@ -385,4 +386,84 @@ describe('T-FUZZ (fast-check): shrinking properties over the same parsers', () =
       for (const k of [keys.enc, keys.mac, mk]) vaultNative().keyDestroy(k)
     }
   }, T)
+})
+
+// PQ-B1 (roadmap §3.2-§3.3): a real v3 header with one hybrid device slot, mutated at any depth (device slot fields
+// included), then parsed and, when it parses, opened with the vault's own recovery key.
+describe('T-PQ-B1-08: mutated v3 headers', () => {
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+  /** `mutation` applied to any object in the header (the root, wraps, a device slot, pq, a history entry). */
+  function applyAnywhere(doc: Record<string, unknown>, m: Mutation, rng: Rng): Record<string, unknown> {
+    const out = structuredClone(doc)
+    const targets: Record<string, unknown>[] = []
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk)
+      else if (isObj(v)) {
+        targets.push(v)
+        Object.values(v).forEach(walk)
+      }
+    }
+    walk(out)
+    const target = rng.pick(targets)
+    const keys = Object.keys(target)
+    if (m.op === 'delete' && keys.length) delete target[keys[m.at % keys.length]!]
+    if (m.op === 'add') target[m.key] = m.value
+    if (m.op === 'replace' && keys.length) target[keys[m.at % keys.length]!] = m.value
+    return out
+  }
+
+  it('T-PQ-B1-08: 10,000 mutated v3 headers never throw anything but BadHeader or WrongSecret', async () => {
+    const weak = { allowWeakForTests: true }
+    const made = await createVault({ password: secretBytes('a fuzzed v3 vault'), kdf: { memoryKiB: 64, passes: 1 } }, weak)
+    const v3 = structuredClone(buildHeaderV3From(made.header, made.mk)) as VaultHeaderV3 & { wraps: Record<string, unknown> }
+    v3.wraps['device-11111111-1111-4111-8111-111111111111'] = {
+      alg: 'mlkem768-x25519-kdf56c',
+      pkHash: b64(32, 3),
+      kemCt: b64(1088, 4),
+      ecdhPub: b64(32, 5),
+      nonce: b64(12, 6),
+      ct: b64(48, 7),
+      addedAt: 1761200000000,
+      addedBy: '22222222-2222-4222-8222-222222222222',
+    }
+    v3.pq.minCapability = 2
+    const { check: _drop, ...rest } = v3
+    const kCheck = deriveSubkey(made.mk, 'check', scheduleOf(v3))
+    const valid = { ...rest, check: toBase64(vaultNative().hmacSha256(kCheck, utf8(canonicalJson(rest)))) } as Record<string, unknown>
+    destroyKey(kCheck)
+    destroyKey(made.mk)
+    const recovery = made.recoveryKey!
+    destroyKey(unlockWithRecovery(parseHeader(structuredClone(valid), weak), secretBytes(recovery)))
+
+    let parsed = 0
+    let opened = 0
+    forAll(
+      'T-PQ-B1-08',
+      (rng) => {
+        let h = structuredClone(valid)
+        for (let i = rng.int(1, 4); i > 0; i--) h = applyAnywhere(h, mutation(rng), rng)
+        let header
+        try {
+          header = parseHeader(h, weak)
+        } catch (e) {
+          expect(e).toBeInstanceOf(BadHeader)
+          return
+        }
+        parsed++
+        // Nothing dropped or coerced: what parses is the input, field for field.
+        expect(canonicalJson(header)).toBe(canonicalJson(h))
+        try {
+          destroyKey(unlockWithRecovery(header, secretBytes(recovery)))
+          opened++
+        } catch (e) {
+          expect(e).toBeInstanceOf(WrongSecret)
+        }
+      },
+      Math.max(10_000, FUZZ_RUNS),
+    )
+    // Both answers are exercised, or the property would prove nothing.
+    expect(parsed).toBeGreaterThan(50)
+    expect(parsed - opened).toBeGreaterThan(20)
+  }, fuzzTimeout(10_000))
 })

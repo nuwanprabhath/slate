@@ -4,7 +4,10 @@
 # hashlib/hmac, Node's node:crypto and hash-wasm — and compare each with the expected value, which
 # must also be the literal test/kat.c checks the native module against.
 #
-# Needs: an OpenSSL 3.2+ CLI (ARGON2ID; set OPENSSL=...), python3, node, xxd. Run from anywhere:
+# T-PQ-A1-08: the ACVP ML-DSA sigVer vectors (test/vectors/mldsa/sigver.h, which kat.c and pq.test.ts verify
+# through the module) must get the same verdict from `openssl pkeyutl -verify -rawin`.
+#
+# Needs: an OpenSSL 3.5+ CLI (ARGON2ID, ML-DSA; set OPENSSL=...), python3, node, xxd. Run from anywhere:
 #   sh packages/native/test/crossCheck.sh
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -15,7 +18,7 @@ fails=0
 
 ver=$("$OPENSSL" version)
 case "$ver" in
-  "OpenSSL 3.0."* | "OpenSSL 3.1."* | LibreSSL*) echo "crossCheck: $OPENSSL is '$ver'; need OpenSSL 3.2+ (set OPENSSL=)" >&2; exit 2 ;;
+  "OpenSSL 3.0."* | "OpenSSL 3.1."* | "OpenSSL 3.2."* | "OpenSSL 3.3."* | "OpenSSL 3.4."* | LibreSSL*) echo "crossCheck: $OPENSSL is '$ver'; need OpenSSL 3.5+ (set OPENSSL=)" >&2; exit 2 ;;
 esac
 echo "crossCheck with $ver, $(python3 --version), node $(node --version)"
 
@@ -105,6 +108,42 @@ P=00000000000020008000000000000001
 SIV=$(python3 -c 'import hmac,hashlib,sys; print(hmac.new(bytes.fromhex(sys.argv[1]), b"slate-name/v2\0" + bytes.fromhex(sys.argv[2]), hashlib.sha256).hexdigest()[:32])' $KMAC $P)
 expect "name SIV python hmac" "$SIV" 50e291505985f76efa7aeb45620bd1b8
 expect "name C openssl enc -aes-256-ctr" "$(printf $P | xxd -r -p | "$OPENSSL" enc -aes-256-ctr -K $KENC -iv "$SIV" | xxd -p | norm)" 30101fd8c6a1b6030c339f4eee5ffe9c
+
+# ML-DSA (FIPS 204, pure, context string): each ACVP case, then tcId 43 with one flipped signature bit and with
+# another context. The SPKI is the level's fixed RFC 9881 prefix || pk, as in the tests.
+mldsa=$(mktemp -d)
+trap 'rm -rf "$mldsa"' EXIT
+python3 -I - "$here/vectors/mldsa/sigver.h" "$mldsa" <<'PY'
+import os, re, sys
+src = open(sys.argv[1]).read()
+body = src[src.index("MLDSA_SIGVER[] = {"):]
+prefix = {65: "308207b2300b0609608648016503040312038207a100", 87: "30820a32300b060960864801650304031303820a2100"}
+def put(name, pk_spki, msg, ctx, sig, want):
+    d = os.path.join(sys.argv[2], name)
+    os.mkdir(d)
+    for f, v in (("spki.der", pk_spki), ("msg", msg), ("sig", sig)):
+        open(os.path.join(d, f), "wb").write(bytes.fromhex(v))
+    open(os.path.join(d, "ctx"), "w").write(ctx)
+    open(os.path.join(d, "want"), "w").write(want)
+for m in re.finditer(r'\{(\d+), (\d+), ([01]),[^\n]*\n((?:\s*"[0-9a-f]*"\s*,?)+)\}', body):
+    pk, msg, ctx, sig = ["".join(re.findall(r'"([0-9a-f]*)"', f)) for f in m.group(4).split(",")[:4]]
+    tc, level, ok = m.group(1), int(m.group(2)), m.group(3) == "1"
+    spki = prefix[level] + pk
+    put(f"{tc:0>3}-ML-DSA-{level}-tcId-{tc}", spki, msg, ctx, sig, "verified" if ok else "failure")
+    if tc == "43":
+        flipped = sig[:200] + format(int(sig[200:202], 16) ^ 1, "02x") + sig[202:]
+        put("043a-tcId-43-flipped-bit", spki, msg, ctx, flipped, "failure")
+        other = format(int(ctx[:2], 16) ^ 0x80, "02x") + ctx[2:]
+        put("043b-tcId-43-other-context", spki, msg, other, sig, "failure")
+PY
+for d in "$mldsa"/*/; do
+  name=$(basename "$d")
+  set -- -verify -rawin -pubin -keyform DER -inkey "$d/spki.der" -in "$d/msg" -sigfile "$d/sig"
+  [ -s "$d/ctx" ] && set -- "$@" -pkeyopt "hexcontext-string:$(cat "$d/ctx")"
+  if "$OPENSSL" pkeyutl "$@" >/dev/null 2>&1; then got=verified; else got=failure; fi
+  expect "ML-DSA $name openssl pkeyutl" "$got" "$(cat "$d/want")"
+done
+[ "$(ls "$mldsa" | wc -l | tr -d ' ')" -eq 5 ] || { echo "FAIL ML-DSA: expected 5 cases from sigver.h"; fails=$((fails + 1)); }
 
 echo "crossCheck: $fails failure(s)"
 [ "$fails" -eq 0 ]

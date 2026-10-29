@@ -43,13 +43,15 @@ export async function createEncryptedDataDir(
   password: SecretBytes,
   opts: WeakKdfOption,
   profile: ProfileId = 'standard',
+  /** 3 for the e2e hook: a new never-synced vault is v3 (PQ-B4), so no format update runs at its first unlock. */
+  headerVersion: 2 | 3 = 2,
 ): Promise<{ header: VaultHeader; mk: KeyHandle; recoveryKey: string }> {
   const plainFile = join(dataDir, 'slate.db')
   const plain = new DocStore(plainFile)
   const settings = readSettings(plain)
   plain.close()
   const kdf = await kdfForProfile(profile, { argon2: { memoryKiB: 64, passes: 1 }, pbkdf2Iterations: 1000 })
-  const { header, mk, recoveryKey } = await createVault({ password, profile, kdf }, opts)
+  const { header, mk, recoveryKey } = await createVault({ password, profile, kdf, headerVersion }, opts)
   const schedule = scheduleOf(header)
   latchProfile(profile)
   // MK is the caller's on success; any step that throws destroys it with the keys made from it (review C4 L4).

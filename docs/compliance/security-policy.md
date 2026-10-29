@@ -82,6 +82,7 @@ convert).
 | `POST-SLE2-SEAL`, `POST-SLE1-OPEN`, `POST-NAME-V2` | sync-file envelope and remote-name known answers |
 | `POST-DRBG` | the DRBG returns distinct output |
 | `POST-ZEROIZE` | a destroyed key is gone from the secure heap |
+| `POST-MLDSA-VERIFY` | ML-DSA-65 known answer, and a flipped signature is refused. It runs in the OpenSSL 3.5.9 default provider, **outside** the validated module, and is reported as such (section 7a) |
 
 Other failure causes: `POST-MODULE-LOAD` (the module could not be loaded), `POST-TIMEOUT` (the run overran its
 budget), `POST-HARDEN` (the process could not make itself non-dumpable). Tests: T-POST-01 to T-POST-13 (see
@@ -155,13 +156,31 @@ The implementation does not wait on these; the claim wording does. All open (see
 | L-4 | An OpenSSL 3.5.x host with the 3.1.2 provider on macOS arm64 and Linux x64 |
 | L-5 | SQLCipher 4 PBKDF2-HMAC-SHA-512 with 2 iterations from a raw key |
 
+## 7a. Post-quantum
+
+What Slate does about quantum computers, and where each part sits relative to the module. Nothing here is a claim of
+validation: the FIPS Provider 3.1.2 certificate (CMVP #4985) predates FIPS 203 (ML-KEM) and FIPS 204 (ML-DSA), so
+these algorithms are **not** in the module's boundary (`crypto-module.json`: `pqInBoundary: false`).
+
+| Area | State | Where |
+| --- | --- | --- |
+| Notes at rest, vault wraps, local database | Symmetric only (AES-256, SP 800-108r1 KBKDF, HMAC-SHA-256, SQLCipher 4, Argon2id or PBKDF2). Unchanged by this work; no re-encryption. | Inside the module in `fips-140-3` |
+| Vault header | Version 3 is written after unlock once every device record reports the `pq` capability (D-9). Password, recovery key and quick unlock keep working, and no ciphertext changes. Once a device has adopted version 3 it refuses version-2 copies of the header. | `vault/pqUpgrade.ts` |
+| Update signatures | Hybrid `ml-dsa-65+ed25519`: both halves must verify, each over a domain-separated message. A build that pins the hybrid key never accepts an Ed25519-only signature. ML-DSA verification is outside the module, as Ed25519 in `node:crypto` is. | `update/signature.ts`; POAM-18 |
+| Git over SSH | Hybrid key exchange is preferred (`mlkem768x25519-sha256`, then `sntrup761x25519-sha512@openssh.com`, then the system's list). "Require post-quantum key exchange" is off by default (D-10). The transports are outside the module (POAM-11). | `GIT_SSH_COMMAND`; Settings, Sync |
+| HTTPS | The built-in TLS client offers `X25519MLKEM768` first. Servers answer as they choose; Graph and GitHub HTTPS were classical when measured (POAM-17). | `tlsPolicy.ts` |
+| Device or recipient slots | Not built (D-6 stays deferred). When built they must carry an ML-KEM component; classical public-key slots are forbidden by the header schema. | Roadmap section 3.8 |
+
+In the `fips-140-3` profile the readiness panel and the diagnostics never present an ML-KEM or ML-DSA operation as
+inside the validated module. The profile matrix is in `docs/reviews/quantum-proof-roadmap.md` section 2.3.
+
 ## 8. POA&M summary
 
 Full table: [`poam.md`](poam.md). Open rows: POAM-01 and -02 (no Developer ID or package signing, D-1), POAM-03
 (macOS memory protection), POAM-04 (`runAsNode` fuse), POAM-05 (one pinned update-signing key), POAM-06 (update
 freshness), POAM-07 (FIPS provider under a Developer ID), POAM-08 (Argon2id memory), POAM-10 (typed secret in
 Electron IPC), POAM-11 (transport TLS), POAM-12 (no own validation, D-3), POAM-13 (AC-7 and AC-11 values not in the
-FedRAMP rules file), POAM-15 (`vault.seen.json` deleted). POAM-14 (SI-6) is closed: the self-test of section 4 is built.
+FedRAMP rules file), POAM-15 (`vault.seen.json` deleted), POAM-17 (transport key exchange is classical for some hosts), POAM-18 (ML-DSA outside the validated module). POAM-14 (SI-6) is closed: the self-test of section 4 is built.
 
 ## 9. Where each claim is tested
 

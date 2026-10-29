@@ -1,0 +1,27 @@
+{
+  "format": "slate-vault",
+  "version": 3,
+  "vaultId": "00000000-0000-4000-8000-0000000000aa",
+  "revision": 4,
+  "createdAt": 1761200000000,
+  "profile": "fips-140-3",
+  "suite": 2,
+  "keyEpoch": 0,
+  "kdf": {
+    "alg": "pbkdf2-hmac-sha512",
+    "iterations": 600000,
+    "salt": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+  },
+  "wraps": {
+    "password": {
+      "alg": "aes-256-gcm",
+      "nonce": "AQEBAQEBAQEBAQEB",
+      "ct": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC"
+    }
+  },
+  "pq": {
+    "kem": "hybrid-only",
+    "minCapability": 1
+  },
+  "check": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+}

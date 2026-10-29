@@ -23,6 +23,18 @@ describe('power-up self-test (T-POST-01)', () => {
     expect(r.ms).toBeLessThan(1000)
   })
 
+  it('T-PQ-A4-01: a full POST runs POST-MLDSA-VERIFY and passes', async () => {
+    const r = await runPost({ native: dbModule().native, requireFips: testHasProvider })
+    expect(r.ran).toContain('POST-MLDSA-VERIFY')
+    expect(r.failed).toEqual([])
+  })
+
+  it('T-PQ-A4-03: the whole run, with the ML-DSA check, stays under the budget assertion', async () => {
+    const r = await runPost({ native: dbModule().native, requireFips: testHasProvider })
+    expect(r.ms).toBeLessThan(1000)
+    expect(r.failed).not.toContain('POST-TIMEOUT')
+  })
+
   it('runs one at a time: overlapping runs (on demand, before a vault change) each pass', async () => {
     const n = dbModule().native
     const runs = await Promise.all([1, 2, 3].map(() => runPost({ native: n, requireFips: testHasProvider })))

@@ -1,0 +1,17 @@
+debug1: OpenSSH_10.3p1, OpenSSL 3.5.0 8 Apr 2025
+debug1: Reading configuration data /Users/dev/.ssh/config
+debug1: Connecting to github.com [140.82.121.4] port 22.
+debug1: Connection established.
+debug1: Remote protocol version 2.0, remote software version babeld-2f9a8d6c
+debug1: compat_banner: no match: babeld-2f9a8d6c
+debug1: Authenticating to github.com:22 as 'git'
+debug1: SSH2_MSG_KEXINIT sent
+debug1: SSH2_MSG_KEXINIT received
+debug1: kex: algorithm: mlkem768x25519-sha256
+debug1: kex: host key algorithm: ssh-ed25519
+debug1: kex: server->client cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+debug1: Server host key: ssh-ed25519 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU
+debug1: Authentications that can continue: publickey
+debug1: Offering public key: /Users/dev/.ssh/id_ed25519 ED25519 SHA256:abc
+debug1: Authentication succeeded (publickey).
+Authenticated to github.com ([140.82.121.4]:22) using "publickey".

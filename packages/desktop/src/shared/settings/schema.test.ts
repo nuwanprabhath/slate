@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, mergeSettings, sanitizePatch } from './schema'
 
 describe('settings schema', () => {
+  it('T-PQ-Q0-03: syncRequirePq sanitises non-booleans to the default', () => {
+    expect(DEFAULT_SETTINGS.syncRequirePq).toBe(false)
+    for (const v of ['true', 1, null, {}]) expect(mergeSettings({ syncRequirePq: v }).syncRequirePq, String(v)).toBe(false)
+    expect(mergeSettings({ syncRequirePq: true }).syncRequirePq).toBe(true)
+  })
+
   it('fills every key from its default', () => {
     expect(mergeSettings({})).toEqual(DEFAULT_SETTINGS)
     expect(DEFAULT_SETTINGS.autoBullets).toBe(true)

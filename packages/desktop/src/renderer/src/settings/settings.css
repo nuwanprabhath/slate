@@ -34,3 +34,11 @@
 .settings-pane > p { margin: 0; }
 /* Under a checkbox: on its label's edge (15px box + 8px gap), like CheckboxSetting's help. */
 .settings-indent { margin-left: 23px; }
+
+/* Settings → Security → Post-quantum readiness (PQ-D1): the Cryptographic module's list (.security-module), with room for multi-line values. */
+.pq-readiness dt { flex: 0 0 140px; }
+.pq-readiness dd { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.pq-readiness > div + div { margin-top: 0; }
+.pq-remotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pq-remotes li { display: flex; flex-direction: column; }
+.pq-remotes li > span:first-child { color: var(--muted); }

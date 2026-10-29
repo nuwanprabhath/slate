@@ -1,4 +1,5 @@
 // Source-level guards for the native boundary (audit §7.3 C2 criteria 3 and 4, §4.3 V8 cage).
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -39,6 +40,9 @@ const ERROR_STATE_EXEMPT = new Set([
   'scc_post_passed',
   'scc_post_begin',
   'scc_post_end',
+  // PQ-A1: the post-quantum inventory in status(); queries, like scc_fips_module_info.
+  'scc_pq_algorithms',
+  'scc_pq_in_fips_boundary',
 ])
 
 /** Every exported `scc_*` definition and the text up to its first `return` that can produce a result. */
@@ -211,6 +215,26 @@ describe('criterion 3: no library context crosses into JavaScript', () => {
     const typed = [...iface.matchAll(/^\s{2}(\w+)\(/gm)].map((m) => m[1]).sort()
     expect(registered.length).toBeGreaterThan(15)
     expect(typed).toEqual(registered)
+  })
+
+  it('T-PQ-A1-07: the export list gains exactly mldsaVerify, and the addon still exports only the two N-API symbols', () => {
+    const registered = [...binding.matchAll(/\{"(\w+)", NULL, \w+, NULL, NULL, NULL, napi_default, NULL\}/g)].map((m) => m[1])
+    // The surface before PQ-A1, in registration order; anything else added here is a reviewed change.
+    const before = 'init hardenProcess postGate postBegin postEnd status enterErrorState zeroizeAll keyRandom requireApprovedKeys hkdfFromSecret kbkdfFromSecret pbkdf2Calibrate nameSivEncode nameSivDecode recoveryDecode hkdfFromRecovery kbkdfFromRecovery argon2idAsync keyDestroy kbkdf hkdfLegacy pbkdf2 pbkdf2Async argon2id gcmSeal gcmSealIvInAad gcmOpen gcmOpenKey gcmSealKey rewrapKey historySeal historyRewrap historyOpen hmacSha256 aesEcbBlock aesCtr sha256 randomBytes'.split(' ')
+    expect(registered.filter((name) => !before.includes(name!))).toEqual(['mldsaVerify'])
+    expect(before.filter((name) => !registered.includes(name))).toEqual([])
+    const r = spawnSync(process.execPath, [join(root, 'scripts', 'check-exports.mjs')], { encoding: 'utf8' })
+    expect(r.status, r.stderr).toBe(0)
+    expect(r.stdout).toMatch(/exactly napi_register_module_v1, node_api_module_get_api_version_v1/)
+  })
+
+  it('PQ-A1: mldsaVerify works on public bytes only (no key handle), and approved-only mode does not refuse it', () => {
+    const body = core.slice(core.indexOf('int scc_mldsa_verify('), core.indexOf('\n}\n', core.indexOf('int scc_mldsa_verify(')))
+    expect(body).toMatch(/^int scc_mldsa_verify\(int level, const unsigned char \*spki_der, size_t spki_len,/)
+    expect(body).not.toMatch(/slot_bytes|need_usage|NOT_AFTER_LATCH|g_fips_ctx/)
+    expect(body).toMatch(/EVP_PKEY_verify_message_init\(/)
+    expect(body).toMatch(/g_std_ctx/)
+    expect(header).toMatch(/scc_mldsa_verify[\s\S]*not refused by scc_require_approved_keys|not refused by scc_require_approved_keys[\s\S]*scc_mldsa_verify/)
   })
 })
 

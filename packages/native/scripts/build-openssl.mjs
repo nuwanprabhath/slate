@@ -6,7 +6,10 @@
 //     -> fips/<target>/{fips.dylib|fips.so, fipsmodule.cnf}, and its SHA-256 into fips-digest.json.
 // Each tarball must hash to the pin in deps.lock.json; anything else is refused before extraction.
 //
+// PQ-A1: libcrypto must keep ML-DSA and ML-KEM (update signatures, the inventory); the build fails otherwise.
+//
 // Usage: node scripts/build-openssl.mjs [--target darwin-arm64|darwin-x64|linux-x64] [--only openssl|fips] [--jobs N]
+//        node scripts/build-openssl.mjs --check-pq [--libcrypto <path>]   (only the PQ check, on an existing build)
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { cpus } from 'node:os'
@@ -34,6 +37,8 @@ const { values: args } = parseArgs({
     jobs: { type: 'string', default: String(cpus().length) },
     offline: { type: 'boolean', default: false },
     'update-pin': { type: 'boolean', default: false },
+    'check-pq': { type: 'boolean', default: false },
+    libcrypto: { type: 'string' },
   },
 })
 const target = args.target
@@ -52,6 +57,25 @@ const extract = (tarball, into) => extractTarball(tarball, into, run)
 const jobs = `-j${args.jobs}`
 const UNREACHABLE_PREFIX = '/nonexistent/slate-openssl'
 
+const UNREACHABLE_PREFIX_ARGS = [`--prefix=${UNREACHABLE_PREFIX}`, `--openssldir=${UNREACHABLE_PREFIX}/ssl`, '--libdir=lib']
+const LIBCRYPTO_CONFIGURE = ['no-shared', 'no-tests', 'no-apps', 'no-legacy', 'no-docs', 'enable-ec_nistp_64_gcc_128', '-fPIC', '-fvisibility=hidden']
+const PQ_DISABLES = ['no-ml-dsa', 'no-ml-kem', 'no-slh-dsa']
+const PQ_SYMBOLS = ['ossl_ml_dsa_verify', 'ossl_ml_kem_encap_seed']
+
+function refusePqDisables(configureArgs) {
+  const bad = configureArgs.filter((a) => PQ_DISABLES.includes(a))
+  if (bad.length) throw new Error(`build-openssl: libcrypto must keep its post-quantum algorithms; remove ${bad.join(', ')} from Configure`)
+}
+
+/** Fails unless the archive defines both PQ entry points (Mach-O names carry a leading underscore). */
+function checkPqSymbols(archive) {
+  const nm = execFileSync('nm', [archive], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+  const defined = new Set([...nm.matchAll(/^[0-9a-fA-F]+ T _?(\w+)$/gm)].map((m) => m[1]))
+  const missing = PQ_SYMBOLS.filter((sym) => !defined.has(sym))
+  if (missing.length) throw new Error(`build-openssl: ${archive} lacks ${missing.join(', ')} (ML-DSA / ML-KEM compiled out)`)
+  console.log(`build-openssl: ${basename(archive)} defines ${PQ_SYMBOLS.join(', ')}`)
+}
+
 async function buildLibcrypto() {
   const src = join(BUILD_DIR, target, `openssl-${lock.openssl.version}`)
   const prefix = opensslPrefix(target)
@@ -62,25 +86,9 @@ async function buildLibcrypto() {
   // Review N4: the paths compiled into libcrypto (OPENSSLDIR, MODULESDIR, ENGINESDIR) point at a
   // directory that cannot exist, never at the build machine. scc_preinit/scc_init never consult them
   // anyway (NO_LOAD_CONFIG, explicit provider search path). make install_dev uses DESTDIR to land here.
-  run(
-    'perl',
-    [
-      './Configure',
-      cfgTarget,
-      'no-shared',
-      'no-tests',
-      'no-apps',
-      'no-legacy',
-      'no-docs',
-      'enable-ec_nistp_64_gcc_128',
-      '-fPIC',
-      '-fvisibility=hidden',
-      `--prefix=${UNREACHABLE_PREFIX}`,
-      `--openssldir=${UNREACHABLE_PREFIX}/ssl`,
-      '--libdir=lib',
-    ],
-    src,
-  )
+  const configure = ['./Configure', cfgTarget, ...LIBCRYPTO_CONFIGURE, ...UNREACHABLE_PREFIX_ARGS]
+  refusePqDisables(configure)
+  run('perl', configure, src)
   run('make', [jobs, 'build_libs'], src)
   const destdir = join(BUILD_DIR, target, 'destdir')
   rmSync(destdir, { recursive: true, force: true })
@@ -91,6 +99,7 @@ async function buildLibcrypto() {
   renameSync(join(destdir, UNREACHABLE_PREFIX), prefix)
   rmSync(destdir, { recursive: true, force: true })
   rmSync(src, { recursive: true, force: true })
+  checkPqSymbols(join(prefix, 'lib', 'libcrypto.a'))
 }
 
 async function buildFipsProvider() {
@@ -121,5 +130,10 @@ async function buildFipsProvider() {
   rmSync(prefix, { recursive: true, force: true })
 }
 
-if (args.only !== 'fips') await buildLibcrypto()
-if (args.only !== 'openssl') await buildFipsProvider()
+if (args['check-pq']) {
+  refusePqDisables(LIBCRYPTO_CONFIGURE)
+  checkPqSymbols(args.libcrypto ?? join(opensslPrefix(target), 'lib', 'libcrypto.a'))
+} else {
+  if (args.only !== 'fips') await buildLibcrypto()
+  if (args.only !== 'openssl') await buildFipsProvider()
+}

@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SCHEDULE_V1 } from '../vault/suite'
 import { execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { NotebookDoc, PageDoc } from '@slate/core'
-import { parseRemotePath } from '@slate/sync'
+import { nodeGitRunner, parseRemotePath, type GitRunner, type NodeGitRunnerOptions, type SshKexProbe } from '@slate/sync'
 import { startFakeDrive, type FakeDrive } from '../../../../sync/test/fakeDrive'
 import { addTextBox, boxText } from '../../../../sync/test/memoryLocal'
 import type { GitAuthMode, SyncState } from '../../shared/api'
@@ -38,7 +40,17 @@ let dir: string
 let drive: FakeDrive
 const devices: Device[] = []
 
-async function device(name: string, opts: { enabled?: boolean; signedIn?: boolean; keyRing?: KeyRing; intervalMs?: number } = {}): Promise<Device> {
+interface DeviceOptions {
+  enabled?: boolean
+  signedIn?: boolean
+  keyRing?: KeyRing
+  intervalMs?: number
+  graphUrl?: string
+  gitRunner?: (opts: NodeGitRunnerOptions) => GitRunner
+  probeSsh?: () => Promise<SshKexProbe>
+}
+
+async function device(name: string, opts: DeviceOptions = {}): Promise<Device> {
   const dbFile = join(dir, `${name}.db`)
   const store = new DocStore(dbFile)
   const blobs = new FileBlobStore(join(dir, `${name}-blobs`))
@@ -51,7 +63,7 @@ async function device(name: string, opts: { enabled?: boolean; signedIn?: boolea
     dbFile,
     blobs,
     auth,
-    graphUrl: drive.url,
+    graphUrl: opts.graphUrl ?? drive.url,
     gitDir: join(dir, `${name}-git`),
     secrets,
     deviceName: name,
@@ -60,6 +72,8 @@ async function device(name: string, opts: { enabled?: boolean; signedIn?: boolea
     emitNotice: (m) => notices.push(m),
     emitOpenNotebook: (id) => opened.push(id),
     keyRing: opts.keyRing,
+    ...(opts.gitRunner ? { gitRunner: opts.gitRunner } : {}),
+    ...(opts.probeSsh ? { probeSsh: opts.probeSsh } : {}),
   })
   // setEnabled signs in when needed, so a signed-out device has the setting written directly.
   if (opts.enabled !== false && opts.signedIn === false) writeSettings(store, { syncProvider: 'onedrive' })
@@ -120,6 +134,24 @@ describe('SyncService', () => {
     const done = spans.filter((s) => s.end > 0)
     expect(done.length).toBeGreaterThanOrEqual(2)
     for (let i = 1; i < done.length; i++) expect(done[i]!.start - done[i - 1]!.end).toBeGreaterThanOrEqual(interval - 5)
+  })
+
+  it('T-PQ-B2-01: after one sync this device record carries pq 1 and still epochs 1', async () => {
+    const a = await device('A')
+    expect((await a.service.now()).status).toBe('idle-synced')
+    const records = await a.service.deviceRecords()
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ name: 'A', epochs: 1, pq: 1 })
+  })
+
+  it('T-PQ-B2-03: a second sync with no change writes no new device record', async () => {
+    const a = await device('A')
+    await a.service.now()
+    const path = [...drive.files.keys()].find((p) => /^devices\/[^/]+\.json$/.test(p))!
+    expect(path).toBeDefined()
+    const first = drive.files.get(path)!
+    await a.service.now()
+    expect(drive.files.get(path)).toBe(first)
   })
 
   it('delivers a page from A into B as remote updates and never uploads them back', async () => {
@@ -358,5 +390,138 @@ describe('SyncService over git', { timeout: 30_000 }, () => {
       expect(a.store.load('notebook:work')).toHaveLength(updates)
       expect(Object.keys(NotebookDoc.fromUpdates(a.store.load('notebook:work')).openOn())).toEqual([a.service.deviceId])
     })
+  })
+})
+
+describe('SyncService post-quantum transport policy (PQ-C4)', { timeout: 30_000 }, () => {
+  const SSH_URL = 'ssh://git@pq.invalid/notes.git'
+  const HTTPS_URL = 'https://pq.invalid/notes.git'
+  const hybridSsh: SshKexProbe = { hybrid: ['mlkem768x25519-sha256'], ssh: 'OpenSSH_10.0', prepend: true }
+  const PREFER = 'ssh -o BatchMode=yes -o KexAlgorithms=^mlkem768x25519-sha256'
+  const REQUIRE = 'ssh -o BatchMode=yes -o KexAlgorithms=mlkem768x25519-sha256'
+  const NETWORK = new Set(['fetch', 'push', 'ls-remote', 'clone', 'pull'])
+  let bare: string
+
+  interface Call {
+    args: string[]
+    ssh: string | undefined
+  }
+
+  beforeEach(() => {
+    bare = join(dir, 'remote.git')
+    execFileSync('git', ['init', '--bare', '--initial-branch=main', bare])
+  })
+
+  const refs = () => execFileSync('git', ['--git-dir', bare, 'for-each-ref']).toString().trim()
+
+  /**
+   * Real git with the ssh URL rewritten to the local bare repository, so a whole sync runs; each call records the
+   * GIT_SSH_COMMAND its runner was built with. `serverRefuses` answers network commands as an ssh server offering
+   * no hybrid would.
+   */
+  function recordingRunner(calls: Call[], serverRefuses = false): (opts: NodeGitRunnerOptions) => GitRunner {
+    return (runnerOpts) => {
+      const real = nodeGitRunner('git', runnerOpts)
+      return async (args, opts = {}) => {
+        calls.push({ args, ssh: runnerOpts.sshCommand })
+        if (serverRefuses && NETWORK.has(args[0]!)) {
+          return {
+            code: 128,
+            stdout: new Uint8Array(),
+            stderr: 'Unable to negotiate with 192.0.2.1 port 22: no matching key exchange method found. Their offer: curve25519-sha256\nfatal: Could not read from remote repository.\n',
+          }
+        }
+        const rewrite = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `url.file://${bare}.insteadOf`, GIT_CONFIG_VALUE_0: SSH_URL }
+        return real(args, { ...opts, env: { ...opts.env, ...rewrite } })
+      }
+    }
+  }
+
+  it('T-PQ-C4-01: prefer: every network git call of a sync over ssh carries the KexAlgorithms=^ command', async () => {
+    const calls: Call[] = []
+    const a = await device('A', { enabled: false, gitRunner: recordingRunner(calls), probeSsh: async () => hybridSsh })
+    writePage(a.store, 'over ssh')
+    await a.service.configure({ provider: 'git', git: { remoteUrl: SSH_URL, branch: 'main', auth: 'system' } })
+    expect((await a.service.status()).status).toBe('idle-synced')
+    const network = calls.filter((c) => NETWORK.has(c.args[0]!))
+    expect(network.map((c) => c.args[0])).toEqual(expect.arrayContaining(['fetch', 'push']))
+    expect(network.every((c) => c.ssh === PREFER)).toBe(true)
+    expect(refs()).toContain('refs/heads/main')
+  })
+
+  it('T-PQ-C4-02: require: a server without hybrids fails the sync with PqTransportUnavailable, a notice, and nothing pushed', async () => {
+    const calls: Call[] = []
+    const a = await device('A', { enabled: false, gitRunner: recordingRunner(calls, true), probeSsh: async () => hybridSsh })
+    writeSettings(a.store, { syncRequirePq: true })
+    writePage(a.store, 'must not leave')
+    await a.service.configure({ provider: 'git', git: { remoteUrl: SSH_URL, branch: 'main', auth: 'system' } })
+    expect(await a.service.status()).toMatchObject({ status: 'error', message: 'This server does not offer post-quantum key exchange' })
+    expect(a.notices).toContain('This server does not offer post-quantum key exchange')
+    expect(calls.some((c) => c.args[0] === 'push')).toBe(false)
+    expect(calls.filter((c) => NETWORK.has(c.args[0]!)).every((c) => c.ssh === REQUIRE)).toBe(true)
+    expect(refs()).toBe('')
+  })
+
+  it('T-PQ-C4-02: require: an ssh with no hybrid refuses before any git call', async () => {
+    const calls: Call[] = []
+    const a = await device('A', { enabled: false, gitRunner: recordingRunner(calls), probeSsh: async () => ({ hybrid: [], ssh: 'OpenSSH_8.9', prepend: false }) })
+    writeSettings(a.store, { syncRequirePq: true })
+    writePage(a.store, 'must not leave')
+    await a.service.configure({ provider: 'git', git: { remoteUrl: SSH_URL, branch: 'main', auth: 'system' } })
+    expect((await a.service.status()).status).toBe('error')
+    expect(calls.filter((c) => NETWORK.has(c.args[0]!))).toEqual([])
+    expect(refs()).toBe('')
+  })
+
+  it('T-PQ-C4-03: require with an https git remote is refused before any git call', async () => {
+    const calls: Call[] = []
+    const a = await device('A', { enabled: false, gitRunner: recordingRunner(calls), probeSsh: async () => hybridSsh })
+    writeSettings(a.store, { syncRequirePq: true })
+    await a.service.configure({ provider: 'git', git: { remoteUrl: HTTPS_URL, branch: 'main', auth: 'system' } })
+    expect(await a.service.status()).toMatchObject({ status: 'error', message: 'Use an SSH remote for post-quantum key exchange' })
+    expect(a.notices).toContain('Use an SSH remote for post-quantum key exchange')
+    expect(calls).toEqual([])
+    expect(await a.service.testGit({ remoteUrl: HTTPS_URL, branch: 'main', auth: 'system' })).toEqual({ ok: false, message: 'Use an SSH remote for post-quantum key exchange' })
+    expect(calls).toEqual([])
+  })
+
+  it('T-PQ-C4-03: require with OneDrive is refused before any request', async () => {
+    let requests = 0
+    const counter = createServer((_req, res) => {
+      requests++
+      res.statusCode = 503
+      res.end()
+    })
+    await new Promise<void>((resolve) => counter.listen(0, '127.0.0.1', resolve))
+    try {
+      const a = await device('A', { enabled: false, graphUrl: `http://127.0.0.1:${(counter.address() as AddressInfo).port}/v1.0` })
+      writeSettings(a.store, { syncRequirePq: true })
+      writePage(a.store, 'must not leave')
+      await a.service.setEnabled(true)
+      expect(await a.service.status()).toMatchObject({ status: 'error', message: 'Microsoft OneDrive does not offer post-quantum key exchange yet' })
+      expect(await a.service.ensureBlob('0'.repeat(64))).toBe(false)
+      expect(requests).toBe(0)
+    } finally {
+      await new Promise<void>((resolve) => counter.close(() => resolve()))
+    }
+  })
+
+  it('a file:// remote is untouched by the policy, with require on', async () => {
+    const calls: Call[] = []
+    let probes = 0
+    const a = await device('A', {
+      enabled: false,
+      gitRunner: recordingRunner(calls),
+      probeSsh: async () => {
+        probes++
+        return hybridSsh
+      },
+    })
+    writeSettings(a.store, { syncRequirePq: true })
+    writePage(a.store, 'local')
+    await a.service.configure({ provider: 'git', git: { remoteUrl: `file://${bare}`, branch: 'main', auth: 'system' } })
+    expect((await a.service.status()).status).toBe('idle-synced')
+    expect(calls.every((c) => c.ssh === undefined)).toBe(true)
+    expect(probes).toBe(0)
   })
 })

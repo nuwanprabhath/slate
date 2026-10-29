@@ -1,0 +1,12 @@
+{
+  "format": "slate-local-keys",
+  "version": 2,
+  "vaultId": "fcd2d333-8cd6-4c81-b6f6-b3a40150cf4e",
+  "deviceId": "d538078c-bc0f-4a05-9117-88e9fa9e4684",
+  "profile": "standard",
+  "keyEpoch": 0,
+  "db": "slate-fcd2d333.db",
+  "dbCipher": "sqlcipher-4",
+  "nonce": "JE3I/OzFaNReu/Wf",
+  "ct": "G2b8GxIun9cGqtXng5kn8xOvIupBlWVNrOvmaAk+eILjTs+zfl9jYBCQHUwR6ZHp"
+}

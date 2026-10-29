@@ -176,6 +176,7 @@
       "keyName": "mk",
       "uses": [
         "vault/migration.ts",
+        "vault/pqUpgrade.ts",
         "vault/unlock.ts",
         "vault/vaultCheck.ts"
       ]
@@ -402,6 +403,7 @@
       "uses": [
         "index.ts",
         "vault/migration.ts",
+        "vault/pqUpgrade.ts",
         "vault/preunlockSync.ts",
         "vault/profileFloor.ts",
         "vault/unlock.ts",
@@ -512,19 +514,44 @@
     },
     {
       "id": "RELEASE_SIGNING",
-      "name": "Release-manifest signing key",
+      "name": "Release-manifest signing key (Ed25519 half; UPD_SIG)",
       "kind": "psp+csp",
       "bits": null,
-      "algorithm": "Ed25519 now; hybrid ML-DSA-65 + Ed25519 once the toolchain supports it (CNSA 2.0 software signing: exclusive by 2030)",
-      "generation": "offline, maintainer hardware token",
+      "algorithm": "Ed25519, the classical half of the hybrid ml-dsa-65+ed25519 update signature (`.sig` and the first half of `.pq.sig`). Since phase 14 a build that pins the hybrid key accepts no Ed25519-only signature (INV-PQ-8)",
+      "generation": "offline, outside the repository",
       "derivation": null,
-      "storage": "private: offline (never in CI or the repo); public: pinned in the main bundle",
-      "protectedBy": "hardware token",
-      "cryptoperiod": "2 years; the pinned set holds the current and the next public key",
-      "destruction": "token reset after rotation",
+      "storage": "private: GitHub Actions secret SLATE_UPDATE_SIGNING_KEY, read only by the release job; public: pinned in the main bundle (update/signature.ts)",
+      "protectedBy": "GitHub Actions secret store",
+      "cryptoperiod": "2 years; the pinned set can hold the current and the next public key (POAM-05)",
+      "destruction": "secret deleted after rotation",
       "evidence": [
         "T-UPD-01",
-        "T-UPD-02"
+        "T-UPD-02",
+        "T-PQ-A2-03"
+      ],
+      "profiles": [
+        "standard",
+        "fips-140-3"
+      ],
+      "owner": "update/signature.ts"
+    },
+    {
+      "id": "UPD_SIG_MLDSA",
+      "name": "Update signing key, ML-DSA-65 half (public key pinned; private key signs in CI)",
+      "kind": "psp+csp",
+      "bits": null,
+      "algorithm": "ML-DSA-65 (FIPS 204), signing over a domain-separated message with context 'slate-update'; verified together with Ed25519 (UPD_SIG) as `ml-dsa-65+ed25519`, key id f26ba10dc0f0f651. Verification runs in the OpenSSL 3.5.9 default provider (g_std_ctx), outside the CMVP #4985 boundary; the module's certificate predates FIPS 204 (POAM-18)",
+      "generation": "offline with OpenSSL 3.5 (`openssl genpkey -algorithm ML-DSA-65`) by the lead, decision D-12; the private key is outside the repository",
+      "derivation": null,
+      "storage": "private: GitHub Actions secret SLATE_UPDATE_SIGNING_KEY_MLDSA, read only by the release job (Node 24); public: SPKI pinned in the main bundle (update/signature.ts)",
+      "protectedBy": "GitHub Actions secret store",
+      "cryptoperiod": "2 years; rotates with UPD_SIG (POAM-05)",
+      "destruction": "secret deleted after rotation",
+      "evidence": [
+        "T-PQ-A1-06",
+        "T-PQ-A2-03",
+        "T-PQ-A2-06",
+        "T-PQ-A4-01"
       ],
       "profiles": [
         "standard",

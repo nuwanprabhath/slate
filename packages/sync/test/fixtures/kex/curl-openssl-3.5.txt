@@ -1,0 +1,8 @@
+10:02:11.000001 http.c:690              == Info: Host github.com:443 was resolved.
+10:02:11.040211 http.c:690              == Info: ALPN: curl offers h2,http/1.1
+10:02:11.091102 http.c:690              == Info: SSL connection using TLSv1.3 / TLS_AES_128_GCM_SHA256 / X25519MLKEM768 / RSASSA-PSS
+10:02:11.091400 http.c:690              == Info: server certificate verification OK
+10:02:11.092001 http.c:637              => Send header: GET /o/r.git/info/refs?service=git-upload-pack HTTP/2
+10:02:11.092002 http.c:637              => Send header: Host: github.com
+10:02:11.092003 http.c:637              => Send header: Authorization: basic eC1hY2Nlc3MtdG9rZW46Z2hwX1NFQ1JFVFRPS0VOMTIzNDU2
+10:02:11.200003 http.c:637              <= Recv header: HTTP/2 200

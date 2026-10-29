@@ -29,7 +29,9 @@ export const RULES: readonly Rule[] = [
   {
     what: 'a vault header written to disk (vault.json, its staged or pending copy)',
     pattern: /(writeJsonAtomic|renameSync)\([^\n]*\b(REJOIN_)?VAULT_FILE\)|writeJsonAtomic\([^\n]*\bPENDING_FILE\)/g,
-    allowed: [`${VAULT}/migration.ts`, `${VAULT}/unlock.ts`, `${VAULT}/vaultCheck.ts`, `${VAULT}/testVault.ts`],
+    // PQ-B3: the v2 → v3 header upgrade (roadmap §3.5 `local`) is its own resumable runner with its crash test
+    // (pqUpgradeCrash.test.ts): it changes no key, so it is not a Migration rekey.
+    allowed: [`${VAULT}/migration.ts`, `${VAULT}/unlock.ts`, `${VAULT}/vaultCheck.ts`, `${VAULT}/testVault.ts`, `${VAULT}/pqUpgrade.ts`],
   },
   { what: 'the vault.key.rotated event', pattern: /securityEvent\.keyRotated\(/g, allowed: [`${VAULT}/migration.ts`], sites: 1 },
   { what: 'the vault.profile.changed event', pattern: /securityEvent\.profileChanged\(/g, allowed: [`${VAULT}/migration.ts`], sites: 1 },

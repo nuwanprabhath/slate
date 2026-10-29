@@ -37,7 +37,13 @@ function fakeNative(over: Partial<SlateNative> = {}): FakeNative {
       defaultContextProviders: fips ? 'fips,base' : 'default',
       buildKind: 'slate-native-build:release',
       fipsModule: fips ? { name: 'OpenSSL FIPS Provider', version: '3.1.2' } : null,
+      pqAlgorithms: ['ML-KEM-768', 'ML-KEM-1024', 'ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-SHA2-256s'],
+      pqInFipsBoundary: false,
     }),
+    // node:crypto here has no ML-DSA; no test of this module verifies a signature.
+    mldsaVerify: () => {
+      throw Object.assign(new Error('mldsaVerify is not in the fake'), { code: 'SCC_2' })
+    },
     enterErrorState() {
       self.errored = true
       keys.clear()
@@ -188,6 +194,8 @@ describe('startCryptoModule (C2 criterion 6, F-FIPS-08)', () => {
     expect(fake.inits).toEqual([['/user/fips/openssl-fips.cnf', '/res/fips', true]])
     expect(status).toMatchObject({ available: true, approvedMode: true, errorState: false, problem: null, version: '3.1.2', postMs: 7 })
     expect(status.libcrypto).toMatch(/^OpenSSL 3\.5\./)
+    expect(status.pqAlgorithms).toContain('ML-KEM-768')
+    expect(status.pqInFipsBoundary).toBe(false)
     expect(fake.status().liveHandles).toBe(0)
   })
 

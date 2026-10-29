@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { NETWORK_TIMEOUT_MS, type GitRunner } from '@slate/sync'
+import { classifyKex, NETWORK_TIMEOUT_MS, parseCurlTls, parseSshKex, PROMPT_FREE_ENV, remoteTransport, verboseSshCommand, type GitRunner, type PqLevel } from '@slate/sync'
 import type { DeviceCode, GitCheck } from '../../../shared/api'
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code'
@@ -83,13 +83,45 @@ export async function createPrivateRepo(token: string, name: string, doFetch: ty
   }
 }
 
-/** `git ls-remote` with the auth env: proves the URL and the credentials before saving. */
-export async function testConnection(run: GitRunner, url: string, env: Record<string, string>): Promise<GitCheck> {
+/** What a connection test saw of the transport; set only for ssh and http(s) remotes. */
+export interface GitConnectionCheck extends GitCheck {
+  /** The negotiated key exchange or TLS group; null when the transport did not print one. */
+  kex?: string | null
+  pq?: PqLevel
+  /** Host-level id (`git-ssh:github.com`) to record the observation under. */
+  remote?: string
+}
+
+export interface TestConnectionOptions {
+  /** A command from `sshCommand`; `-v` is added to it. Without one, git's prompt-free ssh runs. */
+  sshCommand?: string
+}
+
+// ssh -v and GIT_TRACE_CURL lines. The trace holds the Authorization header, so none of these may reach a message.
+const TRACE_LINE = /^(\d{2}:\d{2}:\d{2}\.\d+ |debug\d: )|Authorization|Authenticated to /i
+
+/**
+ * `git ls-remote` with the auth env: proves the URL and the credentials before saving, and reads the key
+ * exchange off ssh's `-v` or curl's trace. The trace is parsed in memory; only the algorithm name leaves.
+ */
+export async function testConnection(run: GitRunner, url: string, env: Record<string, string>, opts: TestConnectionOptions = {}): Promise<GitConnectionCheck> {
   try {
-    const r = await run(['ls-remote', '--heads', url], { env, timeoutMs: NETWORK_TIMEOUT_MS })
-    if (r.code === 0) return { ok: true, message: r.stdout.length === 0 ? 'Connected. The repository is empty; Slate will set it up.' : 'Connected.' }
-    const lines = r.stderr.trim().split('\n').filter(Boolean)
-    return { ok: false, message: r.timedOut ? 'Timed out reaching the repository' : (lines.find((l) => l.startsWith('fatal:'))?.replace(/^fatal:\s*/, '') ?? lines.pop() ?? `git exited with ${r.code}`) }
+    const transport = remoteTransport(url)
+    const traceEnv: Record<string, string> =
+      transport?.kind === 'ssh'
+        ? { GIT_SSH_COMMAND: verboseSshCommand(opts.sshCommand ?? PROMPT_FREE_ENV.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes') }
+        : transport?.kind === 'https'
+          ? { GIT_TRACE_CURL: '1', GIT_TRACE_CURL_NO_DATA: '1', GIT_TRACE_REDACT: '1' }
+          : {}
+    const r = await run(['ls-remote', '--heads', url], { env: { ...env, ...traceEnv }, timeoutMs: NETWORK_TIMEOUT_MS })
+    const seen: Pick<GitConnectionCheck, 'kex' | 'pq' | 'remote'> = {}
+    if (transport) {
+      const kex = transport.kind === 'ssh' ? parseSshKex(r.stderr) : parseCurlTls(r.stderr)
+      Object.assign(seen, { kex, pq: classifyKex(kex), remote: transport.remote })
+    }
+    if (r.code === 0) return { ok: true, message: r.stdout.length === 0 ? 'Connected. The repository is empty; Slate will set it up.' : 'Connected.', ...seen }
+    const lines = r.stderr.trim().split('\n').filter((l) => l !== '' && !TRACE_LINE.test(l))
+    return { ok: false, message: r.timedOut ? 'Timed out reaching the repository' : (lines.find((l) => l.startsWith('fatal:'))?.replace(/^fatal:\s*/, '') ?? lines.pop() ?? `git exited with ${r.code}`), ...seen }
   } catch (err) {
     return { ok: false, message: `Could not run git: ${err instanceof Error ? err.message : String(err)}` }
   }

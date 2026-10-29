@@ -9,10 +9,22 @@ The maintainer's answers to `docs/reviews/compliance_audit.md` §7.1, recorded o
 | D-3 | Seek Slate's own CMVP validation or NIAP evaluation | **No, for now.** | Slate relies on CMVP #4985. Revisit if a customer requires it. |
 | D-4 | SQLCipher source | **Community SQLCipher on OpenSSL with the FIPS provider.** | Switch to Zetetic's module (#5185) only if L-5 fails. |
 | D-5 | Hosted Slate sync service | **Out of scope.** | FedRAMP stays not applicable. |
-| D-6 | Public-key wrap slots with hybrid ML-KEM | **Deferred.** | Identifiers reserved only (§4.5.1, §4.5.4). |
+| D-6 | Public-key wrap slots with hybrid ML-KEM | **Deferred.** Revisited 2026-10-29 and **stays deferred**: header v3 already makes "hybrid only" a binding property, and nothing needs passwordless enrolment or sharing yet. | Identifiers reserved only (§4.5.1, §4.5.4). |
 | D-7 | Upgrade header-v1 vaults to v2 | **Prompt** in Settings → Security once every device record reports a version ≥ the C5 release. Never automatic. | C9: *Upgrade encryption format* is offered only while every device record on the remote carries the key-epoch capability (`epochs: 1`, written by every build that can follow a key change); a record without it, or one Slate cannot read, blocks it (review C9 L3: release numbers prove nothing, as development builds all report 0.1.0). The same gate applies to key rotation and to the FIPS conversion, which C5-era code could not follow either. |
 | D-8 | `cipher_memory_security = ON` in `fips-140-3` | **Measure first.** If `perf.spec.ts` misses its budget, decide with the numbers recorded here. | C3 |
 | C4 residual | In-process code and the key boundary (review C4 M1-R) | **Closed in C5 (2026-10-24).** It was accepted for C4 only: in-process code could rewrap LK under a chosen KEK via `rewrapKey` (KEK class) and launder approval. | `rewrapKey` now moves password-class wraps only (SCC_17 for a KEK), and nothing else moves a database key: LK is wrapped once, fresh, under its own master key's local-wrap KEK, which the module derives. A device that joins another vault (rejoin) gets a fresh LK under the new vault and a rekeyed copy of its database (`copyAndRekey`), so the old LK never meets a KEK whose bytes JavaScript can compute. This is stricter than the module-internal local-key rewrap first planned: that rewrap would still have accepted a caller-built master key (any password can wrap chosen bytes), so the move itself had to go. What password wrapping cannot stop remains: code that picks a password can build a key tree whose bytes it knows; no existing key enters it. `addon.test.ts` "C4 residual (closed by C5)" now expects the refusal; POAM-09 is removed. Once a fips-140-3 vault unlocks, `requireApprovedKeys` also refuses Argon2id, RFC 5869 HKDF and AES-ECB for the process. |
+
+## Post-quantum decisions (phase 14), answered 2026-10-29
+
+From `docs/reviews/quantum-proof-roadmap.md` §4.8.
+
+| Id | Decision | Answer | Effect |
+| --- | --- | --- | --- |
+| D-9 | Run the v2 to v3 header upgrade automatically after unlock once every device record has `pq >= 1` | **Yes.** | The upgrade changes no secret and no ciphertext, and the password, recovery key and quick unlock keep working (INV-PQ-2, INV-PQ-3). It waits while any device lacks the capability or cannot be read (INV-PQ-5). Built in PQ-B3 (`vault/pqUpgrade.ts`). v1 vaults stay prompted (D-7). |
+| D-6 (revisit) | Build hybrid device slots | **Stays deferred.** | No ML-KEM slot exists in any file Slate writes. |
+| D-10 | Prefer hybrid SSH key exchange by default; require it by default | **Prefer: on. Require: off.** | `GIT_SSH_COMMAND` lists `mlkem768x25519-sha256`, then `sntrup761x25519-sha512@openssh.com`, then the system's own list. "Require post-quantum key exchange" (`syncRequirePq`) is a user choice that defaults to off, because OneDrive and HTTPS git cannot satisfy it today (POAM-17). |
+| D-11 | ML-DSA-65 or ML-DSA-87 for update signing | **ML-DSA-65.** | Update signatures are `ml-dsa-65+ed25519`. ML-DSA-87 only on request from a customer who needs it. |
+| D-12 | ML-DSA update key ceremony | **Done.** The lead generated the pair offline; the private key is outside the repository; the maintainer set the CI secret `SLATE_UPDATE_SIGNING_KEY_MLDSA`. | The hybrid public key (id `f26ba10dc0f0f651`) is pinned in `update/signature.ts` before any `.pq.sig` is required; from that build on `.pq.sig` is required and an Ed25519-only feed is refused (INV-PQ-8). The release job signs on Node 24. |
 
 Further maintainer answers:
 

@@ -3,6 +3,7 @@ import { openDatabase, type Database } from './db/openDatabase'
 import { LoroDoc } from 'loro-crdt'
 import type { ImportRecord } from '@slate/importer'
 import type { ConflictRecord } from '@slate/sync'
+import type { PqLevel, TransportObservation } from '../shared/api'
 
 const COMPACT_THRESHOLD = 500
 
@@ -19,6 +20,10 @@ export interface SearchRow {
   ord: number
   text: string
 }
+
+const PQ_STORED: Record<PqLevel, number> = { hybrid: 1, classical: 0, unknown: -1 }
+/** `<scheme>:<host>[:<port>]` and nothing else: userinfo, path, query and fragment never match. */
+const REMOTE = /^[a-z][a-z0-9-]*:[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?$/
 
 /** Local document store: Loro snapshots + append-only update rows, WAL-journaled. */
 export class DocStore {
@@ -44,6 +49,7 @@ export class DocStore {
       CREATE TABLE IF NOT EXISTS blob_synced (name TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, box_id TEXT NOT NULL, device TEXT NOT NULL, mine TEXT NOT NULL, theirs TEXT NOT NULL, merged TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, message TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS transport_observations (remote TEXT PRIMARY KEY, transport TEXT NOT NULL, kex TEXT, pq INTEGER NOT NULL, source TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(page_id UNINDEXED, section_id UNINDEXED, notebook_id UNINDEXED, box_id UNINDEXED, ord UNINDEXED, text, tokenize = 'trigram');
     `)
     const columns = this.db.prepare('PRAGMA table_info(updates)').all() as Array<{ name: string }>
@@ -94,6 +100,24 @@ export class DocStore {
 
   removeConflict(id: string): void {
     this.db.prepare('DELETE FROM conflicts WHERE id = ?').run(id)
+  }
+
+  /** Upsert the last key exchange seen for a remote; `remote` must be host-level so no credential is stored. */
+  recordTransport(o: TransportObservation): void {
+    if (!REMOTE.test(o.remote)) throw new Error('A transport observation names a host only: no user, path, query or token')
+    this.db
+      .prepare(
+        'INSERT INTO transport_observations (remote, transport, kex, pq, source, at) VALUES (?, ?, ?, ?, ?, ?) ' +
+          'ON CONFLICT(remote) DO UPDATE SET transport = excluded.transport, kex = excluded.kex, pq = excluded.pq, source = excluded.source, at = excluded.at'
+      )
+      .run(o.remote, o.transport, o.kex, PQ_STORED[o.pq], o.source, o.at)
+  }
+
+  transportObservations(): TransportObservation[] {
+    const rows = this.db.prepare('SELECT remote, transport, kex, pq, source, at FROM transport_observations ORDER BY remote').all() as Array<
+      Omit<TransportObservation, 'pq'> & { pq: number }
+    >
+    return rows.map((r) => ({ ...r, pq: r.pq === 1 ? 'hybrid' : r.pq === 0 ? 'classical' : 'unknown' }))
   }
 
   addNotice(message: string): void {

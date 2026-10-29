@@ -742,6 +742,8 @@ All events go through the existing redacting logger (`log/logger.ts`). The log f
 | `vault.locked` | `trigger` (`idle` \| `sleep` \| `screen` \| `manual` \| `quit` \| `error`), `destroyedHandles` |
 | `vault.header.adopted` | `fromRevision`, `toRevision` |
 | `vault.header.refused` | `reason` (`downgrade` \| `profile` \| `schema` \| `check`) |
+| `vault.header.upgraded` | `fromRevision`, `toRevision` (the v2 → v3 header upgrade, phase 14 PQ-B3) |
+| `vault.header.upgrade-waiting` | `devices` (how many device records lack the `pq` capability; never their names) |
 | `vault.password.changed` / `vault.recovery.rotated` | `revision` |
 | `vault.key.rotated` / `vault.key.rotation-due` | `fromEpoch`, `toEpoch` / `dueSince` |
 | `vault.profile.changed` | `from`, `to` |

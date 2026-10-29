@@ -23,6 +23,7 @@ packages/desktop/src/main/windows.ts
 packages/desktop/src/main/appProtocol.ts
 packages/desktop/src/main/hardening.ts
 packages/desktop/src/main/secretStorage.ts
+packages/desktop/src/main/tlsPolicy.ts
 packages/desktop/src/preload/**
 packages/desktop/src/shared/ipc.ts
 packages/desktop/src/shared/api.ts

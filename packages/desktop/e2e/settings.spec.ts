@@ -2,7 +2,8 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, launchApp, MOD, test, unlockWith } from './fixtures'
+import { createBoxAt, expect, launchApp, MOD, test, unlockWith } from './fixtures'
+import { stubInvoke } from './ui/states'
 
 async function openWithShortcut(page: Page) {
   await expect(page.getByTestId('canvas')).toBeVisible()
@@ -109,5 +110,72 @@ test('POAM-16: a sandboxed run shows no sandbox notice', async () => {
   await expect(lock.getByTestId('lock-screen')).toBeVisible()
   await expect(lock.getByTestId('lock-quick')).toBeAttached()
   await expect(lock.getByTestId('lock-sandbox-note')).toHaveCount(0)
+  await app.close()
+})
+
+const SSH_GIT = { syncProvider: 'git', git: { remoteUrl: 'git@example.invalid:me/notes.git', branch: 'main', auth: 'system' } } as const
+
+async function openSync(page: Page) {
+  await openWithShortcut(page)
+  await page.getByTestId('settings-nav-sync').click()
+  await expect(page.getByTestId('sync-settings')).toBeVisible()
+}
+
+test('T-PQ-D2-01: with a git SSH remote "Require post-quantum key exchange" turns on, persists across relaunch; with OneDrive it is disabled and says why', async () => {
+  test.setTimeout(120_000)
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  let launched = await launchApp(userData)
+  await expect(launched.page.getByTestId('canvas')).toBeVisible()
+  await launched.page.evaluate((patch) => window.slate.settings.set(patch), SSH_GIT)
+  // The real probe would dial the example host; main answers the check with nothing observed yet.
+  await stubInvoke(launched.app, 'sync:check-transport', [])
+  await openSync(launched.page)
+  const toggle = launched.page.getByTestId('sync-require-pq-toggle')
+  await expect(toggle).toBeEnabled()
+  await expect(toggle).not.toBeChecked()
+  await toggle.check()
+  await expect.poll(() => launched.page.evaluate(async () => (await window.slate.settings.get()).syncRequirePq)).toBe(true)
+  await launched.app.close()
+
+  launched = await launchApp(userData)
+  await expect(launched.page.getByTestId('canvas')).toBeVisible()
+  await openSync(launched.page)
+  await expect(launched.page.getByTestId('sync-require-pq-toggle')).toBeChecked()
+
+  await launched.page.getByTestId('sync-provider-onedrive').click()
+  await expect(launched.page.getByTestId('sync-require-pq-toggle')).toBeDisabled()
+  await expect(launched.page.getByTestId('sync-require-pq-help')).toHaveText('Microsoft OneDrive does not offer post-quantum key exchange yet')
+  await launched.page.getByTestId('sync-provider-git').click()
+  await launched.page.getByTestId('git-remote-url').fill('https://example.invalid/me/notes.git')
+  await expect(launched.page.getByTestId('sync-require-pq-toggle')).toBeDisabled()
+  await expect(launched.page.getByTestId('sync-require-pq-help')).toHaveText('Use an SSH remote for post-quantum key exchange')
+  await launched.app.close()
+})
+
+test('T-PQ-D2-02: the vault format banner never covers the editor or takes focus', async () => {
+  test.setTimeout(120_000)
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const { app, page } = await launchApp(userData)
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await createBoxAt(page, 200, 200)
+  await page.keyboard.type('typing continues')
+  const canvasTop = (await page.getByTestId('canvas').boundingBox())!.y
+  await stubInvoke(app, 'vault:pq-readiness', { atRest: 'symmetric-256', vault: { kind: 'header', version: 2, upgrade: 'running', blockingDevices: [] }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
+  const banner = page.getByTestId('vault-format-banner')
+  await expect(banner).toBeVisible({ timeout: 10_000 })
+  // It sits above the notes (they moved down to make room) and does not overlap them.
+  const bannerBox = (await banner.boundingBox())!
+  const canvasBox = (await page.getByTestId('canvas').boundingBox())!
+  expect(bannerBox.y + bannerBox.height).toBeLessThanOrEqual(canvasBox.y + 0.5)
+  expect(canvasBox.y).toBeGreaterThanOrEqual(canvasTop)
+  // Focus stayed where the person was typing, and typing still lands there.
+  expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="canvas"]') !== null)).toBe(true)
+  expect(await banner.evaluate((el) => el.contains(document.activeElement))).toBe(false)
+  await page.keyboard.type(' still')
+  await expect(page.getByTestId('canvas')).toContainText('typing continues still')
+  // When the update finishes the line becomes "updated", once.
+  await stubInvoke(app, 'vault:pq-readiness', { atRest: 'symmetric-256', vault: { kind: 'header', version: 3, upgrade: 'done', blockingDevices: [] }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
+  await expect(banner).toContainText('Vault format updated', { timeout: 10_000 })
+  expect(await banner.evaluate((el) => el.contains(document.activeElement))).toBe(false)
   await app.close()
 })

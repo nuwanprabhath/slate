@@ -6,6 +6,26 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
+### Added
+
+- Settings → Security shows how well your notes are protected against future quantum computers: the note encryption, the vault format, what each sync connection negotiated (with **Check now**) and the update signature type.
+- Settings → Sync: **Require post-quantum key exchange** (off by default). When it is on, Slate syncs only over a connection that uses one.
+- A short banner while the vault format updates.
+- Settings → Security → cryptographic module lists the post-quantum algorithms that are available and says they are not part of the validated module. The diagnostics export gains the vault format version and the key exchange seen for each sync host (host names only).
+
+### Changed
+
+- Git over SSH now prefers a hybrid post-quantum key exchange when your computer's `ssh` supports one, and falls back to its usual list otherwise.
+- Vaults on the previous format update to the new format automatically after you unlock, once every device that syncs runs this version. Your password, recovery key and quick unlock keep working and no note is re-encrypted. Until then the old format stays.
+- v1 vaults upgrade straight to the new format; new encrypted vaults start on it; key rotation works on it.
+
+### Security
+
+- After this update, updates are verified with a post-quantum signature (ML-DSA-65) as well as the existing Ed25519 one, and an update without both is refused.
+- The self-test at start-up now also checks the ML-DSA verifier.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

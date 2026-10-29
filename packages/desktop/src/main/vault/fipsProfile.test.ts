@@ -25,6 +25,7 @@ import { createEncryptedDataDir, storeWithLk } from './testVault'
 import { unlockVault, VAULT_FILE, LOCAL_KEYS_FILE } from './unlock'
 import { destroyKey, vaultNative } from './native'
 import { Migration, type MigrationDeps } from './migration'
+import { runPqUpgrade } from './pqUpgrade'
 
 const calls = spyOnNative()
 const weak = { allowWeakForTests: true }
@@ -189,6 +190,29 @@ describe('review C5 L4: the floor cannot vanish, and the staged rejoin header is
     const v1 = JSON.parse(readFileSync(join(__dirname, 'fixtures/c4/data/vault.json'), 'utf8')) as Record<string, unknown>
     writeFileSync(join(d, 'vault.rejoin.json'), JSON.stringify(v1))
     await expect(unlockVault(d, { password: secretBytes('not this vault password') }, weak)).rejects.toThrow(HeaderRefused)
+  })
+})
+
+describe('T-PQ-B3-07: the v2 → v3 upgrade of a fips-140-3 vault (INV-PQ-9)', () => {
+  it('T-PQ-B3-07: makes zero calls to a legacy primitive and none to mldsaVerify, and the vault stays fips-140-3', async () => {
+    const d = dir()
+    destroyKey((await createEncryptedDataDir(d, secretBytes(PASSWORD), weak, 'fips-140-3')).mk)
+    const opened = await unlockVault(d, { password: secretBytes(PASSWORD) }, weak)
+    const watched = [...LEGACY, 'mldsaVerify']
+    const before = Object.fromEntries(watched.map((m) => [m, calls.get(m) ?? 0]))
+    const hmacBefore = calls.get('hmacSha256') ?? 0
+    try {
+      const out = await runPqUpgrade({ dataDir: d, kdfOpts: weak, keyRing: opened.keyRing, remote: () => null, selfTest: async () => true })
+      expect(out.state).toBe('done')
+    } finally {
+      opened.keyRing.close()
+    }
+    expect(Object.fromEntries(watched.map((m) => [m, calls.get(m) ?? 0]))).toEqual(before)
+    // The new header's check and the raised floor were MAC'd through the module's approved HMAC.
+    expect(calls.get('hmacSha256') ?? 0).toBeGreaterThan(hmacBefore)
+    expect(await header(d)).toMatchObject({ version: 3, profile: 'fips-140-3', suite: 2 })
+    expect(JSON.parse(readFileSync(join(d, PROFILE_FLOOR_FILE), 'utf8'))).toMatchObject({ profile: 'fips-140-3', minHeaderVersion: 3 })
+    ;(await unlockVault(d, { password: secretBytes(PASSWORD) }, weak)).keyRing.close()
   })
 })
 

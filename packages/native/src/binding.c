@@ -167,6 +167,22 @@ static napi_value Status(napi_env env, napi_callback_info info) {
   } else {
     napi_get_null(env, &v); napi_set_named_property(env, o, "fipsModule", v);
   }
+  /* PQ-A1: comma-separated in C, an array here; empty before init. */
+  char pq[128];
+  napi_value list;
+  uint32_t count = 0;
+  CHECK(napi_create_array(env, &list));
+  if (scc_pq_algorithms(pq, sizeof pq) == SCC_OK) {
+    for (const char *name = pq; *name != '\0';) {
+      size_t k = strcspn(name, ",");
+      napi_create_string_utf8(env, name, k, &v);
+      napi_set_element(env, list, count++, v);
+      name += k;
+      if (*name == ',') name++;
+    }
+  }
+  napi_set_named_property(env, o, "pqAlgorithms", list);
+  napi_get_boolean(env, scc_pq_in_fips_boundary(), &v); napi_set_named_property(env, o, "pqInFipsBoundary", v);
   return o;
 }
 
@@ -657,6 +673,19 @@ static napi_value Sha256(napi_env env, napi_callback_info info) {
   return res;
 }
 
+/* mldsaVerify(level, spkiDer, msg, ctx, sig): true or false for a well-formed input; SCC_1 for a malformed one. */
+static napi_value MldsaVerify(napi_env env, napi_callback_info info) {
+  napi_value argv[5], r; uint32_t level; unsigned char *spki, *msg, *ctx, *sig; size_t spki_len, msg_len, ctx_len, sig_len;
+  if (!get_args(env, info, 5, argv) || !get_uint_in(env, argv[0], 65, 87, &level)) return throw_rc(env, SCC_ERR_ARG);
+  if (!get_bytes(env, argv[1], &spki, &spki_len) || !get_bytes(env, argv[2], &msg, &msg_len) || !get_bytes(env, argv[3], &ctx, &ctx_len) ||
+      !get_bytes(env, argv[4], &sig, &sig_len))
+    return throw_rc(env, SCC_ERR_ARG);
+  int rc = scc_mldsa_verify(level == 65 ? 65 : level == 87 ? 87 : 0, spki, spki_len, msg, msg_len, ctx, ctx_len, sig, sig_len);
+  if (rc != SCC_OK && rc != SCC_ERR_AUTH) return throw_rc(env, rc);
+  CHECK(napi_get_boolean(env, rc == SCC_OK, &r));
+  return r;
+}
+
 static napi_value RandomBytes(napi_env env, napi_callback_info info) {
   napi_value argv[1], ab, res; uint32_t n; unsigned char *out;
   if (!get_args(env, info, 1, argv)) return throw_rc(env, SCC_ERR_ARG);
@@ -732,6 +761,7 @@ static napi_value Register(napi_env env, napi_value exports) {
       {"aesCtr", NULL, AesCtr, NULL, NULL, NULL, napi_default, NULL},
       {"sha256", NULL, Sha256, NULL, NULL, NULL, napi_default, NULL},
       {"randomBytes", NULL, RandomBytes, NULL, NULL, NULL, napi_default, NULL},
+      {"mldsaVerify", NULL, MldsaVerify, NULL, NULL, NULL, napi_default, NULL},
   };
   if (napi_define_properties(env, exports, sizeof d / sizeof d[0], d) != napi_ok) return NULL;
   /* SQLCipher and its better-sqlite3 binding live in this addon (audit §4.9, C3): one boundary, one libcrypto. */

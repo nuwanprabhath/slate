@@ -23,7 +23,13 @@
 .sync-settings legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
 .sync-settings label { display: flex; align-items: center; gap: 6px; }
 .sync-settings .sync-field { flex-direction: column; align-items: stretch; gap: 4px; color: var(--muted); font-size: 12px; }
-.sync-settings input:not([type="radio"]) { padding: 5px 7px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+.sync-settings input:not([type="radio"], [type="checkbox"]) { padding: 5px 7px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+.sync-pq { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.sync-pq label { align-items: flex-start; }
+.sync-pq input[type="checkbox"] { flex: none; margin: 2px 0 0; }
+/* Help and notes sit on the label's edge: the box's width plus the label's gap. */
+.sync-pq p { margin: 0; padding-left: 22px; color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.sync-pq .sync-pq-note.warn { color: var(--danger); }
 .sync-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sync-check { padding: 6px 8px; border-radius: 5px; background: var(--hover); overflow-wrap: anywhere; }
 .sync-check.failed { color: var(--danger); }

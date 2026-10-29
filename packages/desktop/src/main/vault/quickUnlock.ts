@@ -184,8 +184,8 @@ export async function openQuickUnlock(dataDir: string, p: QuickUnlockPlatform): 
     const file = parseQuickUnlock(await readJsonCapped(join(dataDir, QUICK_UNLOCK_FILE)))
     const ids = await deviceIds(dataDir)
     if (!file || file.vaultId !== ids.vaultId || file.deviceId !== ids.deviceId) throw new QuickUnlockFailed()
-    // The vault's header picks the format, and so the KDF: suite 0x02 only for a header-v2 vault, v1 only for v1.
-    if ((vault.version === 2) !== ('version' in file)) throw new QuickUnlockFailed()
+    // The vault's header picks the format, and so the KDF: suite 0x02 for a header-v2 or v3 vault (the same keys), v1 only for v1.
+    if ((vault.version === 2 || vault.version === 3) !== ('version' in file)) throw new QuickUnlockFailed()
     if (kind === 'touchid') await p.systemPreferences.promptTouchID!(TOUCH_ID_REASON)
     // A rotated OS key (`rewrite`) needs no action: the next enable seals QU afresh.
     qu = new Uint8Array(Buffer.from((await p.secrets.open(Buffer.from(file.sealedQu, 'base64'))).plain, 'base64'))

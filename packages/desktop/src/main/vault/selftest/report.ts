@@ -39,6 +39,9 @@ function moduleLines(s: NativeStatus | null): string[] {
   ]
 }
 
+/** Checks of services that run outside the FIPS boundary (ML-DSA, PQ-A4): the report says so. */
+export const OUTSIDE_BOUNDARY: ReadonlySet<KatId> = new Set<KatId>(['POST-MLDSA-VERIFY'])
+
 export function diagnosticReport(i: ReportInput): string {
   const text = [
     'Slate self-test report',
@@ -46,7 +49,7 @@ export function diagnosticReport(i: ReportInput): string {
     `os: ${i.platform} ${i.arch} ${i.osRelease}`,
     `started: ${i.startedAt}`,
     `failed (${i.when}): ${i.failedAt}`,
-    `failed checks: ${i.failed.join(', ') || 'none'}`,
+    `failed checks: ${i.failed.map((id) => (OUTSIDE_BOUNDARY.has(id) ? `${id} (outside the module)` : id)).join(', ') || 'none'}`,
     ...moduleLines(i.module),
   ].join('\n')
   return redactString(text, { home: i.home }) + '\n'

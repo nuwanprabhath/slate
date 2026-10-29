@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { CH } from '../../shared/ipc'
 import type { DiagnosticsStatus, RendererErrorReport, Settings } from '../../shared/api'
 import { log, securityLog } from './logger'
+import { logPqState, type PqDiagnostics } from './pqState'
 
 /**
  * Points the logger at this installation's log folder. Separate from `logger.ts` so that module
@@ -42,11 +43,22 @@ function rendererError(report: RendererErrorReport): void {
   log.error('renderer', report.kind === 'unhandledrejection' ? 'unhandled rejection' : 'uncaught error', { name: text(report.name, 80), frames })
 }
 
-export function registerDiagnosticsIpc(ipc: IpcRegistrar): void {
+/** `pqState` supplies the post-quantum fields; reading or copying the log first adds one line with them (PQ-D3). */
+export function registerDiagnosticsIpc(ipc: IpcRegistrar, pqState: () => Promise<PqDiagnostics>): void {
+  const withPqState = async (): Promise<string> => {
+    if (log.enabled) {
+      try {
+        logPqState(log.scoped('app'), await pqState())
+      } catch {
+        // The log never breaks the app: without the line the export is still the log.
+      }
+    }
+    return log.read()
+  }
   ipc.handle(CH.diagnosticsStatus, () => status())
-  ipc.handle(CH.diagnosticsRead, () => log.read())
+  ipc.handle(CH.diagnosticsRead, () => withPqState())
   ipc.handle(CH.diagnosticsCopy, async () => {
-    const text = log.read()
+    const text = await withPqState()
     await clipboard.writeText(text)
     return text.length
   })

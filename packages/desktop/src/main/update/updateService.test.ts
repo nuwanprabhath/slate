@@ -1,7 +1,8 @@
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UpdateState } from '../../shared/api'
-import { artifactMessage, keyIdOf, manifestMessage, UpdateSignatureError, type PinnedUpdateKey } from './signature'
+import { FAKE_HYBRID_KEY } from './fakeBackend'
+import { artifactMessage, keyIdOf, manifestMessage, UpdateSignatureError, type Ed25519UpdateKey } from './signature'
 import { UpdateService, type FoundUpdate, type UpdateBackend, type UpdatePrefs } from './updateService'
 import { createUpdateVerifier, type UpdateVerifier, type VerifiedRelease } from './verifier'
 
@@ -330,10 +331,40 @@ describe('UpdateService', () => {
       expect(ok.backend.installAuto).toHaveBeenCalled()
     })
 
+    it('T-PQ-A2-03: with the hybrid key pinned, a release signed only with a valid v1 .sig is never offered', async () => {
+      const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+      const classic: Ed25519UpdateKey = { alg: 'ed25519', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }
+      const rel = found('0.2.0')
+      const feed = new TextEncoder().encode(`version: 0.2.0\nfiles:\n${rel.files.map((f) => `  - url: ${f.url}\n    sha512: ${f.sha512}\n`).join('')}`)
+      const v1 = (m: Uint8Array) =>
+        new TextEncoder().encode(JSON.stringify({ format: 'slate-update-signature', version: 1, alg: 'ed25519', keyId: keyIdOf(classic.publicKeyPem), signature: sign(null, m, privateKey).toString('base64') }))
+      const assets = new Map([
+        ['latest-linux.yml', feed],
+        ['latest-linux.yml.sig', v1(manifestMessage('latest-linux.yml', feed))],
+      ])
+      const fetched: string[] = []
+      const verifier = createUpdateVerifier({
+        keys: [classic, FAKE_HYBRID_KEY],
+        manifestName: 'latest-linux.yml',
+        currentVersion: '0.1.0',
+        fetchAsset: async (_version, name) => {
+          fetched.push(name)
+          return assets.get(name) ?? null
+        },
+      })
+      const { service, diag } = setup({ verifier: verifier as unknown as ReturnType<typeof stubVerifier> })
+      const state = await service.check({ manual: true })
+      expect(state).toMatchObject({ phase: 'error', visible: false })
+      expect(state.error).toMatch(/post-quantum signature missing/)
+      expect(diag.error).toHaveBeenCalledWith('update.signature.failed', expect.objectContaining({ version: '0.2.0' }))
+      // The v1 file was never even read.
+      expect(fetched).not.toContain('latest-linux.yml.sig')
+    })
+
     it('F2: after any failed check nothing is downloaded or installed, even with a release verified before', async () => {
       // electron-updater keeps one cached update and every check overwrites it: emulate that.
       const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-      const key: PinnedUpdateKey = { alg: 'ed25519', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }
+      const key: Ed25519UpdateKey = { alg: 'ed25519', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }
       const sigFile = (m: Uint8Array) =>
         new TextEncoder().encode(JSON.stringify({ format: 'slate-update-signature', version: 1, alg: 'ed25519', keyId: keyIdOf(key.publicKeyPem), signature: sign(null, m, privateKey).toString('base64') }))
       const feedOf = (r: FoundUpdate) => new TextEncoder().encode(`version: ${r.version}\nfiles:\n${r.files.map((f) => `  - url: ${f.url}\n    sha512: ${f.sha512}\n`).join('')}`)

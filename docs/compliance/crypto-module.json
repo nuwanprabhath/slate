@@ -7,6 +7,9 @@
   "securityPolicyUrl": "https://csrc.nist.gov/CSRC/media/projects/cryptographic-module-validation-program/documents/security-policies/140sp4985.pdf",
   "sunset": "2030-03-10",
   "libcrypto": "3.5.9",
+  "pqAlgorithms": ["ML-DSA-65", "ML-DSA-87", "ML-KEM-768", "ML-KEM-1024"],
+  "pqInBoundary": false,
+  "pqNote": "Available in the OpenSSL 3.5.9 default provider, outside the validated boundary: CMVP #4985 (FIPS Provider 3.1.2) predates FIPS 203 and FIPS 204. Slate uses ML-DSA verification of update signatures only (POAM-18). No ML-KEM is used by Slate itself.",
   "entropyCaveat": "The module's DRBG is seeded from the operating system's entropy source, which is outside the module boundary. The certificate gives no assurance of the minimum strength of generated keys beyond what that source provides; see the Security Policy's entropy caveat.",
   "openPoints": ["L-3: fipsmodule.cnf is generated at build time (fipsinstall -self_test_onload) and shipped", "L-4: 3.1.2 provider loaded by a 3.5.x libcrypto on macOS arm64/x64 and Linux x64"]
 }

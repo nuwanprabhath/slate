@@ -1,0 +1,13 @@
+{
+  "themeId": "builtin:dark",
+  "motion": "auto",
+  "systemTitleBar": false,
+  "idleMinutes": 30,
+  "lockOnSleep": true,
+  "lockOnScreenLock": true,
+  "quickUnlock": false,
+  "format": "slate-preunlock",
+  "version": 2,
+  "profile": "standard",
+  "mac": "Y1Sbx4dWhv6XjG2xP3nsXt1ijK2u5Lz0+DXMOO6h3XQ="
+}

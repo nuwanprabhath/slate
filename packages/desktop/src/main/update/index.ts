@@ -8,7 +8,7 @@ import { onSettingsWritten, readSettings } from '../settings'
 import type { DocStore } from '../store'
 import { detectInstallKind } from './capability'
 import { electronBackend } from './electronBackend'
-import { FAKE_CURRENT_VERSION, fakeBackend, fakeInstallKind } from './fakeBackend'
+import { FAKE_CURRENT_VERSION, fakeBackend, fakeInstallKind, fakeSignature } from './fakeBackend'
 import { registerUpdateIpc, updatePrefsIn } from './ipc'
 import { PINNED_UPDATE_KEYS } from './signature'
 import { createUpdateVerifier } from './verifier'
@@ -32,7 +32,7 @@ export function createUpdates(store: () => DocStore | null, isE2E: boolean, ipc:
   }
   const live = app.isPackaged && !isE2E
   const manifestName = process.platform === 'darwin' ? 'latest-mac.yml' : process.platform === 'linux' ? 'latest-linux.yml' : 'latest.yml'
-  const fakeFeed = fake ? fakeBackend({ downloadsDir: tmpdir(), copy: (t) => void clipboard.writeText(t), manifestName, badSignature: fake.endsWith('-badsig') }) : null
+  const fakeFeed = fake ? fakeBackend({ downloadsDir: tmpdir(), copy: (t) => void clipboard.writeText(t), manifestName, signature: fakeSignature(fake) }) : null
   const backend = fakeFeed ?? electronBackend({ downloadsDir: app.getPath('downloads'), log })
   const verifier = createUpdateVerifier({
     // The fake feed's own key exists only in an e2e run; a real feed verifies against the pinned keys alone.

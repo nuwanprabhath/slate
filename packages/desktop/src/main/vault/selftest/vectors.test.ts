@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { refHkdf, refKbkdf, refVid } from '../../../../test/vaultKeys'
+import { sigVerCases, spki } from '../../../../../native/test/vectors/mldsa/sigver'
 import { KAT, KAT_VAULT_ID } from './vectors'
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString('hex')
@@ -102,5 +103,17 @@ describe('T-KAT-01: cross-implementation vectors', () => {
       expect(cross, `${name} in crossCheck.sh`).toContain(`W=${hex(out)}`)
       expect(kat, `${name} in kat.c`).toContain(`"${hex(out)}"`)
     }
+  })
+})
+
+describe('T-PQ-A4: the ML-DSA-65 vector', () => {
+  it('is ACVP ML-DSA-sigVer-FIPS204 tcId 43, byte for byte, with its public key in SubjectPublicKeyInfo form', () => {
+    const c = sigVerCases().find((x) => x.tcId === 43)!
+    expect(c).toMatchObject({ level: 65, passed: true })
+    const v = KAT.mldsa65
+    expect(hex(v.spki)).toBe(spki(65, c.pk).toString('hex'))
+    expect(hex(v.msg)).toBe(c.message.toString('hex'))
+    expect(hex(v.ctx)).toBe(c.context.toString('hex'))
+    expect(hex(v.sig)).toBe(c.signature.toString('hex'))
   })
 })

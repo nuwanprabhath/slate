@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LoroDoc } from 'loro-crdt'
@@ -14,10 +14,11 @@ import { DocStore } from '../store'
 import { liveHandles } from '../../../test/vaultKeys'
 import { secretBytes } from '../../shared/secret'
 import { openEnvelope } from './envelope'
-import { changePassword, parseHeader, proveSecret, unlockWithPassword, type VaultHeader, type VaultHeaderV2 } from './header'
+import { buildHeaderV3From, changePassword, parseHeader, proveSecret, RotationRefused, unlockWithPassword, type VaultHeader, type VaultHeaderV2 } from './header'
 import type { KeyRing } from './keyring'
 import { Migration, MIGRATION_FILE, readRekeyRecord, REKEY_STEPS, type MigrationDeps, type RekeyStep, type SyncOutcome } from './migration'
 import { destroyKey } from './native'
+import { PROFILE_FLOOR_FILE } from './profileFloor'
 import { PROFILES } from './profile'
 import { GitVaultRemote, type VaultRemote } from './remoteVault'
 import { SUITE } from './suite'
@@ -25,6 +26,7 @@ import { expectNotesSurviveCrash, notesUnder, storeWithLk } from './testVault'
 import { CANDIDATE_FILE, LOCAL_KEYS_FILE, PENDING_FILE, SYNCED_FILE, unlockVault, VAULT_FILE } from './unlock'
 import { SEEN_FILE } from './seen'
 import { checkRemoteVault, VaultSyncProblem } from './vaultCheck'
+import { PQ_CANDIDATE_FILE, runPqUpgrade } from './pqUpgrade'
 
 vi.setConfig({ testTimeout: 30_000 })
 const weak = { allowWeakForTests: true }
@@ -65,7 +67,7 @@ function closeOpened(): void {
 }
 
 /** A plaintext note encrypted by the wizard (§7.1); the open ring and its store, as the services hold them. */
-async function encrypted(remote: VaultRemote | null = null): Promise<KeyRing> {
+async function encrypted(remote: VaultRemote | null = null, over: Partial<MigrationDeps> = {}): Promise<KeyRing> {
   mkdirSync(dataDir, { recursive: true })
   const store = new DocStore(join(dataDir, 'slate.db'))
   const doc = new LoroDoc()
@@ -73,7 +75,7 @@ async function encrypted(remote: VaultRemote | null = null): Promise<KeyRing> {
   store.append(PAGE, doc.export({ mode: 'update' }))
   writeSettings(store, { deviceId: randomUUID() })
   store.close()
-  const m = new Migration(deps({ remote: () => remote }))
+  const m = new Migration(deps({ remote: () => remote, ...over }))
   const p = await m.prepare(secretBytes(PASSWORD))
   if (p.kind !== 'recovery') throw new Error('expected a new vault')
   expect(await m.confirmRecovery(secretBytes(p.recoveryKey))).toBe(true)
@@ -105,6 +107,26 @@ async function noteAfterUnlock(folder = dataDir, password = PASSWORD): Promise<{
   }
 }
 
+/** A gate PQ-B4 keeps shut: sync off on a vault that has synced, so its devices cannot be asked (INV-PQ-5). */
+const CLOSED_GATE: Partial<MigrationDeps> = { syncedBefore: async () => true }
+/** Device records of builds that read header v3 (PQ-B2) and follow key changes (C9). */
+const PQ_DEVICES = [{ name: 'Laptop', appVersion: '0.4.0', epochs: 1, pq: 1 }]
+/** One device of 0.3.x: it follows key changes but would call header v3 damaged. */
+const OLD_DEVICES = [{ name: 'Laptop', appVersion: '0.4.0', epochs: 1, pq: 1 }, { name: 'Desktop', appVersion: '0.3.0', epochs: 1 }]
+
+/** `remote`, counting its header writes (a claim, or a compare-and-swap of `e2ee/vault.json`). */
+function counted(remote: VaultRemote): { remote: VaultRemote; writes: () => number } {
+  let writes = 0
+  return {
+    remote: {
+      read: () => remote.read(),
+      claim: (h, v) => (writes++, remote.claim(h, v)),
+      writeHeader: (h, v) => (writes++, remote.writeHeader(h, v)),
+    },
+    writes: () => writes,
+  }
+}
+
 const header = (folder = dataDir) => parseHeader(JSON.parse(readFileSync(join(folder, VAULT_FILE), 'utf8')), weak)
 const remoteHeader = async (remote: VaultRemote) => parseHeader((await remote.read()).header, weak)
 const databases = (folder = dataDir) => readdirSync(folder).filter((f) => /^slate-[0-9a-f]{8}\.db$/.test(f))
@@ -124,7 +146,8 @@ afterEach(() => {
 
 describe('C9 key rotation through the migration runner', () => {
   it('rotation round trip without sync: epoch 1, the same password, the notes under a fresh LK, nothing left over', async () => {
-    const ring = await encrypted()
+    // A header-v2 vault (the PQ gate was closed when it was made): a rotation keeps it v2.
+    const ring = await encrypted(null, CLOSED_GATE)
     const oldDb = databases()[0]
     const next = await rotate(new Migration(deps()), ring)
     expect(ring.isOpen).toBe(false)
@@ -268,6 +291,36 @@ describe('C9 key rotation through the migration runner', () => {
       })
     }
   }
+})
+
+describe('PQ-B1: a header-v3 vault at a later key epoch', () => {
+  it('T-PQ-B1-10: unlock reads a v3 header’s keyEpoch; keysInfo reports it; v2 is then below the floor; PQ-B4: rotating it keeps v3', async () => {
+    const ring = await encrypted(null, CLOSED_GATE)
+    const next = await rotate(new Migration(deps()), ring)
+    const v2 = header() as VaultHeaderV2
+    expect(v2.keyEpoch).toBe(1)
+    writeFileSync(join(dataDir, VAULT_FILE), JSON.stringify(buildHeaderV3From(v2, next.get('mk'))))
+    next.close()
+    expect(await noteAfterUnlock()).toEqual({ text: 'SECRET-NOTE', epoch: 1 })
+    // Unlocking v3 raised the signed floor to version 3 (INV-PQ-4): the v2 copy no longer opens.
+    expect(JSON.parse(readFileSync(join(dataDir, PROFILE_FLOOR_FILE), 'utf8'))).toMatchObject({ minHeaderVersion: 3 })
+    const { keyRing } = await unlockVault(dataDir, { password: secretBytes(PASSWORD) }, weak)
+    const m = new Migration(deps())
+    expect(await m.keysInfo(keyRing)).toMatchObject({ headerVersion: 3, keyEpoch: 1, canRotate: true, canUpgrade: false })
+    expect(header()).toMatchObject({ version: 3, keyEpoch: 1 })
+    // Before PQ-B4 a rotation was refused here; since, a v3 vault is rotated into a v3 header, never a v2 one.
+    const v2Copy = join(dir, 'v2')
+    cpSync(dataDir, v2Copy, { recursive: true })
+    writeFileSync(join(v2Copy, VAULT_FILE), JSON.stringify(v2))
+    await expect(unlockVault(v2Copy, { password: secretBytes(PASSWORD) }, weak)).rejects.toThrow()
+    const rotated = await rotate(m, keyRing)
+    expect(header()).toMatchObject({ version: 3, keyEpoch: 2, pq: { kem: 'hybrid-only', minCapability: 1 } })
+    rotated.close()
+    expect(await noteAfterUnlock()).toEqual({ text: 'SECRET-NOTE', epoch: 2 })
+    const again = await unlockVault(dataDir, { password: secretBytes(PASSWORD) }, weak)
+    await expect(new Migration(deps()).prepareRekey(again.keyRing, 'upgrade', secretBytes(PASSWORD))).rejects.toThrow(RotationRefused)
+    again.keyRing.close()
+  })
 })
 
 describe('C9 R-2: Replace history (git)', () => {
@@ -652,7 +705,7 @@ describe('C9 R-5: a header-v1 vault upgrades to v2 by a rotation', () => {
     })
   }
 
-  it('keeps reading its suite-0x01 files through history epoch 0 and writes header v2 and local-keys v2', async () => {
+  it('keeps reading its suite-0x01 files through history epoch 0 and writes header v3 (PQ-B4: the gate is open) and local-keys v2', async () => {
     cpSync(join(FIXTURES, 'data'), dataDir, { recursive: true })
     const u = await unlockVault(dataDir, { password: secretBytes(manifest.password) }, weak)
     expect(header()).toMatchObject({ version: 1 })
@@ -661,7 +714,7 @@ describe('C9 R-5: a header-v1 vault upgrades to v2 by a rotation', () => {
     expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
     const next = await m.runRekey(u.keyRing)
     opened.splice(0).forEach((o) => o.store.close())
-    expect(header()).toMatchObject({ version: 2, suite: 2, keyEpoch: 1, profile: 'standard' })
+    expect(header()).toMatchObject({ version: 3, suite: 2, keyEpoch: 1, profile: 'standard', pq: { kem: 'hybrid-only', minCapability: 1 } })
     expect(JSON.parse(readFileSync(join(dataDir, LOCAL_KEYS_FILE), 'utf8'))).toMatchObject({ version: 2, keyEpoch: 1 })
     const old = next.epochKeys(0)!
     expect(old.schedule.suite).toBe(SUITE.HKDF_AES256GCM)
@@ -674,5 +727,186 @@ describe('C9 R-5: a header-v1 vault upgrades to v2 by a rotation', () => {
     const again = await unlockVault(dataDir, { password: secretBytes(manifest.password) }, weak)
     await expect(m.prepareRekey(again.keyRing, 'upgrade', secretBytes(manifest.password))).rejects.toThrow(/already/)
     again.keyRing.close()
+  })
+})
+
+describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
+  const FIXTURES = join(__dirname, 'fixtures', 'c4')
+  const manifest = JSON.parse(readFileSync(join(FIXTURES, 'manifest.json'), 'utf8')) as { password: string }
+  const pw = () => secretBytes(manifest.password)
+
+  async function v1Fixture(): Promise<{ ring: KeyRing; docs: number }> {
+    cpSync(join(FIXTURES, 'data'), dataDir, { recursive: true })
+    const u = await unlockVault(dataDir, { password: pw() }, weak)
+    const store = storeWithLk(u.keyRing, u.dbFile)
+    const docs = store.list('').length
+    store.close()
+    return { ring: u.keyRing, docs }
+  }
+
+  it('T-PQ-B4-01: with the gate open, a header-v1 vault’s upgrade writes v3 to the remote in one compare-and-swap', async () => {
+    const { ring, docs } = await v1Fixture()
+    const c = counted(gitRemote())
+    const m = new Migration(deps({ remote: () => c.remote, devices: async () => PQ_DEVICES }))
+    const { recoveryKey } = await m.prepareRekey(ring, 'upgrade', pw())
+    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    const next = await m.runRekey(ring)
+    opened.splice(0).forEach((o) => o.store.close())
+    next.close()
+    expect(c.writes()).toBe(1)
+    const v3 = { version: 3, keyEpoch: 1, profile: 'standard', pq: { kem: 'hybrid-only', minCapability: 1 } }
+    expect(await remoteHeader(c.remote)).toMatchObject(v3)
+    expect(header()).toMatchObject(v3)
+    expect(await readRekeyRecord(dataDir)).toMatchObject({ rekey: 'upgrade', step: 'repush', fromEpoch: 0, toEpoch: 1 })
+    expect(JSON.parse(readFileSync(join(dataDir, PROFILE_FLOOR_FILE), 'utf8'))).toMatchObject({ minHeaderVersion: 3 })
+    expect(await notesUnder(dataDir, () => ({ recoveryKey: secretBytes(recoveryKey) }), weak)).toBe(docs)
+  })
+
+  for (const step of REKEY_STEPS.slice(0, 7) as RekeyStep[]) {
+    it(`T-PQ-B4-01: an upgrade to v3 cut short before ${step} leaves the notes to the old and the new secret`, async () => {
+      const { ring, docs } = await v1Fixture()
+      const remote = gitRemote()
+      const m = new Migration(deps({ remote: () => remote, devices: async () => PQ_DEVICES, crashAt: step }))
+      const { recoveryKey } = await m.prepareRekey(ring, 'upgrade', pw())
+      expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+      await expect(m.runRekey(ring)).rejects.toThrow(`Injected crash before ${step}`)
+      closeOpened()
+      if (ring.isOpen) ring.close()
+      // What reached the remote, if anything, is v3: no v2 header is ever published on the way.
+      const snap = (await remote.read()).header
+      if (snap !== null) expect(parseHeader(snap, weak)).toMatchObject({ version: 3, keyEpoch: 1 })
+      expect(snap !== null).toBe(step !== 'remote')
+      await expectNotesSurviveCrash(dataDir, {
+        old: { label: 'password', secret: () => ({ password: pw() }) },
+        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: secretBytes(recoveryKey) }) }],
+        notes: docs,
+        opts: weak,
+      })
+    })
+  }
+
+  it('T-PQ-B4-02: with the gate closed the upgrade lands on v2, and the PQ-B3 upgrade raises it to v3 once the key change has synced', async () => {
+    const { ring } = await v1Fixture()
+    const remote = gitRemote()
+    let devices = OLD_DEVICES
+    const m = new Migration(deps({ remote: () => remote, devices: async () => devices }))
+    const { recoveryKey } = await m.prepareRekey(ring, 'upgrade', pw())
+    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    const next = await m.runRekey(ring)
+    opened.splice(0).forEach((o) => o.store.close())
+    expect(header()).toMatchObject({ version: 2, keyEpoch: 1 })
+    expect(await remoteHeader(remote)).toMatchObject({ version: 2, keyEpoch: 1 })
+    devices = PQ_DEVICES
+    const up = { dataDir, kdfOpts: weak, keyRing: next, remote: () => remote, devices: async () => devices, selfTest: async () => true }
+    // The rekey record owns migration.json until its re-push, sweep and prune are done: the upgrade waits for them.
+    const record = readFileSync(join(dataDir, MIGRATION_FILE), 'utf8')
+    expect(await runPqUpgrade(up)).toEqual({ state: 'retry' })
+    expect(readFileSync(join(dataDir, MIGRATION_FILE), 'utf8')).toBe(record)
+    expect(header()).toMatchObject({ version: 2 })
+    rmSync(join(dataDir, MIGRATION_FILE))
+    expect(await runPqUpgrade(up)).toEqual({ state: 'done' })
+    next.close()
+    expect(header()).toMatchObject({ version: 3, keyEpoch: 1 })
+    expect(await remoteHeader(remote)).toMatchObject({ version: 3, keyEpoch: 1 })
+    expect(await notesUnder(dataDir, () => ({ password: pw() }), weak)).not.toBeNull()
+  })
+
+  it('T-PQ-B4-03: a new vault is v3 with sync off; v2 with a remote whose device records lack pq; v3 when they all carry it', async () => {
+    const ring = await encrypted()
+    ring.close()
+    expect(header()).toMatchObject({ version: 3, revision: 1, keyEpoch: 0, pq: { kem: 'hybrid-only', minCapability: 1 } })
+    expect(await noteAfterUnlock()).toEqual({ text: 'SECRET-NOTE', epoch: 0 })
+
+    for (const [name, devices, version] of [
+      ['old', OLD_DEVICES, 2],
+      ['unreadable', null, 2],
+      ['pq', PQ_DEVICES, 3],
+    ] as const) {
+      closeOpened()
+      rmSync(dataDir, { recursive: true, force: true })
+      bare = join(dir, `remote-${name}.git`)
+      execFileSync('git', ['init', '-q', '--bare', '--initial-branch=main', bare])
+      const remote = gitRemote(`vr-${name}`)
+      const r = await encrypted(remote, {
+        devices: async () => {
+          if (devices === null) throw new Error('offline')
+          return [...devices]
+        },
+      })
+      r.close()
+      expect(header()).toMatchObject({ version })
+      expect(await remoteHeader(remote)).toMatchObject({ version })
+      if (version === 2) expect(header()).not.toHaveProperty('pq')
+    }
+    // Sync off on a vault that has synced: its devices cannot be asked, so v2.
+    closeOpened()
+    rmSync(dataDir, { recursive: true, force: true })
+    ;(await encrypted(null, CLOSED_GATE)).close()
+    expect(header()).toMatchObject({ version: 2 })
+  })
+
+  it('T-PQ-B4-06: while a committed pq-header upgrade waits for an offline remote, no key change runs or touches its files', async () => {
+    const remote = gitRemote()
+    const ring = await encrypted(remote)
+    expect(header()).toMatchObject({ version: 2 })
+    const offline: VaultRemote = {
+      read: () => Promise.reject(new Error('Could not resolve host')),
+      claim: () => Promise.reject(new Error('Could not resolve host')),
+      writeHeader: () => Promise.reject(new Error('Could not resolve host')),
+    }
+    const up = { dataDir, kdfOpts: weak, keyRing: ring, devices: async () => PQ_DEVICES, selfTest: async () => true }
+    expect(await runPqUpgrade({ ...up, remote: () => offline })).toEqual({ state: 'retry' })
+    const record = readFileSync(join(dataDir, MIGRATION_FILE), 'utf8')
+    const candidate = readFileSync(join(dataDir, PQ_CANDIDATE_FILE), 'utf8')
+    expect(JSON.parse(record)).toMatchObject({ kind: 'pq-header', step: 'committed' })
+    const m = new Migration(deps({ remote: () => remote, devices: async () => PQ_DEVICES }))
+    expect(await m.keysInfo(ring)).toMatchObject({ canRotate: false, canConvert: false, canUpgrade: false })
+    for (const kind of ['rotate', 'upgrade', 'convert'] as const) {
+      await expect(m.prepareRekey(ring, kind, secretBytes(PASSWORD), secretBytes('a much longer passphrase here'))).rejects.toThrow(/vault format update is still finishing/)
+    }
+    expect(readFileSync(join(dataDir, MIGRATION_FILE), 'utf8')).toBe(record)
+    expect(readFileSync(join(dataDir, PQ_CANDIDATE_FILE), 'utf8')).toBe(candidate)
+    expect(header()).toMatchObject({ version: 2 })
+    // The remote is back: the upgrade finishes, and then the rotation runs (on v3).
+    expect(await runPqUpgrade({ ...up, remote: () => remote })).toEqual({ state: 'done' })
+    expect(await m.keysInfo(ring)).toMatchObject({ headerVersion: 3, canRotate: true })
+    const next = await rotate(m, ring)
+    next.close()
+    expect(header()).toMatchObject({ version: 3, keyEpoch: 1 })
+    expect(await remoteHeader(remote)).toMatchObject({ version: 3, keyEpoch: 1 })
+  })
+
+  it('T-PQ-B4-05: a v3 vault rotated with sync keeps v3 and pq on both sides, and a crash before each step loses no note', async () => {
+    for (const step of [undefined, ...(REKEY_STEPS.slice(0, 7) as RekeyStep[])]) {
+      closeOpened()
+      rmSync(dataDir, { recursive: true, force: true })
+      bare = join(dir, `remote-${step ?? 'none'}.git`)
+      execFileSync('git', ['init', '-q', '--bare', '--initial-branch=main', bare])
+      const remote = gitRemote(`vr-${step ?? 'none'}`)
+      const ring = await encrypted(remote, { devices: async () => PQ_DEVICES })
+      expect(header()).toMatchObject({ version: 3 })
+      const notes = (await notesUnder(dataDir, () => ({ password: secretBytes(PASSWORD) }), weak))!
+      const m = new Migration(deps({ remote: () => remote, devices: async () => PQ_DEVICES, ...(step ? { crashAt: step } : {}) }))
+      const { recoveryKey } = await m.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))
+      expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+      if (!step) {
+        ;(await m.runRekey(ring)).close()
+        closeOpened()
+        const v3 = { version: 3, keyEpoch: 1, pq: { kem: 'hybrid-only', minCapability: 1 } }
+        expect(header()).toMatchObject(v3)
+        expect(await remoteHeader(remote)).toMatchObject(v3)
+        continue
+      }
+      await expect(m.runRekey(ring)).rejects.toThrow(`Injected crash before ${step}`)
+      closeOpened()
+      if (ring.isOpen) ring.close()
+      if (step !== 'remote') expect(await remoteHeader(remote)).toMatchObject({ version: 3, keyEpoch: 1 })
+      await expectNotesSurviveCrash(dataDir, {
+        old: { label: 'password', secret: () => ({ password: secretBytes(PASSWORD) }) },
+        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: secretBytes(recoveryKey) }) }],
+        notes,
+        opts: weak,
+      })
+    }
   })
 })

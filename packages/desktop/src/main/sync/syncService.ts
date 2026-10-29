@@ -8,6 +8,10 @@ import {
   GitDrive,
   nodeGitRunner,
   OneDriveClient,
+  PqTransportUnavailable,
+  probeSshKex,
+  remoteTransport,
+  sshCommand,
   SyncAborted,
   SyncEngine,
   tokenEnv,
@@ -15,12 +19,14 @@ import {
   type ConflictRecord,
   type GitRunner,
   type LocalStore,
+  type NodeGitRunnerOptions,
+  type SshKexProbe,
   type RemoteDrive,
   type SyncReport,
   type SyncStatus,
 } from '@slate/sync'
 import { noLog, type ScopedLog } from '../log/logger'
-import type { DeviceCode, GitAuthInfo, GitAuthMode, GitCheck, GitSettings, Settings, SyncConfig, SyncState, VaultProblem } from '../../shared/api'
+import type { DeviceCode, GitAuthInfo, GitAuthMode, GitCheck, GitSettings, Settings, SyncConfig, SyncState, TransportObservation, VaultProblem, VaultState } from '../../shared/api'
 import type { BlobStore } from '../blobs'
 import { SIGN_IN_SCOPES, type AuthService } from '../onenote/auth'
 import { secretFile, type SecretFile, type SecretStorage } from '../secretStorage'
@@ -28,6 +34,7 @@ import { readSettings, writeSettings } from '../settings'
 import { DocStore } from '../store'
 import { createPrivateRepo, ghToken, githubDeviceFlow, testConnection } from './git/auth'
 import type { KeyRing } from '../vault/keyring'
+import { PQ_CAPABILITY } from '../vault/deviceGate'
 import { GitVaultRemote, OneDriveVaultRemote, type VaultRemote } from '../vault/remoteVault'
 import { toHex, utf8, vaultNative } from '../vault/native'
 import { VaultSyncProblem } from '../vault/vaultCheck'
@@ -35,11 +42,33 @@ import { SUITE } from '../vault/suite'
 import { EncryptingDrive } from './encryptingDrive'
 import { docStoreLocal, scopedLocal } from './localStore'
 import { notebookFacts, ownCurrent, pickNotebook } from './openNotebook'
+import { probeTransports } from './transportProbe'
 
 const INTERVAL_MS = 30_000
 const AFTER_EDIT_MS = 2_000
 /** Reopening the same notebook within this long is not recorded again, so browsing does not churn sync. */
 const OPEN_RECORD_MS = 10 * 60_000
+/** The transport probe repeats at most this often after successful syncs. */
+const PROBE_EVERY_MS = 24 * 60 * 60_000
+const PROBED_AT = 'pq:transport-probed-at'
+
+/** What `syncRequirePq` says when a transport cannot be post-quantum. */
+export const PQ_REFUSAL = {
+  server: 'This server does not offer post-quantum key exchange',
+  https: 'Use an SSH remote for post-quantum key exchange',
+  onedrive: 'Microsoft OneDrive does not offer post-quantum key exchange yet',
+} as const
+
+/** OpenSSH's words when client and server share no key exchange. */
+const NO_SHARED_KEX = /no matching key exchange method found/
+
+/** The refusal `syncRequirePq` gives a provider before any network call; null when it may go ahead. */
+function requireRefusal(settings: Settings): string | null {
+  if (!settings.syncRequirePq) return null
+  if (settings.syncProvider === 'onedrive') return PQ_REFUSAL.onedrive
+  if (settings.syncProvider === 'git' && settings.git && remoteTransport(settings.git.remoteUrl)?.kind === 'https') return PQ_REFUSAL.https
+  return null
+}
 
 export interface SyncServiceDeps {
   dbFile: string
@@ -55,6 +84,14 @@ export interface SyncServiceDeps {
   /** The OAuth app for "Sign in with GitHub"; without one the device flow is not offered. */
   githubClientId?: string
   gitPath?: string
+  /** Builds the runner for one GIT_SSH_COMMAND; defaults to `nodeGitRunner(gitPath, opts)`. */
+  gitRunner?: (opts: NodeGitRunnerOptions) => GitRunner
+  /** This machine's ssh hybrids; defaults to `probeSshKex()` (once per process). */
+  probeSsh?: () => Promise<SshKexProbe>
+  /** The transport probe's OneDrive handshake; defaults to `tlsGroup`. */
+  probeTls?: (host: string, port: number) => Promise<string | null>
+  /** For the transport probe; without it, `unlocked` with a key ring and `plaintext` without, until stopped. */
+  vaultState?: () => VaultState
   /** Defaults to spawning `gh auth token`. */
   ghToken?: () => Promise<string>
   deviceName?: string
@@ -94,6 +131,8 @@ export interface RemoteDeviceRecord {
   lastSeen?: number
   /** The key-epoch capability (C9); absent from builds that cannot follow a key change. */
   epochs?: number
+  /** The post-quantum header capability (PQ-B2); absent from builds that cannot read a v3 header. */
+  pq?: number
 }
 
 /** The level of key-epoch support this build writes into its device record (D-7, review C9 L3). */
@@ -149,7 +188,11 @@ export class SyncService {
   private readonly oneDriveVault: OneDriveVaultRemote
   private vaultProblem: VaultProblem | undefined
   private plaintextWarning = false
-  private readonly git: GitRunner
+  private readonly runners = new Map<string, GitRunner>()
+  /** Set when this run's transport was refused under `syncRequirePq`; becomes a notice once per refusal. */
+  private pqRefusal: string | undefined
+  private lastPqNotice: string | undefined
+  private probeDue = false
   private readonly tokenSecret: SecretFile
   private readonly deviceSecret: SecretFile
   private current: Connection | undefined
@@ -179,18 +222,68 @@ export class SyncService {
     this.deps = deps
     this.store = new DocStore(deps.dbFile, { compact: false, key: dbKey ?? null })
     this.deviceId = readSettings(this.store).deviceId ?? writeSettings(this.store, { deviceId: newId() }).deviceId!
-    const http = new GraphHttp({ baseUrl: deps.graphUrl, getToken: () => deps.auth.token(SIGN_IN_SCOPES) })
+    // Every Graph request asks for a token first, so this is the one door OneDrive traffic passes.
+    const getToken = () => {
+      if (this.settings().syncRequirePq) return Promise.reject(this.refused(PQ_REFUSAL.onedrive))
+      return deps.auth.token(SIGN_IN_SCOPES)
+    }
+    const http = new GraphHttp({ baseUrl: deps.graphUrl, getToken })
     this.oneDrive = new OneDriveClient(http)
     this.oneDriveVault = new OneDriveVaultRemote(http)
     this.deviceName = deps.deviceName ?? hostname()
     this.baseLocal = docStoreLocal(this.store, deps.blobs, deps.emitNotice)
-    this.git = loggedGit(nodeGitRunner(deps.gitPath), this.log)
     this.tokenSecret = secretFile(join(deps.gitDir, 'token.bin'), deps.secrets)
     this.deviceSecret = secretFile(join(deps.gitDir, 'github-device-token.bin'), deps.secrets)
   }
 
   private settings(): Settings {
     return readSettings(this.store)
+  }
+
+  private refused(message: string): PqTransportUnavailable {
+    this.pqRefusal = message
+    return new PqTransportUnavailable(message)
+  }
+
+  /** One logged runner per GIT_SSH_COMMAND (undefined: git's prompt-free default). */
+  private runner(command?: string): GitRunner {
+    const key = command ?? ''
+    let run = this.runners.get(key)
+    if (!run) {
+      const options: NodeGitRunnerOptions = command === undefined ? {} : { sshCommand: command }
+      run = loggedGit(this.deps.gitRunner ? this.deps.gitRunner(options) : nodeGitRunner(this.deps.gitPath, options), this.log)
+      this.runners.set(key, run)
+    }
+    return run
+  }
+
+  /**
+   * The runner for `url` under the transport policy (D-10): ssh always prefers the hybrids and, with
+   * `syncRequirePq`, offers nothing else; https is refused under `syncRequirePq`; local remotes are untouched.
+   */
+  private async policyRunner(url: string): Promise<{ run: GitRunner; require: boolean; command?: string }> {
+    const require = this.settings().syncRequirePq
+    const kind = remoteTransport(url)?.kind
+    if (kind === 'https' && require) throw this.refused(PQ_REFUSAL.https)
+    if (kind !== 'ssh') return { run: this.runner(), require: false }
+    let command: string
+    try {
+      command = sshCommand(await (this.deps.probeSsh ?? probeSshKex)(), require ? 'require' : 'prefer')
+    } catch (e) {
+      if (e instanceof PqTransportUnavailable) throw this.refused(e.message)
+      throw e
+    }
+    return { run: this.runner(command), require, command }
+  }
+
+  /** Every git call for one remote, through the policy; an ssh server without hybrids under 'require' is refused. */
+  private remoteGit(url: string): GitRunner {
+    return async (args, opts) => {
+      const { run, require } = await this.policyRunner(url)
+      const result = await run(args, opts)
+      if (require && result.code !== 0 && NO_SHARED_KEX.test(result.stderr)) throw this.refused(PQ_REFUSAL.server)
+      return result
+    }
   }
 
   /** The engine for the configured remote, rebuilt when the remote changes. */
@@ -207,15 +300,16 @@ export class SyncService {
       const { remoteUrl, branch } = git!
       // A short, stable folder name for this remote: an identifier, not a secret.
       const hash = toHex(vaultNative().sha256(utf8(key))).slice(0, 16)
+      const run = this.remoteGit(remoteUrl)
       vault = new GitVaultRemote({
-        run: this.git,
+        run,
         dir: join(this.deps.gitDir, `${hash}.vault`),
         remoteUrl,
         branch,
         authEnv: () => this.gitAuthEnv(this.settings().git ?? git!),
       })
       drive = new GitDrive({
-        run: this.git,
+        run,
         dir: join(this.deps.gitDir, hash),
         remoteUrl,
         branch,
@@ -252,7 +346,7 @@ export class SyncService {
       platform: platform(),
       ...(this.deps.appVersion ? { appVersion: this.deps.appVersion } : {}),
       // D-7 (review C9 L3): this build reads key epochs; a rekey waits for every device record to say so.
-      capabilities: { epochs: KEY_EPOCHS_CAPABILITY },
+      capabilities: { epochs: KEY_EPOCHS_CAPABILITY, pq: PQ_CAPABILITY },
       ...(check
         ? {
             beforeUpload: async () => {
@@ -311,6 +405,7 @@ export class SyncService {
           ...(typeof r.appVersion === 'string' ? { appVersion: r.appVersion } : {}),
           ...(typeof r.lastSeen === 'number' ? { lastSeen: r.lastSeen } : {}),
           ...(typeof r.epochs === 'number' ? { epochs: r.epochs } : {}),
+          ...(typeof r.pq === 'number' ? { pq: r.pq } : {}),
         })
       } catch {
         out.push({ name: 'A device record Slate cannot read' })
@@ -419,7 +514,9 @@ export class SyncService {
 
   async configure(config: SyncConfig): Promise<void> {
     if (config.token && config.git?.auth === 'token') await this.tokenSecret.set(config.token)
+    const before = this.settings()
     writeSettings(this.store, { syncProvider: config.provider, ...(config.git ? { git: config.git } : {}) })
+    if (config.provider && (config.provider !== before.syncProvider || (config.provider === 'git' && config.git?.remoteUrl !== before.git?.remoteUrl))) this.probeDue = true
     this.lastSyncedAt = undefined
     if (config.provider === 'onedrive' && !(await this.deps.auth.status()).signedIn) await this.deps.auth.signIn()
     if (config.provider) await this.now()
@@ -433,7 +530,79 @@ export class SyncService {
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) }
     }
-    return testConnection(this.git, git.remoteUrl, env)
+    let policy: Awaited<ReturnType<SyncService['policyRunner']>>
+    try {
+      policy = await this.policyRunner(git.remoteUrl)
+    } catch (err) {
+      if (err instanceof PqTransportUnavailable) return { ok: false, message: err.message }
+      throw err
+    }
+    const check = await testConnection(policy.run, git.remoteUrl, env, policy.command ? { sshCommand: policy.command } : {})
+    const kind = remoteTransport(git.remoteUrl)?.kind
+    if (check.remote && kind) {
+      const kex = check.kex ?? null
+      this.store.recordTransport({ remote: check.remote, transport: kind === 'ssh' ? 'ssh' : 'tls', kex, pq: check.pq ?? 'unknown', source: 'test-connection', at: Date.now() })
+    }
+    const { kex: _kex, pq: _pq, remote: _remote, ...result } = check
+    return result
+  }
+
+  /** The vault state the transport probe checks; the service itself is only open while the notes are. */
+  private vaultState(): VaultState {
+    return this.deps.vaultState?.() ?? (this.closed ? 'locked' : this.deps.keyRing ? 'unlocked' : 'plaintext')
+  }
+
+  /** Probes every transport the sync settings use (PQ-C4) and returns everything observed so far. */
+  async checkTransport(): Promise<TransportObservation[]> {
+    const settings = this.settings()
+    await probeTransports({
+      state: this.vaultState(),
+      settings,
+      graphUrl: this.deps.graphUrl,
+      git: async (url, command) => {
+        let env: Record<string, string>
+        try {
+          env = settings.git ? await this.gitAuthEnv(settings.git) : {}
+        } catch (err) {
+          return { ok: false, message: err instanceof Error ? err.message : String(err) }
+        }
+        return testConnection(this.runner(command), url, env, command ? { sshCommand: command } : {})
+      },
+      ssh: this.deps.probeSsh ?? (() => probeSshKex()),
+      ...(this.deps.probeTls ? { tls: this.deps.probeTls } : {}),
+      record: (o) => this.store.recordTransport(o),
+    })
+    await this.baseLocal.setMeta(PROBED_AT, String(Date.now()))
+    return this.store.transportObservations()
+  }
+
+  transports(): TransportObservation[] {
+    return this.store.transportObservations()
+  }
+
+  requirePq(): boolean {
+    return this.settings().syncRequirePq
+  }
+
+  /** Sync is on with no vault: notes cross the transport readable by the remote. */
+  plaintextSync(): boolean {
+    return !this.deps.keyRing && this.settings().syncProvider !== null
+  }
+
+  /** After the remote changed, and at most daily after a successful sync. */
+  private async probeIfDue(synced: boolean): Promise<void> {
+    const last = Number((await this.baseLocal.getMeta(PROBED_AT)) ?? 0)
+    if (!this.probeDue && !(synced && Date.now() - last >= PROBE_EVERY_MS)) return
+    this.probeDue = false
+    await this.checkTransport()
+  }
+
+  /** A refusal under `syncRequirePq` is a notice once, not on every timed run. */
+  private noticePq(): void {
+    const message = this.pqRefusal
+    if (message === undefined || message === this.lastPqNotice) return
+    this.lastPqNotice = message
+    this.deps.emitNotice(message)
   }
 
   async gitAuthInfo(): Promise<GitAuthInfo> {
@@ -528,6 +697,13 @@ export class SyncService {
     if (this.closed || this.paused) return this.report
     const settings = this.settings()
     if (!settings.syncProvider) return this.setReport(this.idle('disabled'))
+    this.pqRefusal = undefined
+    const refusal = requireRefusal(settings)
+    if (refusal) {
+      this.pqRefusal = refusal
+      this.noticePq()
+      return this.setReport({ ...this.idle('error'), message: refusal })
+    }
     if (settings.syncProvider === 'onedrive' && !(await this.deps.auth.status()).signedIn) return this.setReport(this.idle('signed-out'))
     const connection = this.connection(settings)
     if (!connection) return this.setReport({ ...this.idle('error'), message: 'Choose a repository in Sync settings' })
@@ -554,6 +730,13 @@ export class SyncService {
     if (report.status === 'error') this.log.error('sync end', { ...fields, message: report.message })
     else this.log.info('sync end', fields)
     if (report.status === 'idle-synced') this.lastSyncedAt = report.at
+    if (this.pqRefusal) this.noticePq()
+    else if (report.status === 'idle-synced') this.lastPqNotice = undefined
+    if (!this.pqRefusal && !this.closed) {
+      void this.probeIfDue(report.status === 'idle-synced').catch((e: unknown) =>
+        this.log.warn('transport probe failed', { error: e instanceof Error ? e.message : String(e) }),
+      )
+    }
     if (report.status === 'idle-synced' && first && !this.closed) this.followOtherDevices()
     if (this.deps.afterSync && !this.closed) {
       try {

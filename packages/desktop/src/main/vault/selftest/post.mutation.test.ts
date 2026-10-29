@@ -68,6 +68,8 @@ export const MUTATIONS: Record<string, Mutation> = {
   pbkdf2Async: otherKey,
   argon2idAsync: otherKey,
   keyDestroy: () => 0,
+  // PQ-A4: a verifier that accepts everything accepts the flipped signature.
+  mldsaVerify: () => true,
 }
 
 function mutated(real: SlateNative, name: string, mutation: Mutation): SlateNative {
@@ -98,6 +100,15 @@ describe('the POST fails whenever one cryptographic service is wrong (mutation)'
     provideDbModule(() => ({ native: n, requireFips: false }))
     const r = await runPost({ native: n, requireFips: testHasProvider })
     expect(r.ok, `${name}: ${r.failed.join(',')}`).toBe(false)
+  })
+
+  it("T-PQ-A4-02: a module that accepts the flipped ML-DSA signature fails exactly POST-MLDSA-VERIFY", async () => {
+    const real = dbModule().native
+    restore = dbModule()
+    const n = mutated(real, 'mldsaVerify', MUTATIONS.mldsaVerify!)
+    provideDbModule(() => ({ native: n, requireFips: false }))
+    const r = await runPost({ native: n, requireFips: testHasProvider })
+    expect(r).toMatchObject({ ok: false, failed: ['POST-MLDSA-VERIFY'] })
   })
 
   it('a module that refuses to close the self-test session (postEnd answering SCC_12) fails the POST', async () => {

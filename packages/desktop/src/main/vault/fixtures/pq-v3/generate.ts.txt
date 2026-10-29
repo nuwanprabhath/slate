@@ -1,0 +1,29 @@
+// The one-off generator of fixtures/pq-v3/vault.json (PQ-B4), run once as a vitest file under test:main from
+// packages/desktop/src/main/vault, then deleted. Kept as text so it never runs again over the committed fixture.
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { it } from 'vitest'
+import { buildHeaderV3From, canonicalJson, parseHeader, scheduleOf, unlockWithPassword, type VaultHeaderV2, type VaultHeaderV3 } from './header'
+import { deriveSubkey } from './keyring'
+import { destroyKey, toBase64, utf8, vaultNative } from './native'
+import { secretBytes } from '../../shared/secret'
+
+const OUT = join(__dirname, 'fixtures/pq-v3/vault.json')
+const b64 = (n: number, fill: number) => Buffer.alloc(n, fill).toString('base64')
+
+it('writes fixtures/pq-v3/vault.json', async () => {
+  if (existsSync(OUT)) throw new Error('fixtures/pq-v3 is committed; never regenerate it')
+  const weak = { allowWeakForTests: true }
+  const v2 = parseHeader(JSON.parse(readFileSync(join(__dirname, '../../../e2e/fixtures/pq-v2-0.3.0/data/vault.json'), 'utf8')), weak) as VaultHeaderV2
+  const mk = await unlockWithPassword(v2, secretBytes('pq fixture password 0.3.0'), weak)
+  const h = structuredClone(buildHeaderV3From(v2, mk)) as VaultHeaderV3
+  h.wraps['device-3c6f1f0e-9a4b-4d2e-8f1a-5b7c9d0e1f2a'] = { alg: 'mlkem768-x25519-kdf56c', pkHash: b64(32, 0x31), kemCt: b64(1088, 0x32), ecdhPub: b64(32, 0x33), nonce: b64(12, 0x34), ct: b64(48, 0x35), addedAt: 1761700000000, addedBy: '7d2e4c1a-5b3f-4e6d-9a8b-1c2d3e4f5a6b' }
+  h.pq.minCapability = 2
+  const { check: _c, ...rest } = h
+  const k = deriveSubkey(mk, 'check', scheduleOf(h))
+  const out = { ...h, check: toBase64(vaultNative().hmacSha256(k, utf8(canonicalJson(rest)))) }
+  destroyKey(k)
+  destroyKey(mk)
+  parseHeader(out, weak)
+  writeFileSync(OUT, `${JSON.stringify(out, null, 2)}\n`)
+})

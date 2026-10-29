@@ -149,9 +149,10 @@ test.describe.serial('Encrypt my notes with git sync', () => {
     await synced(a)
     expect(existsSync(join(aData, 'slate.db'))).toBe(false)
     expect(existsSync(join(aData, 'local-keys.json'))).toBe(true)
-    // C5 criterion 3: a new vault is header v2, suite 0x02, in the chosen profile.
+    // C5 criterion 3: a new vault is suite 0x02, in the chosen profile; PQ-B4 (T-PQ-B4-03): header v3, since every device
+    // record on the remote is this build's (pq 1).
     const header = JSON.parse(readFileSync(join(aData, 'vault.json'), 'utf8')) as { version: number; suite: number; profile: string; kdf: { alg: string } }
-    expect(header).toMatchObject({ version: 2, suite: 2, profile: PROFILE })
+    expect(header).toMatchObject({ version: 3, suite: 2, profile: PROFILE, pq: { kem: 'hybrid-only', minCapability: 1 } })
     expect(header.kdf.alg).toBe(PROFILE === 'fips-140-3' ? 'pbkdf2-hmac-sha512' : 'argon2id')
     await openSecurity(a)
     await expect(a.getByTestId('security-profile')).toContainText(PROFILE === 'fips-140-3' ? 'FIPS 140-3' : 'Standard')

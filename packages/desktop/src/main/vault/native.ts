@@ -8,6 +8,14 @@ export function vaultNative(): SlateNative {
   return dbModule().native
 }
 
+/**
+ * FIPS 204 ML-DSA verification (pure, with context string `ctx`) in the module; the one door for main/update.
+ * False for a signature that does not verify; throws SCC_1 for a malformed key, signature or context.
+ */
+export function verifyMlDsa(level: 65 | 87, spkiDer: Uint8Array, msg: Uint8Array, ctx: Uint8Array, sig: Uint8Array): boolean {
+  return vaultNative().mldsaVerify(level, spkiDer, msg, ctx, sig)
+}
+
 /** Destroys `key` if it is still live. A handle already gone (destroyed by its owner, or by zeroizeAll) is not an error. */
 export function destroyKey(key: KeyHandle | null | undefined): void {
   if (key === null || key === undefined) return

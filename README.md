@@ -198,6 +198,12 @@ Where each part is tested (ids are in [`docs/compliance/traceability.yaml`](docs
 - **Stricter rules in the `fips-140-3` profile**: passwords of at least 15 characters, three wrong passwords in
   15 minutes lock password unlock for three hours, idle lock at most 15 minutes, no quick unlock.
 
+- **Post-quantum**: your notes are encrypted with AES-256 only, which is not weakened to a usable degree by known
+  quantum attacks. Git over SSH prefers a hybrid post-quantum key exchange where your `ssh` supports it, and
+  Settings → Security shows what each sync connection actually negotiated. Updates carry an ML-DSA-65 + Ed25519
+  signature, and both must verify. Neither the hybrid key exchange nor ML-DSA runs inside the validated module,
+  and Microsoft and GitHub HTTPS were still classical when measured (POAM-17, POAM-18).
+
 What this does not cover: the TLS used for sync and sign-in is outside the module (note contents are already
 sealed; credentials are not); the macOS build is not signed with a Developer ID; malware running in your account
 while Slate is unlocked. [`docs/compliance/security-policy.md`](docs/compliance/security-policy.md) lists the

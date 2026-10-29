@@ -117,9 +117,15 @@ function RekeyFlow({ kind, onDone }: { kind: RekeyKind; onDone: (message: string
 }
 
 /** C9: Settings → Security's key epoch, format and profile changes (audit §4.7; D-7 decides when they are offered). */
-export function KeysGroup() {
+export function KeysGroup({ upgradeAsked = 0 }: { /** Bumped by "Upgrade encryption format…" elsewhere in Security. */ upgradeAsked?: number }) {
   const [info, setInfo] = useState<VaultKeysInfo | null>(null)
   const [open, setOpen] = useState<RekeyKind | null>(null)
+  const group = useRef<HTMLFieldSetElement>(null)
+  useEffect(() => {
+    if (upgradeAsked === 0 || !info?.canUpgrade) return
+    setOpen('upgrade')
+    group.current?.scrollIntoView({ block: 'center' })
+  }, [upgradeAsked, info?.canUpgrade])
   const [message, setMessage] = useState('')
   const refresh = useCallback(() => {
     void window.slate.vault
@@ -137,7 +143,7 @@ export function KeysGroup() {
     refresh()
   }
   return (
-    <fieldset className="settings-group" data-testid="security-keys">
+    <fieldset ref={group} className="settings-group" data-testid="security-keys">
       <legend>Encryption keys</legend>
       {text.lines.map((line, i) => (
         <p key={i} className="settings-help" data-testid={text.testIds[i]}>

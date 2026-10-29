@@ -15,7 +15,7 @@ export const PROFILE_FLOOR_FILE = 'profile-floor.json'
 export interface ProfileFloor {
   vaultId: string
   profile: ProfileId
-  minHeaderVersion: 1 | 2
+  minHeaderVersion: 1 | 2 | 3
 }
 
 interface ProfileFloorFile extends ProfileFloor {
@@ -42,7 +42,7 @@ export function parseProfileFloor(json: unknown): ProfileFloor | null {
   if (Object.keys(j).length !== KEYS.length || !KEYS.every((k) => Object.hasOwn(j, k))) return null
   if (j.format !== 'slate-profile-floor' || j.version !== 1) return null
   if (typeof j.vaultId !== 'string' || !UUID.test(j.vaultId) || !isProfileId(j.profile)) return null
-  if (j.minHeaderVersion !== 1 && j.minHeaderVersion !== 2) return null
+  if (j.minHeaderVersion !== 1 && j.minHeaderVersion !== 2 && j.minHeaderVersion !== 3) return null
   if (typeof j.mac !== 'string' || !/^[A-Za-z0-9+/]{43}=$/.test(j.mac)) return null
   return { vaultId: j.vaultId, profile: j.profile, minHeaderVersion: j.minHeaderVersion }
 }
@@ -104,7 +104,7 @@ export async function updateProfileFloor(dataDir: string, header: VaultHeader, k
   const verified = verifyProfileFloor(await readFloorJson(dataDir), kPrefs)
   const prev = verified && verified.vaultId === header.vaultId ? verified : null
   const profile = prev && profileRank(prev.profile) > profileRank(profileOf(header)) ? prev.profile : profileOf(header)
-  const minHeaderVersion = Math.max(prev?.minHeaderVersion ?? 1, header.version) as 1 | 2
+  const minHeaderVersion = Math.max(prev?.minHeaderVersion ?? 1, header.version) as 1 | 2 | 3
   const floor: ProfileFloor = { vaultId: header.vaultId, profile, minHeaderVersion }
   if (!prev || prev.profile !== floor.profile || prev.minHeaderVersion !== floor.minHeaderVersion || !verified) {
     const file: ProfileFloorFile = { format: 'slate-profile-floor', version: 1, ...floor, mac: toBase64(mac(floor, kPrefs)) }

@@ -25,7 +25,7 @@
       "generateKeyPairSync",
       "sign"
     ],
-    "reason": "The e2e fake update feed signs with a key pair it generates for the run (SLATE_FAKE_UPDATE, a test hook scrubbed when packaged)."
+    "reason": "The e2e fake update feed (SLATE_FAKE_UPDATE, a test hook scrubbed when packaged) signs the Ed25519 half of its hybrid signatures with the test-only key in fakeHybridKey.ts, and generates an unpinned key for the -badsig run."
   },
   "packages/desktop/src/main/theme/themeStore.ts": {
     "names": [

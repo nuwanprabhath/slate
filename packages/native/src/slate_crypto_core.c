@@ -9,6 +9,7 @@
 #include <openssl/provider.h>
 #include <openssl/rand.h>
 #include <openssl/self_test.h>
+#include <openssl/x509.h>
 #include <stdio.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -1318,6 +1319,83 @@ int scc_sha256(const unsigned char *data, size_t len, unsigned char out[32]) {
   int ok = md != NULL && EVP_Digest(data, len, out, &n, md, NULL) == 1 && n == 32;
   EVP_MD_free(md);
   return ok ? SCC_OK : SCC_ERR_CRYPTO;
+}
+
+/* PQ-A1: the DER every ML-DSA SubjectPublicKeyInfo of a level starts with (RFC 9881: SEQUENCE { AlgorithmIdentifier
+ * { id-ml-dsa-65 | id-ml-dsa-87 }, BIT STRING { 0 unused bits, pk } }), so the OID and every length are fixed. */
+#define MLDSA_SPKI_PREFIX_LEN 22
+static const unsigned char MLDSA65_SPKI_PREFIX[MLDSA_SPKI_PREFIX_LEN] = {0x30, 0x82, 0x07, 0xb2, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48,
+                                                                         0x01, 0x65, 0x03, 0x04, 0x03, 0x12, 0x03, 0x82, 0x07, 0xa1, 0x00};
+static const unsigned char MLDSA87_SPKI_PREFIX[MLDSA_SPKI_PREFIX_LEN] = {0x30, 0x82, 0x0a, 0x32, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48,
+                                                                         0x01, 0x65, 0x03, 0x04, 0x03, 0x13, 0x03, 0x82, 0x0a, 0x21, 0x00};
+
+int scc_mldsa_verify(int level, const unsigned char *spki_der, size_t spki_len, const unsigned char *msg, size_t msg_len,
+                     const unsigned char *ctx, size_t ctx_len, const unsigned char *sig, size_t sig_len) {
+  SERVICE_GATE();
+  static const unsigned char empty[1] = {0};
+  const unsigned char *prefix;
+  const char *name;
+  size_t pk_len, want_sig;
+  if (level == 65) { prefix = MLDSA65_SPKI_PREFIX; name = "ML-DSA-65"; pk_len = 1952; want_sig = 3309; }
+  else if (level == 87) { prefix = MLDSA87_SPKI_PREFIX; name = "ML-DSA-87"; pk_len = 2592; want_sig = 4627; }
+  else return SCC_ERR_ARG;
+  if (msg_len > SCC_MAX_INPUT) return SCC_ERR_TOO_LARGE;
+  if (spki_der == NULL || spki_len != MLDSA_SPKI_PREFIX_LEN + pk_len || memcmp(spki_der, prefix, MLDSA_SPKI_PREFIX_LEN) != 0) return SCC_ERR_ARG;
+  if (sig == NULL || sig_len != want_sig || ctx_len > SCC_MLDSA_MAX_CONTEXT || (ctx == NULL && ctx_len > 0) || (msg == NULL && msg_len > 0)) return SCC_ERR_ARG;
+  int der_n;
+  if (!int_len(spki_len, &der_n)) return SCC_ERR_ARG;
+  const unsigned char *p = spki_der;
+  EVP_PKEY *pkey = d2i_PUBKEY_ex(NULL, &p, der_n, g_std_ctx, NULL);
+  EVP_PKEY_CTX *pctx = NULL;
+  EVP_SIGNATURE *alg = NULL;
+  int rc = SCC_ERR_ARG;
+  if (pkey != NULL && p == spki_der + spki_len && EVP_PKEY_is_a(pkey, name)) {
+    /* An empty context is FIPS 204's default; OpenSSL refuses a NULL octet string, so it is simply not set. */
+    OSSL_PARAM params[] = {OSSL_PARAM_construct_octet_string(OSSL_SIGNATURE_PARAM_CONTEXT_STRING, (void *)ctx, ctx_len), OSSL_PARAM_construct_end()};
+    pctx = EVP_PKEY_CTX_new_from_pkey(g_std_ctx, pkey, NULL);
+    alg = EVP_SIGNATURE_fetch(g_std_ctx, name, NULL);
+    if (pctx == NULL || alg == NULL || EVP_PKEY_verify_message_init(pctx, alg, ctx_len > 0 ? params : NULL) != 1) rc = SCC_ERR_CRYPTO;
+    else {
+      int v = EVP_PKEY_verify(pctx, sig, sig_len, msg_len > 0 ? msg : empty, msg_len);
+      rc = v == 1 ? SCC_OK : v == 0 ? SCC_ERR_AUTH : SCC_ERR_CRYPTO;
+    }
+  }
+  EVP_SIGNATURE_free(alg);
+  EVP_PKEY_CTX_free(pctx);
+  EVP_PKEY_free(pkey);
+  ERR_clear_error();
+  return rc;
+}
+
+static const char *const PQ_ALGORITHMS[] = {"ML-KEM-768", "ML-KEM-1024", "ML-DSA-65", "ML-DSA-87", "SLH-DSA-SHA2-256s"};
+
+int scc_pq_algorithms(char *buf, size_t len) {
+  if (g_std_ctx == NULL || len == 0) return SCC_ERR_STATE;
+  size_t used = 0;
+  buf[0] = '\0';
+  for (size_t i = 0; i < sizeof PQ_ALGORITHMS / sizeof PQ_ALGORITHMS[0]; i++) {
+    EVP_PKEY_CTX *c = EVP_PKEY_CTX_new_from_name(g_std_ctx, PQ_ALGORITHMS[i], NULL);
+    if (c == NULL) continue;
+    EVP_PKEY_CTX_free(c);
+    int w = snprintf(buf + used, len - used, "%s%s", used ? "," : "", PQ_ALGORITHMS[i]);
+    if (w < 0 || (size_t)w >= len - used) { buf[0] = '\0'; ERR_clear_error(); return SCC_ERR_ARG; }
+    used += (size_t)w;
+  }
+  ERR_clear_error();
+  return SCC_OK;
+}
+
+/* Inside the boundary only if the FIPS provider itself implements the operation ("provider=fips"), not the base
+ * provider or a default provider loaded beside it. */
+int scc_pq_in_fips_boundary(void) {
+  if (g_fips == NULL || g_fips_ctx == NULL) return 0;
+  EVP_KEM *kem = EVP_KEM_fetch(g_fips_ctx, "ML-KEM-768", "provider=fips");
+  EVP_SIGNATURE *sig = EVP_SIGNATURE_fetch(g_fips_ctx, "ML-DSA-65", "provider=fips");
+  int ok = kem != NULL && sig != NULL;
+  EVP_KEM_free(kem);
+  EVP_SIGNATURE_free(sig);
+  ERR_clear_error();
+  return ok;
 }
 
 int scc_random(unsigned char *out, size_t len) {

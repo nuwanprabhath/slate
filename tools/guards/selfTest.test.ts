@@ -79,6 +79,7 @@ const NATIVE_COVERAGE: Record<string, string> = {
   aesCtr: 'mutation: POST-AES-GCM-ENC',
   sha256: 'mutation: POST-SHA256',
   randomBytes: 'mutation: POST-DRBG',
+  mldsaVerify: 'mutation: POST-MLDSA-VERIFY (PQ-A4; the pass vector verifies, the flipped signature must not)',
   sqlite: 'SQLCipher: the provider CASTs it uses, and checkCipher on every keyed open (C3)',
 }
 

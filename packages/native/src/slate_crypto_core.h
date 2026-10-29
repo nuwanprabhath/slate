@@ -141,4 +141,20 @@ int scc_aes_ctr(uint32_t key, const unsigned char icb[16], const unsigned char *
 int scc_sha256(const unsigned char *data, size_t len, unsigned char out[32]);
 int scc_random(unsigned char *out, size_t len);
 int scc_sqlcipher_raw_key(uint32_t key, char out[68]);
+/* PQ-A1 (roadmap §4.3): ML-DSA signature verification, FIPS 204 "pure" mode with a context string (§5.2), for
+ * update signatures. `level` is 65 or 87; `spki_der` must be exactly that parameter set's SubjectPublicKeyInfo
+ * (id-ml-dsa-65/-87, RFC 9881), `sig` exactly its signature length, `ctx` at most 255 bytes; anything else is
+ * SCC_ERR_ARG. SCC_OK for a valid signature, SCC_ERR_AUTH for an invalid one. It runs in the standard library
+ * context: the validated FIPS provider (3.1.2) has no ML-DSA, so this is outside the module's approved boundary.
+ * It is not refused by scc_require_approved_keys: it touches no key handle and no secret (public key, public
+ * message, public signature), so it cannot weaken a fips-140-3 vault's keys, and an update must stay verifiable
+ * on every profile. */
+#define SCC_MLDSA_MAX_CONTEXT ((size_t)255)
+int scc_mldsa_verify(int level, const unsigned char *spki_der, size_t spki_len, const unsigned char *msg, size_t msg_len,
+                     const unsigned char *ctx, size_t ctx_len, const unsigned char *sig, size_t sig_len);
+/* PQ-A1 inventory (status queries, safe in every init state): the post-quantum algorithms the standard context can
+ * create keys for (ML-KEM-768, ML-KEM-1024, ML-DSA-65, ML-DSA-87, SLH-DSA-SHA2-256s), comma-separated; and whether the
+ * loaded FIPS provider itself offers ML-KEM-768 and ML-DSA-65 (never with provider 3.1.2). */
+int scc_pq_algorithms(char *buf, size_t len);
+int scc_pq_in_fips_boundary(void);
 #endif

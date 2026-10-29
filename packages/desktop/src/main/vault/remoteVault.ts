@@ -364,7 +364,7 @@ function remoteHeader(snap: RemoteSnapshot, opts: WeakKdfOption): VaultHeader {
     return parseHeader(snap.header, opts)
   } catch {
     const v = (snap.header as { version?: unknown } | null)?.version
-    if (typeof v === 'number' && v > 2) throw new Error('The vault in the sync folder was made by a newer Slate. Update Slate on this device first.')
+    if (typeof v === 'number' && v > 3) throw new Error('The vault in the sync folder was made by a newer Slate. Update Slate on this device first.')
     throw new Error('The vault file in the sync folder is damaged; Slate will not write over it')
   }
 }

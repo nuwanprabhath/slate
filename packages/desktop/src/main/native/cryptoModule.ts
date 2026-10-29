@@ -90,6 +90,8 @@ function baseStatus(): CryptoModuleStatus {
     libcrypto: null,
     secureHeapLocked: null,
     development: true,
+    pqAlgorithms: [],
+    pqInFipsBoundary: false,
   }
 }
 
@@ -161,6 +163,8 @@ export function startCryptoModule(o: StartOptions): { native: SlateNative | null
   status.errorState = s.errorState
   status.libcrypto = s.libcrypto
   status.secureHeapLocked = s.secureHeapLocked
+  status.pqAlgorithms = [...s.pqAlgorithms]
+  status.pqInFipsBoundary = s.pqInFipsBoundary
   if (s.fipsModule) status.version = s.fipsModule.version
   status.postMs = Math.round(now() - started)
   return { native, status }

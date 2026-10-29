@@ -63,6 +63,9 @@ export async function checkRemoteVault(ctx: { remote: VaultRemote; dataDir: stri
   try {
     theirs = parseHeader(snap.header, opts)
   } catch {
+    // Roadmap §3.5: a header this build cannot read (a newer format, or damage) is recorded, and never written over.
+    const version = (snap.header as { version?: unknown } | null)?.version
+    securityEvent.headerRefused({ reason: 'schema', ...(typeof version === 'number' ? { headerVersion: version } : {}) }, 'sync')
     throw new Error('The vault file in the sync folder is damaged; Slate will not sync to it')
   }
   if (theirs.vaultId !== local.vaultId) throw new VaultSyncProblem('other-vault')

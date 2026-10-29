@@ -16,6 +16,8 @@ const healthy: CryptoModuleStatus = {
   libcrypto: 'OpenSSL 3.5.9 30 Sep 2026',
   secureHeapLocked: true,
   development: false,
+  pqAlgorithms: ['ML-KEM-768', 'ML-KEM-1024', 'ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-SHA2-256s'],
+  pqInFipsBoundary: false,
 }
 
 describe('cryptoModuleRows (Settings → Security, F-FIPS-08)', () => {
@@ -26,6 +28,7 @@ describe('cryptoModuleRows (Settings → Security, F-FIPS-08)', () => {
       ['Approved mode', 'On'],
       ['Self-test at launch', 'Passed in 42 ms'],
       ['Library', 'OpenSSL 3.5.9 30 Sep 2026'],
+      ['Post-quantum algorithms', 'Not in the validated module: CMVP #4985 predates FIPS 203 and FIPS 204'],
     ])
   })
 
@@ -59,5 +62,25 @@ describe('cryptoModuleRows (Settings → Security, F-FIPS-08)', () => {
       ['Validation', 'FIPS 140-3, CMVP certificate #4985'],
       ['Approved mode', 'Off'],
     ])
+  })
+})
+
+describe('the Post-quantum algorithms row (INV-PQ-9)', () => {
+  const pq = (s: CryptoModuleStatus) => cryptoModuleRows(s).find(([l]) => l === 'Post-quantum algorithms')?.[1]
+
+  it('T-PQ-D3-01: outside the module in both profiles, never implied to be inside', () => {
+    const outside = { ...healthy, approvedMode: false, development: true }
+    expect(pq(outside)).toBe('ML-KEM, ML-DSA available (OpenSSL 3.5.9, outside the validated module)')
+    expect(pq(healthy)).toBe('Not in the validated module: CMVP #4985 predates FIPS 203 and FIPS 204')
+    for (const s of [outside, healthy, { ...healthy, pqInFipsBoundary: true }, { ...outside, pqInFipsBoundary: true }]) {
+      const text = pq(s) ?? ''
+      expect(text).toMatch(/outside the validated module|Not in the validated module/)
+      expect(text).not.toMatch(/quantum-proof|unbreakable|certified|inside the validated|in the validated module(?!:)/i)
+    }
+  })
+
+  it('T-PQ-D3-01: a build without the algorithms says so, and a missing module has no row', () => {
+    expect(pq({ ...healthy, approvedMode: false, pqAlgorithms: [] })).toBe('Not available in this build')
+    expect(pq({ ...healthy, available: false, approvedMode: false, pqAlgorithms: [] })).toBeUndefined()
   })
 })

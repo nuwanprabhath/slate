@@ -90,6 +90,7 @@ const api: SlateApi = {
     deviceSignIn: () => ipcRenderer.invoke(CH.syncDeviceSignIn),
     deviceSignInWait: () => ipcRenderer.invoke(CH.syncDeviceSignInWait),
     now: () => ipcRenderer.invoke(CH.syncNow),
+    checkTransport: () => ipcRenderer.invoke(CH.syncCheckTransport),
     conflicts: (pageId) => ipcRenderer.invoke(CH.syncConflicts, pageId),
     resolve: (id, choice) => ipcRenderer.invoke(CH.syncResolve, id, choice),
     onStatus(handler) {
@@ -148,6 +149,7 @@ const api: SlateApi = {
   },
   vault: {
     status: () => ipcRenderer.invoke(CH.vaultStatus),
+    pqReadiness: () => ipcRenderer.invoke(CH.vaultPqReadiness),
     moduleStatus: () => ipcRenderer.invoke(CH.vaultModuleStatus),
     selfTest: () => ipcRenderer.invoke(CH.vaultSelfTest),
     keysInfo: () => ipcRenderer.invoke(CH.vaultKeysInfo),

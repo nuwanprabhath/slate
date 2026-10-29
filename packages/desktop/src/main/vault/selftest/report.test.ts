@@ -17,6 +17,8 @@ const status: NativeStatus = {
   buildKind: 'slate-native-build:release',
   defaultContextProviders: 'base,fips',
   fipsModule: { name: 'OpenSSL FIPS Provider', version: '3.1.2' },
+  pqAlgorithms: ['ML-KEM-768', 'ML-DSA-65'],
+  pqInFipsBoundary: false,
 }
 
 const input = (over: Partial<ReportInput> = {}): ReportInput => ({
@@ -34,6 +36,10 @@ const input = (over: Partial<ReportInput> = {}): ReportInput => ({
 })
 
 describe('the self-test diagnostic report (S-6, criterion 5)', () => {
+  it('PQ-A4: marks POST-MLDSA-VERIFY as outside the module', () => {
+    expect(diagnosticReport({ ...input(), failed: ['POST-MLDSA-VERIFY'] })).toContain('failed checks: POST-MLDSA-VERIFY (outside the module)')
+  })
+
   it('has the version, the OS, the module status and the failed checks with their times', () => {
     const r = diagnosticReport(input())
     for (const want of ['app: 0.2.0', 'os: darwin arm64 25.0.0', 'failed checks: POST-AES-GCM-ENC, POST-TIMEOUT', 'failed (start-up): 2026-10-24T10:00:01.000Z', 'started: 2026-10-24T10:00:00.000Z', 'OpenSSL FIPS Provider 3.1.2', 'error state: true', 'approved mode: false']) {

@@ -41,6 +41,7 @@ export const KAT_IDS = [
   'POST-SLE2-SEAL',
   'POST-SLE1-OPEN',
   'POST-NAME-V2',
+  'POST-MLDSA-VERIFY',
   'POST-DRBG',
   'POST-ZEROIZE',
 ] as const
@@ -361,6 +362,15 @@ async function runChecks(n: SlateNative, opts: PostOptions, ran: KatId[], failed
     const name = encodeIdV2(keys, v.kind, v.uuid)
     const back = decodeIdV2(keys, v.name)
     return equalText(name, wantText('POST-NAME-V2', v.name)) && back !== null && back.kind === v.kind && back.uuid === v.uuid
+  })
+  await check('POST-MLDSA-VERIFY', () => {
+    // Not a note-protecting operation, so a fips-140-3 latch does not refuse it. The ACVP vector must verify, and
+    // the same signature with one bit flipped must come back false (not throw, not true).
+    const m = KAT.mldsa65
+    if (!n.mldsaVerify(65, m.spki, m.msg, m.ctx, m.sig)) return false
+    const bad = Uint8Array.from(m.sig)
+    bad[0] = (bad[0] ?? 0) ^ 0x01
+    return !n.mldsaVerify(65, m.spki, m.msg, m.ctx, bad)
   })
   await check('POST-DRBG', () => {
     // A sanity check only: the module runs the SP 800-90A/B health tests itself.

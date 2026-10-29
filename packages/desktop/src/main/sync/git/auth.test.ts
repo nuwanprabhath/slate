@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { nodeGitRunner } from '@slate/sync'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { nodeGitRunner, tokenEnv, type GitResult, type GitRunner, type GitRunOptions } from '@slate/sync'
+import { Logger } from '../../log/logger'
 import { createSecretStorage, secretFile } from '../../secretStorage'
 import { createPrivateRepo, githubDeviceFlow, testConnection } from './auth'
 
@@ -94,6 +96,84 @@ describe('testConnection', () => {
     const missing = await testConnection(run, 'file:///does/not/exist', {})
     expect(missing.ok).toBe(false)
     expect(missing.message).toMatch(/does not appear to be a git repository|not found|Could not read/i)
+  })
+})
+
+const KEX = join(dirname(fileURLToPath(import.meta.url)), '../../../../../sync/test/fixtures/kex')
+const fixture = (name: string) => readFileSync(join(KEX, name), 'utf8')
+const SECRET_B64 = 'eC1hY2Nlc3MtdG9rZW46Z2hwX1NFQ1JFVFRPS0VOMTIzNDU2'
+
+/** A runner that answers once with `result` and keeps the call it saw. */
+function fakeRunner(result: Partial<GitResult>) {
+  const calls: { args: string[]; opts?: GitRunOptions }[] = []
+  const run: GitRunner = async (args, opts) => {
+    calls.push({ args, opts })
+    return { code: 0, stdout: new Uint8Array(), stderr: '', ...result }
+  }
+  return { run, calls }
+}
+
+describe('testConnection observes the key exchange (PQ-C2)', () => {
+  it('reads the ssh kex from a -v run, on the sshCommand-built command, and names the host', async () => {
+    const { run, calls } = fakeRunner({ stderr: fixture('openssh-10.3.txt'), stdout: new Uint8Array([1]) })
+    const cmd = 'ssh -o BatchMode=yes -o KexAlgorithms=^mlkem768x25519-sha256'
+    const r = await testConnection(run, 'git@github.com:o/r.git', {}, { sshCommand: cmd })
+    expect(r).toMatchObject({ ok: true, message: 'Connected.', kex: 'mlkem768x25519-sha256', pq: 'hybrid', remote: 'git-ssh:github.com' })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.opts?.env?.GIT_SSH_COMMAND).toBe(`${cmd} -v`)
+  })
+
+  it('refuses -v on a command sshCommand did not build', async () => {
+    const { run, calls } = fakeRunner({})
+    const r = await testConnection(run, 'git@github.com:o/r.git', {}, { sshCommand: 'ssh -o ProxyCommand=evil' })
+    expect(r.ok).toBe(false)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('reads the TLS group from a curl trace over https, and reports unknown when the backend prints none', async () => {
+    const hybrid = await testConnection(fakeRunner({ stderr: fixture('curl-openssl-3.5.txt') }).run, 'https://github.com/o/r.git', {})
+    expect(hybrid).toMatchObject({ ok: true, kex: 'X25519MLKEM768', pq: 'hybrid', remote: 'git-https:github.com' })
+    const { run, calls } = fakeRunner({ stderr: fixture('curl-securetransport.txt') })
+    const unknown = await testConnection(run, 'https://github.com/o/r.git', {})
+    expect(unknown).toMatchObject({ ok: true, kex: null, pq: 'unknown', remote: 'git-https:github.com' })
+    expect(calls[0]!.opts?.env).toMatchObject({ GIT_TRACE_CURL: '1', GIT_TRACE_REDACT: '1' })
+  })
+
+  it('a local path records nothing', async () => {
+    const r = await testConnection(fakeRunner({}).run, 'file:///tmp/r.git', {})
+    expect(r).toEqual({ ok: true, message: 'Connected. The repository is empty; Slate will set it up.' })
+  })
+
+  it('T-PQ-C2-03: the -v debug lines are not signed-out or offline to the sync engine', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../../../sync/src/gitDrive.ts'), 'utf8')
+    const pattern = (name: string) => {
+      const m = new RegExp(`const ${name} = /(.+)/i`).exec(src)
+      if (!m) throw new Error(`${name} not found in gitDrive.ts`)
+      return new RegExp(m[1]!, 'i')
+    }
+    for (const file of ['openssh-8.9.txt', 'openssh-9.6.txt', 'openssh-10.3.txt', 'openssh-classical.txt', 'curl-openssl-3.5.txt', 'curl-securetransport.txt']) {
+      expect(pattern('SIGNED_OUT').test(fixture(file)), file).toBe(false)
+      expect(pattern('OFFLINE').test(fixture(file)), file).toBe(false)
+    }
+  })
+
+  it('T-PQ-C2-04: an Authorization header in a trace never reaches the logger or the result', async () => {
+    const spy = vi.spyOn(Logger.prototype, 'log')
+    try {
+      const trace = fixture('curl-openssl-3.5.txt')
+      expect(trace).toContain(SECRET_B64)
+      for (const result of [{ stderr: trace }, { code: 128, stderr: `${trace}fatal: Authentication failed for 'https://github.com/o/r.git/'\n` }, { code: 128, stderr: trace }]) {
+        const env = tokenEnv('ghp_SECRETTOKEN123456')
+        const r = await testConnection(fakeRunner(result).run, 'https://github.com/o/r.git', env)
+        const out = JSON.stringify(r)
+        expect(out).not.toContain(SECRET_B64)
+        expect(out).not.toMatch(/Authorization|basic |SECRETTOKEN/i)
+      }
+      expect(JSON.stringify(spy.mock.calls)).not.toContain(SECRET_B64)
+      expect(spy.mock.calls).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

@@ -47,6 +47,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   systemTitleBar: { default: false, sanitize: bool },
   sandboxNoticeDismissed: { default: false, sanitize: bool },
   fontOverrides: { default: {}, sanitize: sanitizeFontOverrides },
+  syncRequirePq: { default: false, sanitize: (v) => (typeof v === 'boolean' ? v : undefined) },
   idleMinutes: { default: 30, sanitize: (v) => (Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= 7 * 24 * 60 ? (v as number) : undefined) },
   lockOnSleep: { default: true, sanitize: bool },
   lockOnScreenLock: { default: true, sanitize: bool },

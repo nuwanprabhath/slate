@@ -26,7 +26,7 @@ describe('cryptoModulePaths', () => {
 describe('requireUsable (review M2: a packaged build never runs without its approved module)', () => {
   const base: CryptoModuleStatus = {
     available: true, problem: null, module: 'OpenSSL FIPS Provider', version: '3.1.2', cmvp: 4985, standard: 'FIPS 140-3',
-    certificateUrl: 'https://csrc.nist.gov/', approvedMode: true, errorState: false, postMs: 5, libcrypto: 'OpenSSL 3.5.9', secureHeapLocked: true, development: false,
+    certificateUrl: 'https://csrc.nist.gov/', approvedMode: true, errorState: false, postMs: 5, libcrypto: 'OpenSSL 3.5.9', secureHeapLocked: true, development: false, pqAlgorithms: [], pqInFipsBoundary: false,
   }
 
   it('lets an approved-mode packaged build start', () => {
@@ -44,7 +44,7 @@ describe('requireUsable (review M2: a packaged build never runs without its appr
 
   it('Z-10 (C7): a secure heap that is not mlock\'d is logged as module.degraded, and only then', () => {
     const events: string[] = []
-    const base = { available: true, problem: null, module: 'm', version: 'v', cmvp: 1, standard: 's', certificateUrl: 'u', approvedMode: true, errorState: false, postMs: 1, libcrypto: 'l', development: false }
+    const base = { available: true, problem: null, module: 'm', version: 'v', cmvp: 1, standard: 's', certificateUrl: 'u', approvedMode: true, errorState: false, postMs: 1, libcrypto: 'l', development: false, pqAlgorithms: [], pqInFipsBoundary: false }
     reportDegraded({ ...base, secureHeapLocked: false }, (e) => events.push(e))
     reportDegraded({ ...base, secureHeapLocked: true }, (e) => events.push(e))
     reportDegraded({ ...base, secureHeapLocked: null }, (e) => events.push(e))

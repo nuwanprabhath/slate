@@ -11,6 +11,7 @@ import { SelectSetting } from '../fields/SelectSetting'
 import type { SectionProps } from '../registry'
 import { CryptoModuleGroup } from './CryptoModuleGroup'
 import { KeysGroup } from './KeysGroup'
+import { QuantumReadinessGroup } from './QuantumReadinessGroup'
 import { securityRows } from './securitySlots'
 import { settingsSandboxNotice } from './sandboxText'
 import { securityStatusText } from './securityStatus'
@@ -133,6 +134,7 @@ function NewRecoveryKey() {
 export function SecuritySection({ settings, patch, onClose }: SectionProps) {
   const [status, setStatus] = useState<VaultStatus | null>(null)
   const [sync, setSync] = useState<SyncState | null>(null)
+  const [upgradeAsked, setUpgradeAsked] = useState(0)
   useEffect(() => {
     void window.slate.vault.status().then(setStatus)
     void window.slate.sync
@@ -179,7 +181,7 @@ export function SecuritySection({ settings, patch, onClose }: SectionProps) {
         <>
           <ChangePassword />
           <NewRecoveryKey />
-          <KeysGroup />
+          <KeysGroup upgradeAsked={upgradeAsked} />
           <SelectSetting
             testId="security-idle"
             label="Lock after Slate is idle for"
@@ -213,6 +215,7 @@ export function SecuritySection({ settings, patch, onClose }: SectionProps) {
           </div>
         </>
       )}
+      <QuantumReadinessGroup onClose={onClose} onUpgrade={() => setUpgradeAsked((n) => n + 1)} />
       <CryptoModuleGroup />
       <p className="settings-help">AI access works only while Slate is unlocked.</p>
     </>

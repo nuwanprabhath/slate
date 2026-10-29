@@ -28,3 +28,17 @@ test('it logs again at the next start while on, and stops when switched off', as
   expect(await second.page.evaluate(() => window.slate.diagnostics.read())).toBe(text)
   await second.app.close()
 })
+
+test('T-PQ-D3-02: the exported log carries the vault header version and host-only transports', async ({ userData, page }) => {
+  await page.evaluate(() => window.slate.settings.set({ debugLog: true }))
+  const text = await page.evaluate(() => window.slate.diagnostics.read())
+  const line = text.split('\n').find((l) => l.includes('post-quantum state'))
+  expect(line).toBeDefined()
+  const fields = JSON.parse((line ?? '').slice((line ?? '').indexOf('{"'))) as { vaultHeaderVersion: number | null; transports: Array<{ remote: string }> }
+  expect(fields.vaultHeaderVersion === null || [1, 2, 3].includes(fields.vaultHeaderVersion)).toBe(true)
+  for (const t of fields.transports) expect(t.remote).toMatch(/^[a-z][a-z0-9-]*:[A-Za-z0-9.-]+(:\d+)?$/)
+  // Whatever redact() would strip is already gone: no home folder, no token, no URL.
+  expect(text).not.toContain(homedir())
+  expect(text).not.toMatch(/ghp_|https?:\/\/|@/)
+  expect(text).not.toContain(userData)
+})

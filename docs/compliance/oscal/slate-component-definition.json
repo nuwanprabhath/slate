@@ -112,13 +112,13 @@
                 "uuid": "7878a665-6e78-41e5-b606-4910f6ff3b76",
                 "control-id": "sc-8",
                 "description": "Note content is sealed (SLE1 or SLE2, AES-256-GCM with a path-bound AAD) before it reaches any transport, so what a sync folder, git remote or OneDrive holds is ciphertext.",
-                "remarks": "Transport TLS (git TLS or SSH, and Electron fetch for Microsoft Graph) is outside the validated boundary: accepted risk F-NIST-10, POA&M POAM-11 in docs/compliance/poam.md. OAuth tokens and git credentials depend on those stacks."
+                "remarks": "Transport TLS (git TLS or SSH, and Electron fetch for Microsoft Graph) is outside the validated boundary: accepted risk F-NIST-10, POA&M POAM-11 in docs/compliance/poam.md. OAuth tokens and git credentials depend on those stacks. Post-quantum: git over SSH prefers hybrid key exchange and the TLS client offers X25519MLKEM768 first, but servers choose, and Microsoft Graph and GitHub HTTPS were classical when measured on 2026-10-29 (POA&M POAM-17). These transports are not validated cryptography."
               },
               {
                 "uuid": "5a82ea5c-cd50-4348-ada4-6125b550debb",
                 "control-id": "sc-8.1",
                 "description": "Confidentiality and integrity of note content in transit are provided by the envelope inside the validated module, independent of the transport.",
-                "remarks": "Holds for note content only; credentials are not covered (POA&M POAM-11)."
+                "remarks": "Holds for note content only; credentials are not covered (POA&M POAM-11, POAM-17). Update signatures are hybrid ml-dsa-65+ed25519; ML-DSA verification runs outside the validated module (POA&M POAM-18)."
               }
             ]
           }

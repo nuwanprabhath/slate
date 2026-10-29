@@ -1,6 +1,7 @@
 /* packages/native/test/kat.c — native KATs and zeroisation checks (T-ZERO-03). Built with -DSCC_KAT_BUILD,
  * which is the only build that compiles scc__slot_bytes_for_kat; the shipped addon never contains it. */
 #include "slate_crypto_core.h"
+#include "vectors/mldsa/sigver.h"
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,6 +31,32 @@ static void check(const char *name, int ok) {
   printf("%s %s\n", ok ? "PASS" : "FAIL", name);
 }
 
+/* T-PQ-A1-06: an ACVP ML-DSA sigVer case as bytes; its SPKI is the level's fixed RFC 9881 DER prefix || pk. */
+typedef struct {
+  unsigned char spki[22 + 2592 + 1], msg[8192], ctx[256], sig[4627 + 1];
+  size_t spki_len, msg_len, ctx_len, sig_len;
+} mldsa_bytes_t;
+
+static size_t unhex(const char *h, unsigned char *out, size_t cap) {
+  size_t n = strlen(h) / 2;
+  if (n > cap) { printf("FAIL vector does not fit (%zu > %zu)\n", n, cap); fails++; return 0; }
+  for (size_t i = 0; i < n; i++) sscanf(h + 2 * i, "%2hhx", &out[i]);
+  return n;
+}
+
+static void mldsa_bytes(const mldsa_sigver_t *v, mldsa_bytes_t *b) {
+  const char *prefix = v->level == 65 ? "308207b2300b0609608648016503040312038207a100" : "30820a32300b060960864801650304031303820a2100";
+  size_t pre = unhex(prefix, b->spki, sizeof b->spki);
+  b->spki_len = pre + unhex(v->pk, b->spki + pre, sizeof b->spki - 1 - pre);
+  b->msg_len = unhex(v->message, b->msg, sizeof b->msg);
+  b->ctx_len = unhex(v->context, b->ctx, sizeof b->ctx);
+  b->sig_len = unhex(v->signature, b->sig, sizeof b->sig - 1);
+}
+
+static int mldsa_verify(int level, const mldsa_bytes_t *b) {
+  return scc_mldsa_verify(level, b->spki, b->spki_len, b->msg, b->msg_len, b->ctx, b->ctx_len, b->sig, b->sig_len);
+}
+
 /* kat                     -> development build: default provider only, no FIPS claim
  * kat <config> <modules>  -> the FIPS provider through the generated config (fipsConfig.ts layout) */
 int main(int argc, char **argv) {
@@ -50,6 +77,9 @@ int main(int argc, char **argv) {
   check("pre-init: no provider list, no module info", scc_default_ctx_providers(early_names, sizeof early_names) == SCC_ERR_STATE &&
                                                       scc_fips_module_info(early_names, sizeof early_names, early_ver, sizeof early_ver) == SCC_ERR_STATE);
   check("pre-init: zeroize and in_error_state safe", scc_zeroize_all() == 0 && !scc_in_error_state());
+  check("T-PQ-A1-06 pre-init: no PQ inventory, ML-DSA verify refused", scc_pq_algorithms(early_names, sizeof early_names) == SCC_ERR_STATE &&
+                                                                       scc_pq_in_fips_boundary() == 0 &&
+                                                                       scc_mldsa_verify(65, early, 0, early, 0, early, 0, early, 0) == SCC_ERR_STATE);
   int rc = fips ? scc_init(argv[1], argv[2], 1) : scc_init(NULL, NULL, 0);
   if (rc != SCC_OK) { printf("FAIL init SCC_%d\n", -rc); return 1; }
   check(fips ? "FIPS provider active (fips + base, fips=yes)" : "no FIPS claim without the provider", scc_fips_active() == fips);
@@ -422,6 +452,51 @@ int main(int argc, char **argv) {
   check("N8 the namespace bit is part of the handle", scc_key_destroy(na ^ 0x80000000u) == SCC_ERR_HANDLE);
   scc_zeroize_all();
 
+  /* T-PQ-A1-06: ML-DSA verification (FIPS 204 pure, with a context string) and the PQ inventory. */
+  static mldsa_bytes_t mb, m87;
+  {
+    char inv[128];
+    check("T-PQ-A1-06 inventory lists ML-DSA-65 and ML-KEM-768", scc_pq_algorithms(inv, sizeof inv) == SCC_OK && strstr(inv, "ML-DSA-65") != NULL &&
+                                                                  strstr(inv, "ML-KEM-768") != NULL && strstr(inv, "ML-DSA-87") != NULL);
+    printf("     pq: %s\n", inv);
+    check("T-PQ-A1-06 no PQ algorithm inside the FIPS boundary (provider 3.1.2, or none)", scc_pq_in_fips_boundary() == 0);
+    check("T-PQ-A1-06 a too-small inventory buffer is refused", scc_pq_algorithms(inv, 12) == SCC_ERR_ARG && inv[0] == '\0');
+    for (size_t i = 0; i < sizeof MLDSA_SIGVER / sizeof MLDSA_SIGVER[0]; i++) {
+      const mldsa_sigver_t *v = &MLDSA_SIGVER[i];
+      char name[96];
+      snprintf(name, sizeof name, "T-PQ-A1-06 ACVP ML-DSA-%d tcId %d %s", v->level, v->tc_id, v->passed ? "verifies" : "fails (SCC_11)");
+      mldsa_bytes(v, &mb);
+      check(name, mldsa_verify(v->level, &mb) == (v->passed ? SCC_OK : SCC_ERR_AUTH));
+    }
+    mldsa_bytes(&MLDSA_SIGVER[2], &m87);
+    mldsa_bytes(&MLDSA_SIGVER[0], &mb);
+    mb.sig[100] ^= 0x01;
+    check("T-PQ-A1-06 one flipped signature bit fails (SCC_11)", mldsa_verify(65, &mb) == SCC_ERR_AUTH);
+    mb.sig[100] ^= 0x01;
+    mb.ctx[0] ^= 0x80;
+    check("T-PQ-A1-06 another context string fails (SCC_11)", mldsa_verify(65, &mb) == SCC_ERR_AUTH);
+    mb.ctx[0] ^= 0x80;
+    check("T-PQ-A1-06 the vector still verifies after the edits are undone", mldsa_verify(65, &mb) == SCC_OK);
+    check("T-PQ-A1-06 levels other than 65 and 87 are refused", mldsa_verify(44, &mb) == SCC_ERR_ARG && mldsa_verify(0, &mb) == SCC_ERR_ARG);
+    check("T-PQ-A1-06 an ML-DSA-65 key at level 87 is refused", scc_mldsa_verify(87, mb.spki, mb.spki_len, mb.msg, mb.msg_len, mb.ctx, mb.ctx_len, m87.sig, m87.sig_len) == SCC_ERR_ARG);
+    mb.spki[16] = 0x11; /* id-ml-dsa-44 */
+    check("T-PQ-A1-06 another OID is refused", mldsa_verify(65, &mb) == SCC_ERR_ARG);
+    mb.spki[16] = 0x12;
+    check("T-PQ-A1-06 a truncated or extended SPKI is refused",
+          scc_mldsa_verify(65, mb.spki, mb.spki_len - 1, mb.msg, mb.msg_len, mb.ctx, mb.ctx_len, mb.sig, mb.sig_len) == SCC_ERR_ARG &&
+          scc_mldsa_verify(65, mb.spki, mb.spki_len + 1, mb.msg, mb.msg_len, mb.ctx, mb.ctx_len, mb.sig, mb.sig_len) == SCC_ERR_ARG &&
+          scc_mldsa_verify(65, NULL, 0, mb.msg, mb.msg_len, mb.ctx, mb.ctx_len, mb.sig, mb.sig_len) == SCC_ERR_ARG);
+    check("T-PQ-A1-06 an empty, short or long signature is refused",
+          scc_mldsa_verify(65, mb.spki, mb.spki_len, mb.msg, mb.msg_len, mb.ctx, mb.ctx_len, NULL, 0) == SCC_ERR_ARG &&
+          scc_mldsa_verify(65, mb.spki, mb.spki_len, mb.msg, mb.msg_len, mb.ctx, mb.ctx_len, mb.sig, mb.sig_len - 1) == SCC_ERR_ARG &&
+          scc_mldsa_verify(65, mb.spki, mb.spki_len, mb.msg, mb.msg_len, mb.ctx, mb.ctx_len, mb.sig, mb.sig_len + 1) == SCC_ERR_ARG);
+    check("T-PQ-A1-06 a context over 255 bytes is refused", scc_mldsa_verify(65, mb.spki, mb.spki_len, mb.msg, mb.msg_len, mb.ctx, 256, mb.sig, mb.sig_len) == SCC_ERR_ARG);
+    check("T-PQ-A1-06 a message over the input cap is refused before any work",
+          scc_mldsa_verify(65, mb.spki, mb.spki_len, mb.msg, SCC_MAX_INPUT + 1, mb.ctx, mb.ctx_len, mb.sig, mb.sig_len) == SCC_ERR_TOO_LARGE);
+    check("T-PQ-A1-06 an empty message with a valid key and signature fails (SCC_11), never crashes",
+          scc_mldsa_verify(65, mb.spki, mb.spki_len, NULL, 0, NULL, 0, mb.sig, mb.sig_len) == SCC_ERR_AUTH);
+  }
+
   /* C5 criterion 2: once a fips-140-3 vault latches approved-only, no non-approved service runs at all. */
   {
     uint32_t lm = 0, ld = 0, x = 0;
@@ -438,6 +513,7 @@ int main(int argc, char **argv) {
     check("C5 latched: AES-ECB (suite 0x01 names) refused", scc_aes_ecb_block(ld, seq, 1, o16) == SCC_ERR_NOT_APPROVED);
     check("C5 latched: KBKDF and PBKDF2 still run", scc_kbkdf(lm, "slate/v2/sync", 13, vid, 16, &x) == SCC_OK &&
                                                      scc_pbkdf2(seq, 8, s5a32, 32, 1000, &x) == SCC_OK);
+    check("T-PQ-A1-06 latched: ML-DSA verification (public data, no key) still runs", mldsa_verify(65, &mb) == SCC_OK && scc_approved_keys_required() == 1);
     scc_zeroize_all();
   }
 
@@ -474,6 +550,7 @@ int main(int argc, char **argv) {
   uint32_t h = 0;
   check("error state refuses keyRandom", scc_key_random(&h) == SCC_ERR_ERROR_STATE);
   check("error state refuses sha256", scc_sha256((const unsigned char *)"abc", 3, out) == SCC_ERR_ERROR_STATE);
+  check("T-PQ-A1-06 error state refuses ML-DSA verification", mldsa_verify(65, &mb) == SCC_ERR_ERROR_STATE);
   check("error state refuses keyImport", scc_key_import(seq, 32, &h) == SCC_ERR_ERROR_STATE);
   check("error state refuses kbkdf", scc_kbkdf(h, "x", 1, vid, 16, &h) == SCC_ERR_ERROR_STATE);
   check("error state refuses pbkdf2", scc_pbkdf2(seq, 8, s5a32, 32, 1000, &h) == SCC_ERR_ERROR_STATE);

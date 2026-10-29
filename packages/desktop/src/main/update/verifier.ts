@@ -1,6 +1,6 @@
 import { posix } from 'node:path'
 import type { UpdateFile } from './pickInstaller'
-import { artifactMessage, manifestMessage, parseManifest, UpdateSignatureError, verifyDetached, type PinnedUpdateKey } from './signature'
+import { artifactMessage, manifestMessage, parseManifest, requiresPq, signatureName, UpdateSignatureError, verifyDetached, type PinnedUpdateKey } from './signature'
 import type { FoundUpdate } from './updateService'
 import { isNewer } from './versions'
 
@@ -31,6 +31,8 @@ export interface UpdateVerifierDeps {
 }
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b)
+/** With a hybrid key pinned only `.pq.sig` is fetched; a release that has just `.sig` lacks the post-quantum half (INV-PQ-8). */
+const missing = (keys: readonly PinnedUpdateKey[], what: string, v1: string) => new UpdateSignatureError(requiresPq(keys) ? `post-quantum signature missing: ${what}` : v1)
 const nameOf = (url: string) => posix.basename(url.replace(/[?#].*$/, ''))
 
 /**
@@ -51,8 +53,8 @@ export function createUpdateVerifier(deps: UpdateVerifierDeps): UpdateVerifier {
       const name = deps.manifestName
       const bytes = await deps.fetchAsset(found.version, name)
       if (!bytes) throw new UpdateSignatureError(`release ${found.version} has no ${name}`)
-      const sig = await deps.fetchAsset(found.version, `${name}.sig`)
-      if (!sig) throw new UpdateSignatureError(`${name} of ${found.version} is unsigned`)
+      const sig = await deps.fetchAsset(found.version, signatureName(name, deps.keys))
+      if (!sig) throw missing(deps.keys, `${name} of ${found.version}`, `${name} of ${found.version} is unsigned`)
       verifyDetached(manifestMessage(name, bytes), text(sig), deps.keys)
       // electron-updater parsed its own copy of the feed; bind what it will act on to the bytes that verified.
       const signed = parseManifest(text(bytes))
@@ -68,8 +70,8 @@ export function createUpdateVerifier(deps: UpdateVerifierDeps): UpdateVerifier {
     async artifact(release, file) {
       const name = nameOf(file.url)
       if (!release.files.some((f) => nameOf(f.url) === name && f.sha512 === file.sha512)) throw new UpdateSignatureError(`${name} is not a file of the verified release`)
-      const sig = await deps.fetchAsset(release.version, `${name}.sig`)
-      if (!sig) throw new UpdateSignatureError(`signature of ${name} is missing`)
+      const sig = await deps.fetchAsset(release.version, signatureName(name, deps.keys))
+      if (!sig) throw missing(deps.keys, name, `signature of ${name} is missing`)
       verifyDetached(artifactMessage(name, file.sha512), text(sig), deps.keys)
     },
   }

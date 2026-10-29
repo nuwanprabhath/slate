@@ -63,6 +63,8 @@ export interface Settings {
   fontOverrides: Record<string, FontOverride>
   /** Encrypted vaults lock after this many minutes without Slate input; 0 = never. */
   idleMinutes: number
+  /** Sync refuses a remote whose transport is not hybrid post-quantum. */
+  syncRequirePq: boolean
   lockOnSleep: boolean
   lockOnScreenLock: boolean
   quickUnlock: boolean
@@ -110,7 +112,7 @@ export type RekeyKind = 'rotate' | 'upgrade' | 'convert'
 
 /** C9: Settings → Security's key section. */
 export interface VaultKeysInfo {
-  headerVersion: 1 | 2
+  headerVersion: 1 | 2 | 3
   profile: VaultProfile
   keyEpoch: number
   /** When the current master key was made. */
@@ -153,6 +155,10 @@ export interface CryptoModuleStatus {
   secureHeapLocked: boolean | null
   /** A checkout build, which may run without the provider (no FIPS claim). Packaged builds never do. */
   development: boolean
+  /** Post-quantum algorithms the addon's OpenSSL offers (`NativeStatus.pqAlgorithms`); empty when the module is missing. */
+  pqAlgorithms: string[]
+  /** Always false today: the validated provider (CMVP #4985) predates FIPS 203/204 (INV-PQ-9). */
+  pqInFipsBoundary: boolean
 }
 
 export interface QuickUnlockInfo {
@@ -179,7 +185,20 @@ export interface EncryptProgress {
   phase: 'remote' | 'claim' | 'close' | 'copy' | 'bookkeeping' | 'switch' | 'cleanup' | 'open'
 }
 
+export type PqLevel = 'hybrid' | 'classical' | 'unknown'
+export interface TransportObservation { remote: string; transport: 'ssh' | 'tls'; kex: string | null; pq: PqLevel; source: 'probe' | 'test-connection'; at: number }
+export interface PqReadiness {
+  atRest: 'symmetric-256'
+  vault: { kind: 'none' } | { kind: 'header'; version: 1 | 2 | 3; upgrade: 'none' | 'waiting-devices' | 'running' | 'offer-v1' | 'done'; blockingDevices: string[] }
+  transports: TransportObservation[]
+  updateSignature: 'ed25519' | 'ml-dsa-65+ed25519'
+  /** Sync is on and there is no vault. */
+  plaintextSync: boolean
+  requirePq: boolean
+}
+
 export interface VaultApi {
+  pqReadiness(): Promise<PqReadiness>
   status(): Promise<VaultStatus>
   unlock(password: SecretBytes): Promise<UnlockResult>
   unlockRecovery(recoveryKey: SecretBytes): Promise<UnlockResult>
@@ -480,6 +499,7 @@ export interface SlateApi {
     deviceSignIn(): Promise<DeviceCode>
     deviceSignInWait(): Promise<GitCheck>
     now(): Promise<SyncReport>
+    checkTransport(): Promise<TransportObservation[]>
     conflicts(pageId?: string): Promise<ConflictRecord[]>
     resolve(id: string, choice: 'merged' | 'mine' | 'theirs'): Promise<void>
     onStatus(handler: (state: SyncState) => void): () => void

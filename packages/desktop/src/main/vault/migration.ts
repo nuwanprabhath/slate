@@ -14,6 +14,7 @@ import {
   chooseBase,
   createVault,
   destroyProof,
+  deviceSlotsAllow,
   isNewerKeys,
   MAX_HISTORY,
   newRecoveryKey,
@@ -33,6 +34,7 @@ import {
   WrongSecret,
   type RekeyKind,
   type VaultHeaderV2,
+  type VaultHeaderV3,
   type VaultHeader,
   type WrapProof,
 } from './header'
@@ -48,9 +50,10 @@ import type { VaultKeysInfo } from '../../shared/api'
 import { savePreunlock } from './preunlockSync'
 import { claimRemote, commitRekeyedHeader, sameHeader, updateRemoteHeader, type VaultRemote } from './remoteVault'
 import { epochOf } from './suite'
-import { readSeen, SEEN_FILE, writeSeen } from './seen'
+import { readSeen, writeSeen } from './seen'
+import { devicesBlocking, hasSyncedBefore, pqGateBlocking, type CapabilityRecord } from './deviceGate'
 import { securityEvent } from '../log/securityEvents'
-import { CANDIDATE_FILE, LOCAL_KEYS_FILE, PENDING_FILE, SYNCED_FILE, PREUNLOCK_FILE, PREV_FILE, REJOIN_KEYS_FILE, REJOIN_VAULT_FILE, UnlockFailed, VAULT_FILE, type UnlockSecret } from './unlock'
+import { CANDIDATE_FILE, LOCAL_KEYS_FILE, PENDING_FILE, PREUNLOCK_FILE, PREV_FILE, REJOIN_KEYS_FILE, REJOIN_VAULT_FILE, UnlockFailed, VAULT_FILE, type UnlockSecret } from './unlock'
 
 /** §7.4: `{ step, vaultId, dbFile }`, present from the vault write until the clean-up is done. */
 export const MIGRATION_FILE = 'migration.json'
@@ -100,14 +103,41 @@ async function readCandidateHeader(dataDir: string, opts: WeakKdfOption): Promis
   }
 }
 
-/** The rekey under way, or null (no migration.json, or the §7.4 encryption's own record). */
-export async function readRekeyRecord(dataDir: string): Promise<RekeyRecord | null> {
+/**
+ * PQ-B3: `migration.json` while the v2 → v3 header upgrade (`vault/pqUpgrade.ts`, roadmap §3.5) is under way:
+ * `staged` once its candidate is written, `committed` from just before the remote write until the floor is raised.
+ */
+export interface PqHeaderRecord {
+  kind: 'pq-header'
+  id: string
+  step: 'staged' | 'committed'
+  vaultId: string
+  fromRevision: number
+  toRevision: number
+}
+
+/** What `migration.json` can hold: a C9 rekey, the PQ-B3 header upgrade, or (no `kind`) the §7.4 encryption's record. */
+export type MigrationRecordKind = RekeyRecord['kind'] | PqHeaderRecord['kind']
+
+async function readRecord(dataDir: string): Promise<{ kind?: unknown } | null> {
   try {
-    const r = (await readJsonCapped(join(dataDir, MIGRATION_FILE))) as Partial<RekeyRecord> | null
-    return r !== null && typeof r === 'object' && r.kind === 'rekey' ? (r as RekeyRecord) : null
+    const r = (await readJsonCapped(join(dataDir, MIGRATION_FILE))) as { kind?: unknown } | null
+    return r !== null && typeof r === 'object' ? r : null
   } catch {
     return null
   }
+}
+
+/** The rekey under way, or null (no migration.json, the §7.4 encryption's own record, or a pq-header upgrade). */
+export async function readRekeyRecord(dataDir: string): Promise<RekeyRecord | null> {
+  const r = await readRecord(dataDir)
+  return r?.kind === 'rekey' ? (r as RekeyRecord) : null
+}
+
+/** The header upgrade under way, or null. */
+export async function readPqHeaderRecord(dataDir: string): Promise<PqHeaderRecord | null> {
+  const r = await readRecord(dataDir)
+  return r?.kind === 'pq-header' ? (r as PqHeaderRecord) : null
 }
 
 /** What a finished sync tells the rekey runner (`afterSync`). */
@@ -172,24 +202,10 @@ export interface MigrationDeps {
   notice?: (message: string) => void
 }
 
-/** A device's record on the remote (packages/sync engine `writeDevice`). */
-export interface DeviceRecord {
-  name: string
+/** A device's record on the remote (packages/sync engine `writeDevice`), with its `epochs` and `pq` capabilities. */
+export interface DeviceRecord extends CapabilityRecord {
   appVersion?: string
   lastSeen?: number
-  /** The key-epoch capability the record carries (review C9 L3). */
-  epochs?: number
-}
-
-/**
- * D-7, review C9 L3: a device record that does not carry the key-epoch capability (written by every build that can
- * follow a key change), or that cannot be read at all, blocks the upgrade, the rotation and the conversion: such a
- * device would call the new vault file damaged, and one of 0.1.x would write its own header over it on a password
- * change (review C5 L5). Version numbers are not compared: development builds all report 0.1.0, and a build with C5
- * but not C9 would pass any release number while forking a rotated header.
- */
-export function devicesBlocking(records: readonly DeviceRecord[]): DeviceRecord[] {
-  return records.filter((d) => !(typeof d.epochs === 'number' && d.epochs >= 1))
 }
 
 export type PrepareResult = { kind: 'recovery'; recoveryKey: string } | { kind: 'join' }
@@ -214,9 +230,10 @@ export function resetSyncBookkeeping(dbFile: string, key: KeyHandle | null): voi
   }
 }
 
-/** At unlock: finishes a §7.4 encryption cut short after its switch; a C9 rekey's record is left to its runner. */
+/** At unlock: finishes a §7.4 encryption cut short after its switch; a rekey's or header upgrade's record is left to its runner. */
 export async function finishMigrationAtUnlock(dataDir: string, log: { warn(msg: string, data?: Record<string, unknown>): void }): Promise<boolean> {
-  if (await readRekeyRecord(dataDir)) return true
+  const kind = (await readRecord(dataDir))?.kind
+  if (kind === 'rekey' || kind === 'pq-header') return true
   return finishSwitchAtUnlock(dataDir, log)
 }
 
@@ -318,7 +335,9 @@ export class Migration {
     const check = checkPassword(password, [], profile)
     if (!check.ok) throw new Error(check.reason ?? 'Choose a longer password')
     const kdf = await kdfForProfile(profile, this.deps.kdf)
-    const { header, mk, recoveryKey } = await createVault({ password, profile, kdf }, this.opts)
+    // §3.5 `Created`: header v3 when the gate allows it (INV-PQ-5), else v2 for the upgrade to raise later.
+    const headerVersion = (await pqGateBlocking(this.deps)).length === 0 ? 3 : 2
+    const { header, mk, recoveryKey } = await createVault({ password, profile, kdf, headerVersion }, this.opts)
     this.prepared = { header, mk, confirmed: false }
     return { kind: 'recovery', recoveryKey: recoveryKey! }
   }
@@ -531,7 +550,7 @@ export class Migration {
   // ---- C9: key rotation, format upgrade, FIPS conversion (audit §4.7) ----
 
   /** The rekey made by `prepareRekey`, kept until `runRekey` hands its MK on or `discard` destroys it. */
-  private rekeyPrepared: { kind: RekeyKind; base: VaultHeader; header: VaultHeaderV2; mk: KeyHandle; confirmed: boolean } | undefined
+  private rekeyPrepared: { kind: RekeyKind; base: VaultHeader; header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; confirmed: boolean } | undefined
 
   /**
    * D-7: the devices on the remote that would not understand the new header (none when sync is off). The rekey is
@@ -551,6 +570,8 @@ export class Migration {
     this.discard()
     const record = await readRekeyRecord(this.deps.dataDir)
     if (record) throw new RotationRefused('The last key change is still being synced. Let sync finish, then try again.')
+    // PQ-B3's upgrade owns migration.json (and its candidate, which may already be on the remote) until it is done.
+    if (await readPqHeaderRecord(this.deps.dataDir)) throw new RotationRefused('The vault format update is still finishing; try again after the next sync.')
     const blocking = await this.blockingDevices()
     if (blocking.length > 0) {
       throw new RotationRefused(`Update Slate on every device first: ${blocking.map((d) => `${d.name} (${d.appVersion ?? 'unknown version'})`).join(', ')}.`)
@@ -561,15 +582,7 @@ export class Migration {
     if (!remote) {
       // Review C9 M5: synced is any trace of a remote, not only this build's marker: a header seen there, a git clone,
       // or sync bookkeeping in the notes database (deps.syncedBefore).
-      const { dataDir } = this.deps
-      const clones = (() => {
-        try {
-          return readdirSync(join(dataDir, 'git-sync'), { withFileTypes: true }).some((d) => d.isDirectory())
-        } catch {
-          return false
-        }
-      })()
-      if (existsSync(join(dataDir, SYNCED_FILE)) || existsSync(join(dataDir, SEEN_FILE)) || clones || (await this.deps.syncedBefore?.())) {
+      if (await hasSyncedBefore(this.deps.dataDir, this.deps.syncedBefore)) {
         throw new RotationRefused('This vault syncs with other devices: turn sync on first, so they can follow the change.')
       }
     } else {
@@ -592,7 +605,9 @@ export class Migration {
     try {
       // The password slot: what `rekeyHeader` moves into history must be the base's own password wrap.
       const kdf = await kdfForProfile(profile, this.deps.kdf)
-      const made = await rekeyHeader({ kind, base, mk, proof, password: nextPassword, kdf, profile }, this.opts)
+      // PQ-B4 (roadmap §3.6): a v1 vault goes straight to v3 when the gate allows it, so in one remote CAS.
+      const headerVersion = kind === 'upgrade' && (await pqGateBlocking(this.deps)).length === 0 ? 3 : 2
+      const made = await rekeyHeader({ kind, base, mk, proof, password: nextPassword, kdf, profile, headerVersion }, this.opts)
       this.rekeyPrepared = { kind, base, header: made.header, mk: made.mk, confirmed: false }
       return { recoveryKey: made.recoveryKey }
     } finally {
@@ -612,7 +627,7 @@ export class Migration {
     this.rekeyPrepared = undefined
     const { dataDir } = this.deps
     const { kind, base, header } = prepared
-    const fromEpoch = base.version === 2 ? base.keyEpoch : 0
+    const fromEpoch = base.version === 1 ? 0 : base.keyEpoch
     const record: RekeyRecord = { kind: 'rekey', id: toHex(vaultNative().randomBytes(8)), rekey: kind, step: 'staged', vaultId: header.vaultId, fromEpoch, toEpoch: header.keyEpoch, fromProfile: profileOf(base), toProfile: header.profile }
     const remote = this.deps.remote()
     // Review C9 M2: a conversion empties history, so afterwards nothing under the old keys can be read: everything on
@@ -698,9 +713,9 @@ export class Migration {
     }
     this.crash('prune')
     const { base, mk } = await this.ownBase(keyRing)
-    if (base.version === 2 && (base.history ?? []).length > 0) {
+    if (base.version !== 1 && (base.history ?? []).length > 0) {
       const epochs = (base.history ?? []).map((h) => h.epoch)
-      await this.publish(base, mk, (b) => (b.version === 2 ? pruneHistory(b, mk, epochs) : b))
+      await this.publish(base, mk, (b) => (b.version === 1 ? b : pruneHistory(b, mk, epochs)))
     }
     rmSync(join(dataDir, MIGRATION_FILE), { force: true })
     return false
@@ -715,7 +730,7 @@ export class Migration {
   async mayAdopt(header: VaultHeader, keyRing: KeyRing): Promise<boolean> {
     const record = await readRekeyRecord(this.deps.dataDir)
     if (!record || record.step !== 'committed') return true
-    if (!(header.version === 2 && header.keyEpoch === record.toEpoch && header.profile === record.toProfile)) return true
+    if (!(header.version !== 1 && header.keyEpoch === record.toEpoch && header.profile === record.toProfile)) return true
     const remote = this.deps.remote()
     if (!remote) return false
     let snap: unknown
@@ -750,6 +765,7 @@ export class Migration {
   async keysInfo(keyRing: KeyRing): Promise<VaultKeysInfo> {
     const { base } = await this.ownBase(keyRing)
     const record = await readRekeyRecord(this.deps.dataDir)
+    const formatUpdate = (await readPqHeaderRecord(this.deps.dataDir)) !== null
     let blocking: DeviceRecord[] = []
     let devicesUnknown: string | undefined
     try {
@@ -757,9 +773,9 @@ export class Migration {
     } catch (e) {
       devicesUnknown = e instanceof Error ? e.message : String(e)
     }
-    const free = !record && devicesUnknown === undefined && blocking.length === 0
+    const free = !record && !formatUpdate && devicesUnknown === undefined && blocking.length === 0
     const profile = profileOf(base)
-    const epoch = base.version === 2 ? base.keyEpoch : 0
+    const epoch = base.version === 1 ? 0 : base.keyEpoch
     return {
       headerVersion: base.version,
       profile,
@@ -769,9 +785,10 @@ export class Migration {
       inProgress: record ? (record.step === 'staged' || record.step === 'committed' ? 'repush' : record.step) : null,
       blockingDevices: blocking.map((d) => ({ name: d.name, ...(d.appVersion !== undefined ? { appVersion: d.appVersion } : {}) })),
       ...(devicesUnknown !== undefined ? { devicesUnknown } : {}),
-      canRotate: free && base.version === 2 && (base.history ?? []).length < MAX_HISTORY,
+      // A v3 vault rotates and converts as v3 (PQ-B4); a conversion only when its device slots may stay (rule 8).
+      canRotate: free && base.version !== 1 && (base.history ?? []).length < MAX_HISTORY,
       canUpgrade: free && base.version === 1,
-      canConvert: free && profile === 'standard' && fipsProfileAvailable(),
+      canConvert: free && profile === 'standard' && fipsProfileAvailable() && deviceSlotsAllow(base, 'fips-140-3'),
       canReplaceHistory: !record && epoch > 0 && this.deps.remote()?.replaceHistory !== undefined,
     }
   }

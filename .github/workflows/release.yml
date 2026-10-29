@@ -195,9 +195,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Node 24 (OpenSSL 3.5) here only: the signer makes ML-DSA-65 signatures, which Node 22 cannot.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
       # Only the build jobs' artefacts go where the signer signs; the SBOM job ran third-party code,
       # so its artefact lands apart and only the one SBOM file is copied across.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -213,11 +214,18 @@ jobs:
         run: test -f dist/latest-mac.yml && test -f dist/latest-linux.yml
       - name: Copy the SBOM, and nothing else, from the SBOM job
         run: cp sbom-artifact/slate-sbom.cdx.json dist/slate-sbom.cdx.json
-      # Offline Ed25519 signatures the app checks before it offers, downloads or installs an update
-      # (packages/desktop/src/main/update/signature.ts). Fails the release when the secret is missing.
+      - name: The signing runtime has OpenSSL 3.5 or later (ML-DSA-65)
+        run: |
+          node -p "process.versions.node + ' OpenSSL ' + process.versions.openssl"
+          node -e "const [a, b] = process.versions.openssl.split('.').map(Number); if (a < 3 || (a === 3 && b < 5)) { console.error('OpenSSL ' + process.versions.openssl + ' < 3.5: cannot sign ML-DSA-65'); process.exit(1) }"
+      # Offline signatures the app checks before it offers, downloads or installs an update
+      # (packages/desktop/src/main/update/signature.ts): <file>.sig (Ed25519, clients up to 0.3.x) and
+      # <file>.pq.sig (ml-dsa-65+ed25519). Fails the release when either secret is missing or the runtime
+      # cannot sign ML-DSA-65; dist/*.sig below uploads both.
       - name: Sign the update feeds and artefacts
         env:
           SLATE_UPDATE_SIGNING_KEY: ${{ secrets.SLATE_UPDATE_SIGNING_KEY }}
+          SLATE_UPDATE_SIGNING_KEY_MLDSA: ${{ secrets.SLATE_UPDATE_SIGNING_KEY_MLDSA }}
         run: node scripts/sign-update.mjs dist
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:

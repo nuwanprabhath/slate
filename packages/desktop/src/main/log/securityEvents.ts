@@ -42,6 +42,10 @@ export const securityEvent = {
   headerAdopted: (f: { fromRevision: number; toRevision: number }, to?: Info): void => mirror('app', to).info('vault.header.adopted', f),
   headerRefused: (f: { reason: HeaderRefusal; headerVersion?: number; profile?: string; floorProfile?: string }, scope: 'app' | 'sync' = 'app'): void =>
     mirror(scope).warn('vault.header.refused', f),
+  /** PQ-B3: this device wrote the v3 header (roadmap §3.5 `floor`). */
+  headerUpgraded: (f: { fromRevision: number; toRevision: number }, to?: Info): void => mirror('app', to).info('vault.header.upgraded', f),
+  /** PQ-B3: the upgrade waits for devices without the `pq` capability; their count only, never their names. */
+  headerUpgradeWaiting: (f: { devices: number }, to?: Info): void => mirror('app', to).info('vault.header.upgrade-waiting', f),
   passwordChanged: (f: { revision: number }, to?: Info): void => mirror('app', to).info('vault.password.changed', f),
   recoveryRotated: (f: { revision: number }, to?: Info): void => mirror('app', to).info('vault.recovery.rotated', f),
   keyRotated: (f: { fromEpoch: number; toEpoch: number }, to?: Info): void => mirror('app', to).info('vault.key.rotated', f),

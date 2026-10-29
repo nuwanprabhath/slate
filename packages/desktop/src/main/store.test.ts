@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LoroDoc } from 'loro-crdt'
 import { DocStore } from './store'
+import { openDatabase } from './db/openDatabase'
+import { testKey } from './db/testModule'
+import type { TransportObservation } from '../shared/api'
 
 const dirs: string[] = []
 function tempDb(): string {
@@ -124,5 +127,90 @@ describe('DocStore import tables', () => {
     expect(again.getImportItem('p2')).toEqual({ lastModified: '2026-01-02T00:00:00Z', status: 'done' })
     expect(again.getMapping('nb1')).toBe('slate-nb')
     again.close()
+  })
+})
+
+describe('transport observations (PQ-B5)', () => {
+  const obs = (over: Partial<TransportObservation> = {}): TransportObservation => ({
+    remote: 'git-ssh:github.com',
+    transport: 'ssh',
+    kex: 'mlkem768x25519-sha256',
+    pq: 'hybrid',
+    source: 'probe',
+    at: 1000,
+    ...over
+  })
+
+  function legacyRows(file: string, key: ReturnType<typeof testKey> | null): void {
+    // A 0.3.0 database: today's tables without transport_observations, holding rows.
+    const first = new DocStore(openDatabase(file, key))
+    first.append('page:1', new Uint8Array([1]))
+    first.setSetting('k', 'v')
+    first.addNotice('hello')
+    first.close()
+    const db = openDatabase(file, key)
+    db.exec('DROP TABLE transport_observations')
+    db.close()
+  }
+
+  it.each([
+    ['plaintext', null],
+    ['encrypted', testKey()]
+  ])('T-PQ-B5-01: opening a 0.3.0 %s database creates the table and changes no row', (_name, key) => {
+    const file = tempDb()
+    legacyRows(file, key)
+    const before = openDatabase(file, key)
+    before.exec('DROP TABLE IF EXISTS transport_observations')
+    const count = (db: ReturnType<typeof openDatabase>): unknown[] =>
+      ['snapshots', 'updates', 'settings', 'notices'].map((t) => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
+    const counts = count(before)
+    before.close()
+    const store = new DocStore(file, { key })
+    expect(store.transportObservations()).toEqual([])
+    store.close()
+    const after = openDatabase(file, key)
+    expect(count(after)).toEqual(counts)
+    expect(after.pragma('integrity_check', { simple: true })).toBe('ok')
+    expect(after.prepare("SELECT name FROM sqlite_master WHERE name = 'transport_observations'").get()).toBeDefined()
+    after.close()
+  })
+
+  it('T-PQ-B5-02: an observation round-trips and a second one for the same remote replaces it', () => {
+    const store = new DocStore(tempDb())
+    store.recordTransport(obs())
+    store.recordTransport(obs({ remote: 'git-https:github.com', transport: 'tls', kex: null, pq: 'unknown', source: 'test-connection', at: 5 }))
+    expect(store.transportObservations()).toEqual(
+      expect.arrayContaining([obs(), obs({ remote: 'git-https:github.com', transport: 'tls', kex: null, pq: 'unknown', source: 'test-connection', at: 5 })])
+    )
+    store.recordTransport(obs({ kex: 'secp384r1', pq: 'classical', at: 2000 }))
+    const rows = store.transportObservations().filter((r) => r.remote === 'git-ssh:github.com')
+    expect(rows).toEqual([obs({ kex: 'secp384r1', pq: 'classical', at: 2000 })])
+    expect(store.transportObservations()).toHaveLength(2)
+    store.close()
+  })
+
+  it.each([
+    'git-https:user@github.com',
+    'git-https:user:token@github.com',
+    'git-https:github.com/owner/repo',
+    'git-https:https://github.com/owner/repo',
+    'git-https:github.com?token=abc',
+    'git-ssh:git@github.com',
+    'github.com',
+    'git-ssh:',
+    'onedrive:graph.microsoft.com#frag',
+    'git-ssh:github.com:22/x'
+  ])('T-PQ-B5-03: refuses remote %s so no credential is stored', (remote) => {
+    const store = new DocStore(tempDb())
+    expect(() => store.recordTransport(obs({ remote }))).toThrow(Error)
+    expect(store.transportObservations()).toEqual([])
+    store.close()
+  })
+
+  it('T-PQ-B5-03: accepts host-level remotes with a port', () => {
+    const store = new DocStore(tempDb())
+    store.recordTransport(obs({ remote: 'git-https:git.example.com:8443' }))
+    expect(store.transportObservations()).toHaveLength(1)
+    store.close()
   })
 })

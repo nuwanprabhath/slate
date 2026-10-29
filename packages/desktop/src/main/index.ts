@@ -27,6 +27,7 @@ import type { KeyHandle } from '@slate/native'
 import type { QuickUnlockInfo, UnlockResult, VaultSecret, VaultStatus } from '../shared/api'
 import { CH } from '../shared/ipc'
 import { secretBytes, type SecretBytes } from '../shared/secret'
+import { registerPqIpc } from './pqIpc'
 import { registerVaultSecretIpc } from './vaultIpc'
 import { DEFAULT_SETTINGS } from '../shared/settings/schema'
 import { BLOB_SCHEME, blobNameFromUrl } from './blobs'
@@ -65,6 +66,7 @@ import { checkPassword } from './vault/password'
 import { recoveryFileText, recoverySaveDialog, refuseRecoveryPath } from './vault/recoveryFile'
 import { checkRemoteVault } from './vault/vaultCheck'
 import { VaultBusy } from './vault/busy'
+import { nextCompletedSync, startPqUpgrade } from './vault/pqUpgrade'
 import { env, envSnapshot, scrubProcessTestHooks } from './testHooks'
 import { appSecretStorage } from './secretStorage'
 import { installMemoryProbes } from './memoryProbes'
@@ -77,8 +79,10 @@ import { diagnosticReport } from './vault/selftest/report'
 import { databaseFault, failClosed, FaultSupervisor, startupSelfTest, watchModule } from './vault/selftest/supervisor'
 import type { SelfTestSummary } from '../shared/api'
 import { createSandboxMonitor } from './rendererSandbox'
+import { applyTlsPolicy } from './tlsPolicy'
 
 scrubProcessTestHooks(app.isPackaged)
+applyTlsPolicy()
 app.setName(APP_NAME)
 const userData = defaultUserDataDir()
 if (!env('SLATE_USER_DATA')) migrateLegacyUserData(userData)
@@ -176,7 +180,7 @@ void app.whenReady().then(async () => {
       if (testPassword && !existsSync(join(dataDir, VAULT_FILE))) {
         makingTestVault = true
         try {
-          destroyKey((await createEncryptedDataDir(dataDir, secretBytes(testPassword), kdfOpts, testProfile)).mk)
+          destroyKey((await createEncryptedDataDir(dataDir, secretBytes(testPassword), kdfOpts, testProfile, 3)).mk)
         } finally {
           makingTestVault = false
         }
@@ -227,7 +231,16 @@ void app.whenReady().then(async () => {
   // Off until the notes are open: the setting lives in the (possibly encrypted) database.
   configureLogging({ debugLog: false })
   configureSecurityLog()
-  registerDiagnosticsIpc(ipc)
+  registerDiagnosticsIpc(ipc, async () => {
+    let vaultHeaderVersion: 1 | 2 | 3 | null = null
+    try {
+      vaultHeaderVersion = parseHeader(await readJsonCapped(join(dataDir, VAULT_FILE)), kdfOpts).version
+    } catch {
+      // No vault (plaintext notes) or an unreadable header: null.
+    }
+    return { vaultHeaderVersion, transports: servicesOpen() ? services().store.transportObservations() : [] }
+  })
+  registerPqIpc(ipc)
   handleNoteProtocol(BLOB_SCHEME, notes, async (request) => {
     const name = blobNameFromUrl(request.url)
     if (!name) return new Response('Not found', { status: 404 })
@@ -471,6 +484,20 @@ void app.whenReady().then(async () => {
     throttledRefusals.ended()
     if ((await throttleGate.succeed(sessionPolicy(), opened.keyRing.get('prefs'))).tampered) securityEvent.preunlockTampered()
     vault.to('unlocked')
+    // PQ-B3 (D-9): the v2 → v3 header upgrade, in the background once every device can read v3.
+    const ring = opened.keyRing
+    void startPqUpgrade({
+      dataDir,
+      kdfOpts,
+      keyRing: ring,
+      remote: () => (servicesOpen() ? services().sync.vaultRemote() : null),
+      devices: () => services().sync.deviceRecords(),
+      syncedBefore: async () => servicesOpen() && (await services().sync.hasSyncedBefore()),
+      selfTest: async () => (await selfTestNow('pre-change')).ok,
+      exclusive: (work) => busy.run(work).finally(() => quitAfterMigration && app.quit()),
+      active: () => vault.state === 'unlocked' && servicesOpen() && services().keyRing === ring,
+      nextSync: () => nextCompletedSync(async () => (servicesOpen() ? (await services().sync.status()).lastSyncedAt : undefined), () => vault.state === 'unlocked'),
+    })
     if (quickUnlockFailed && !('mk' in secret)) offerQuickUnlock = true
     quickUnlockFailed = false
     void startMcp()

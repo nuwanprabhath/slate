@@ -1,0 +1,6 @@
+{
+  "$comment": "PQ-B4 (T-PQ-B4-04): header v3 of the 0.3.0 v2 fixture (e2e/fixtures/pq-v2-0.3.0). vault.json is buildHeaderV3From(v2, MK) plus one mlkem768-x25519-kdf56c device slot this build carries but never opens (pq.minCapability 2), MAC'd under the same MK; written once by PQ-B4's branch, never regenerated. Every other file of the data folder is the v2 fixture's, byte for byte (INV-PQ-2: the v2 -> v3 upgrade changes only vault.json). Test-only keys.",
+  "data": "../../../../../e2e/fixtures/pq-v2-0.3.0/data",
+  "secrets": "../../../../../e2e/fixtures/pq-v2-0.3.0/secrets.json",
+  "device": "device-3c6f1f0e-9a4b-4d2e-8f1a-5b7c9d0e1f2a"
+}

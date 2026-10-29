@@ -1,0 +1,17 @@
+{
+  "$comment": "T-PQ-A3-03: what the v0.3.0 signer (git show v0.3.0:scripts/sign-update.mjs) wrote for these inputs with fakeHybridKey.ts FAKE_ED25519_PKCS8_B64. Clients up to 0.3.x read only these .sig files, so the signer must keep writing them byte for byte.",
+  "inputs": {
+    "Slate-0.3.0-linux-amd64.deb": "Slate 0.3.0 deb bytes\n",
+    "Slate-0.3.0-mac-arm64.dmg": "Slate 0.3.0 dmg bytes\n",
+    "latest-linux.yml": "version: 0.3.0\nfiles:\n  - url: Slate-0.3.0-linux-amd64.deb\n    sha512: UdfVv3l2o7CMGNUfmUmZMsekxOtg3y1AQ/HIo1ts1lqNPmzH6vhR6CB/8tCZONqedLQHalFruuVH9nCtvhqQTg==\n    size: 22\npath: Slate-0.3.0-linux-amd64.deb\nsha512: UdfVv3l2o7CMGNUfmUmZMsekxOtg3y1AQ/HIo1ts1lqNPmzH6vhR6CB/8tCZONqedLQHalFruuVH9nCtvhqQTg==\nreleaseDate: '2026-10-28T00:00:00.000Z'\n",
+    "latest-mac.yml": "version: 0.3.0\nfiles:\n  - url: Slate-0.3.0-mac-arm64.dmg\n    sha512: hgKf3QwJ9WTY6/pJ2Bi/i6PY2T2JZk6HLFYuA0TwY7GSxi672dz6HRL283QWtGZ6DJuoX3qVfK0nL/cxzuF0CA==\n    size: 22\npath: Slate-0.3.0-mac-arm64.dmg\nsha512: hgKf3QwJ9WTY6/pJ2Bi/i6PY2T2JZk6HLFYuA0TwY7GSxi672dz6HRL283QWtGZ6DJuoX3qVfK0nL/cxzuF0CA==\nreleaseDate: '2026-10-28T00:00:00.000Z'\n",
+    "slate-sbom.cdx.json": "{\"bomFormat\":\"CycloneDX\"}\n"
+  },
+  "sigs": {
+    "Slate-0.3.0-linux-amd64.deb.sig": "{\"format\":\"slate-update-signature\",\"version\":1,\"alg\":\"ed25519\",\"keyId\":\"daba1e83c2b9280f\",\"signature\":\"Jlac3Rp1Hp3CTSgBF4FRplbbBXz9afN9L6cR1CZqq3aVV019jYquzP+ATQ2spQq1gI/GpXzQ4Iay+X+aE4L4Dg==\"}\n",
+    "Slate-0.3.0-mac-arm64.dmg.sig": "{\"format\":\"slate-update-signature\",\"version\":1,\"alg\":\"ed25519\",\"keyId\":\"daba1e83c2b9280f\",\"signature\":\"k19AIOJwDO8Kh4ngNsDKKw1rlM9PWFinLmR6aO22t8CZ0xWZNmVjzjRH3wxyWqSXhV0JUXTYZ97u5jkizAhcBg==\"}\n",
+    "latest-linux.yml.sig": "{\"format\":\"slate-update-signature\",\"version\":1,\"alg\":\"ed25519\",\"keyId\":\"daba1e83c2b9280f\",\"signature\":\"0Jnk6vLOWJdqUmpZn0FeOefbpQXjWpWRO+Fch5hJiecz051GDZVTJjYsvo3xsKlH/fkY0imv+0ajCfheVJYKBA==\"}\n",
+    "latest-mac.yml.sig": "{\"format\":\"slate-update-signature\",\"version\":1,\"alg\":\"ed25519\",\"keyId\":\"daba1e83c2b9280f\",\"signature\":\"Gn8ovrAjb8QM9Bkv9RJtj32GhQx7/qbKLCFQNFjooqb8kK2luL7jSmlG33TPgeldhH9j3YtW67zerx7asfiAAw==\"}\n",
+    "slate-sbom.cdx.json.sig": "{\"format\":\"slate-update-signature\",\"version\":1,\"alg\":\"ed25519\",\"keyId\":\"daba1e83c2b9280f\",\"signature\":\"iJj1/TIHnuSYpKzIDF8qH7vo2EC5jkgBlNlgIEw9lyMquZbZHVBI/SY35qSxJufO9DSDZJ1KiOOil5ER83JiBA==\"}\n"
+  }
+}

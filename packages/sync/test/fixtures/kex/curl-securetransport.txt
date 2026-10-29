@@ -1,0 +1,4 @@
+10:02:11.000001 http.c:690              == Info: Host github.com:443 was resolved.
+10:02:11.091102 http.c:690              == Info: SSL connection using TLSv1.2 / ECDHE-RSA-AES128-GCM-SHA256
+10:02:11.092003 http.c:637              => Send header: Authorization: basic eC1hY2Nlc3MtdG9rZW46Z2hwX1NFQ1JFVFRPS0VOMTIzNDU2
+10:02:11.200003 http.c:637              <= Recv header: HTTP/2 200
