@@ -49,7 +49,7 @@ test('UI: Security section buttons in every built-in theme', async () => {
   try {
     await reviewUi(app, page, 'security every theme', {
       themes: EVERY_THEME,
-      scroll: '[data-testid="settings-pane"]',
+      scroll: '[data-testid="settings-body"]',
       open: async (p) => {
         await openSecurity(p)
         for (const id of ['security-pq-check', 'security-rotate', 'security-convert', 'security-change-submit']) {
