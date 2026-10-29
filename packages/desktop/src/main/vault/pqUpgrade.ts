@@ -5,7 +5,7 @@
 // next run finishes or adopts.
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import type { PqReadiness } from '../../shared/api'
+import type { PqReadiness, PqWaiting } from '../../shared/api'
 import { log } from '../log/logger'
 import { securityEvent } from '../log/securityEvents'
 import { env } from '../testHooks'
@@ -55,7 +55,7 @@ export interface PqUpgradeDeps {
 
 export type PqUpgradeOutcome =
   | { state: 'done' }
-  | { state: 'waiting-devices'; blocking: string[] }
+  | { state: 'waiting-devices'; waiting: PqWaiting }
   | { state: 'offer-v1' }
   | { state: 'selftest-failed' }
   /** Committed but the remote was out of reach: the same candidate is tried again after the next sync. */
@@ -79,12 +79,15 @@ class Refused extends Stop {}
 let readiness: PqReadiness['vault'] = { kind: 'none' }
 
 export function pqVaultReadiness(): PqReadiness['vault'] {
-  return readiness.kind === 'none' ? readiness : { ...readiness, blockingDevices: [...readiness.blockingDevices] }
+  return structuredClone(readiness)
 }
 
-function show(version: 1 | 2 | 3, upgrade: Extract<PqReadiness['vault'], { kind: 'header' }>['upgrade'], blockingDevices: string[] = []): void {
-  readiness = { kind: 'header', version, upgrade, blockingDevices }
+function show(version: 1 | 2 | 3, upgrade: Extract<PqReadiness['vault'], { kind: 'header' }>['upgrade'], waiting?: PqWaiting): void {
+  readiness = { kind: 'header', version, upgrade, ...(waiting ? { waiting } : {}) }
 }
+
+/** What the security log counts: the devices named, or one for a reason that names none. */
+const waitingCount = (w: PqWaiting): number => (w.reason === 'devices' ? w.devices.length : 1)
 
 let loggedWaiting: number | null = null
 
@@ -298,12 +301,13 @@ async function runOnce(d: PqUpgradeDeps): Promise<PqUpgradeOutcome> {
     return { state: 'done' }
   }
   show(2, 'none')
-  const blocking = await pqGateBlocking(d)
-  if (blocking.length > 0) {
-    show(2, 'waiting-devices', blocking)
-    if (loggedWaiting !== blocking.length) securityEvent.headerUpgradeWaiting({ devices: blocking.length })
-    loggedWaiting = blocking.length
-    return { state: 'waiting-devices', blocking }
+  const waiting = await pqGateBlocking(d)
+  if (waiting) {
+    show(2, 'waiting-devices', waiting)
+    const count = waitingCount(waiting)
+    if (loggedWaiting !== count) securityEvent.headerUpgradeWaiting({ devices: count })
+    loggedWaiting = count
+    return { state: 'waiting-devices', waiting }
   }
   loggedWaiting = null
   return exclusive(async () => {

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import type { PqWaiting } from '../../shared/api'
 import { SEEN_FILE } from './seen'
 import { SYNCED_FILE } from './unlock'
 
@@ -10,6 +11,8 @@ export interface CapabilityRecord {
   name: string
   epochs?: number
   pq?: number
+  /** This device's own record (`devices/<deviceId>.json`, as the sync engine names it). */
+  own?: boolean
 }
 
 /**
@@ -58,16 +61,20 @@ export interface PqGateDeps {
 }
 
 /**
- * Roadmap §3.5 `gate` (INV-PQ-5): the names of the devices that keep header v3 off this vault, with one entry when the
- * records cannot be read, or when sync is off on a vault that has synced (its other devices cannot be asked). Empty:
- * v3 may be written (by the v2 → v3 upgrade, a v1 upgrade, or a new vault).
+ * Roadmap §3.5 `gate` (INV-PQ-5): why header v3 must stay off this vault, or null when it may be written (by the
+ * v2 → v3 upgrade, a v1 upgrade, or a new vault). The devices that lack pq are named; an unreadable record list, or
+ * sync off on a vault that has synced (its other devices cannot be asked), blocks too. This device's own record is
+ * left out: this build reads v3, and the record may still be the older build's until this build's first sync.
  */
-export async function pqGateBlocking(d: PqGateDeps): Promise<string[]> {
-  if (!d.remote()) return (await hasSyncedBefore(d.dataDir, d.syncedBefore)) ? ['Sync is off: turn it on so Slate can check your other devices'] : []
-  if (!d.devices) return ['The device list could not be read']
+export async function pqGateBlocking(d: PqGateDeps): Promise<PqWaiting | null> {
+  if (!d.remote()) return (await hasSyncedBefore(d.dataDir, d.syncedBefore)) ? { reason: 'sync-off' } : null
+  if (!d.devices) return { reason: 'devices-unreadable' }
+  let records: CapabilityRecord[]
   try {
-    return devicesLacking(await d.devices(), 'pq', 1).map((r) => r.name)
+    records = await d.devices()
   } catch {
-    return ['The device list could not be read']
+    return { reason: 'devices-unreadable' }
   }
+  const lacking = devicesLacking(records.filter((r) => r.own !== true), 'pq', 1)
+  return lacking.length > 0 ? { reason: 'devices', devices: lacking.map((r) => r.name) } : null
 }

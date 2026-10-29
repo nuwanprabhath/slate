@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { devicesLacking, PQ_CAPABILITY } from './deviceGate'
+import { afterAll, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { devicesLacking, pqGateBlocking, PQ_CAPABILITY } from './deviceGate'
+import { SYNCED_FILE } from './unlock'
 
 const rec = (extra: Record<string, number> = {}, name = 'D') => ({ name, ...extra })
 
@@ -24,5 +28,33 @@ describe('deviceGate', () => {
   it('T-PQ-B2-02: a record whose capability is not a number is listed', () => {
     const bad = { name: 'bad', pq: '1' as unknown as number }
     expect(devicesLacking([bad], 'pq', 1)).toEqual([bad])
+  })
+
+  describe('pqGateBlocking', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'slate-gate-'))
+    afterAll(() => rmSync(dir, { recursive: true, force: true }))
+    const remote = () => ({})
+
+    it('names the devices that lack pq, as a structured reason', async () => {
+      const devices = async () => [rec({ pq: 1 }, 'This Mac'), rec({}, 'nuwan-ubuntu'), rec({ pq: 0 }, 'Old laptop')]
+      expect(await pqGateBlocking({ dataDir: dir, remote, devices })).toEqual({ reason: 'devices', devices: ['nuwan-ubuntu', 'Old laptop'] })
+      expect(await pqGateBlocking({ dataDir: dir, remote, devices: async () => [rec({ pq: 1 })] })).toBeNull()
+    })
+
+    it("does not count this device's own record: a 0.3.0 record not yet rewritten by this build's first sync", async () => {
+      const devices = async () => [{ name: 'This Mac', epochs: 1, own: true }, rec({ pq: 1 }, 'nuwan-ubuntu')]
+      expect(await pqGateBlocking({ dataDir: dir, remote, devices })).toBeNull()
+      // Another device without pq still blocks.
+      const two = async () => [{ name: 'This Mac', own: true }, rec({}, 'nuwan-ubuntu')]
+      expect(await pqGateBlocking({ dataDir: dir, remote, devices: two })).toEqual({ reason: 'devices', devices: ['nuwan-ubuntu'] })
+    })
+
+    it('says why when it cannot ask the devices: the list is unreadable, or sync is off on a vault that synced', async () => {
+      expect(await pqGateBlocking({ dataDir: dir, remote })).toEqual({ reason: 'devices-unreadable' })
+      expect(await pqGateBlocking({ dataDir: dir, remote, devices: () => Promise.reject(new Error('offline')) })).toEqual({ reason: 'devices-unreadable' })
+      expect(await pqGateBlocking({ dataDir: dir, remote: () => null })).toBeNull()
+      writeFileSync(join(dir, SYNCED_FILE), '{}')
+      expect(await pqGateBlocking({ dataDir: dir, remote: () => null })).toEqual({ reason: 'sync-off' })
+    })
   })
 })

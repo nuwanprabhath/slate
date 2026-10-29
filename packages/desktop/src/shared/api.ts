@@ -187,9 +187,12 @@ export interface EncryptProgress {
 
 export type PqLevel = 'hybrid' | 'classical' | 'unknown'
 export interface TransportObservation { remote: string; transport: 'ssh' | 'tls'; kex: string | null; pq: PqLevel; source: 'probe' | 'test-connection'; at: number }
+/** Why the v2 → v3 header upgrade waits: named devices that lack pq, sync off, or a device list it could not read. */
+export type PqWaiting = { reason: 'devices'; devices: string[] } | { reason: 'sync-off' } | { reason: 'devices-unreadable' }
 export interface PqReadiness {
   atRest: 'symmetric-256'
-  vault: { kind: 'none' } | { kind: 'header'; version: 1 | 2 | 3; upgrade: 'none' | 'waiting-devices' | 'running' | 'offer-v1' | 'done'; blockingDevices: string[] }
+  /** `waiting` is set exactly when `upgrade` is 'waiting-devices'. */
+  vault: { kind: 'none' } | { kind: 'header'; version: 1 | 2 | 3; upgrade: 'none' | 'waiting-devices' | 'running' | 'offer-v1' | 'done'; waiting?: PqWaiting }
   transports: TransportObservation[]
   updateSignature: 'ed25519' | 'ml-dsa-65+ed25519'
   /** Sync is on and there is no vault. */

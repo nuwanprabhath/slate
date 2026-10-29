@@ -3,7 +3,7 @@ import type { PqReadiness } from '../../../shared/api'
 import { FORMAT_DONE, FORMAT_RUNNING, nextFormatBanner } from './vaultFormatBanner'
 
 type Vault = PqReadiness['vault']
-const header = (version: 1 | 2 | 3, upgrade: 'none' | 'waiting-devices' | 'running' | 'offer-v1' | 'done'): Vault => ({ kind: 'header', version, upgrade, blockingDevices: [] })
+const header = (version: 1 | 2 | 3, upgrade: 'none' | 'waiting-devices' | 'running' | 'offer-v1' | 'done'): Vault => ({ kind: 'header', version, upgrade })
 
 describe('nextFormatBanner', () => {
   it('T-PQ-D2-06: shows a line while the upgrade runs and remembers a v2 vault was seen', () => {

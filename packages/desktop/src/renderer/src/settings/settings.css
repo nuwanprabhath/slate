@@ -42,3 +42,7 @@
 .pq-remotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .pq-remotes li { display: flex; flex-direction: column; }
 .pq-remotes li > span:first-child { color: var(--muted); }
+.pq-value { overflow-wrap: anywhere; }
+.pq-help { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pq-check { align-self: stretch; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.pq-check > .pq-help { flex: 1 1 12em; }

@@ -1,7 +1,7 @@
-import type { Page } from '@playwright/test'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, MOD, test } from '../fixtures'
 import { reviewUi } from './review'
-import type { CryptoModuleStatus, PqReadiness } from '../../src/shared/api'
+import type { CryptoModuleStatus, PqReadiness, TransportObservation } from '../../src/shared/api'
 import { stubInvoke, unlockedApp } from './states'
 
 async function openSecurity(page: Page): Promise<void> {
@@ -40,7 +40,7 @@ test('UI: Security section of an encrypted vault', async () => {
 
 const OBS = { remote: 'git-ssh:github.com', transport: 'ssh', source: 'probe', at: 1 } as const
 const READY: PqReadiness = { atRest: 'symmetric-256', vault: { kind: 'none' }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false }
-const header = (version: 1 | 2 | 3, upgrade: 'none' | 'waiting-devices' | 'running' | 'offer-v1' | 'done', blockingDevices: string[] = []): PqReadiness['vault'] => ({ kind: 'header', version, upgrade, blockingDevices })
+const header = (version: 1 | 2 | 3, upgrade: 'none' | 'waiting-devices' | 'running' | 'offer-v1' | 'done', devices?: string[]): PqReadiness['vault'] => ({ kind: 'header', version, upgrade, ...(devices ? { waiting: { reason: 'devices' as const, devices } } : {}) })
 const STATES: Array<[string, PqReadiness]> = [
   ['v3 hybrid', { ...READY, vault: header(3, 'done'), transports: [{ ...OBS, kex: 'mlkem768x25519-sha256', pq: 'hybrid' }], updateSignature: 'ml-dsa-65+ed25519' }],
   [
@@ -90,6 +90,86 @@ test('T-PQ-D1-03: UI: Post-quantum readiness', async () => {
     await expect(page.getByTestId('security-pq-sync')).toContainText('Post-quantum key exchange (ML-KEM)')
     await page.getByTestId('security-pq-upgrade').click()
     await expect(page.getByTestId('security-rekey-upgrade')).toBeVisible()
+  } finally {
+    await app.close()
+  }
+})
+
+/** Main's probe answers only when the scenario says so, so the busy state can be looked at. */
+async function holdProbe(app: ElectronApplication, value: TransportObservation[]): Promise<void> {
+  await app.evaluate(({ ipcMain }, v) => {
+    const g = globalThis as { releaseProbe?: () => void }
+    ipcMain.removeHandler('sync:check-transport')
+    ipcMain.handle('sync:check-transport', () => new Promise((resolve) => (g.releaseProbe = () => resolve(v))))
+  }, value)
+}
+const releaseProbe = (app: ElectronApplication) => app.evaluate(() => (globalThis as { releaseProbe?: () => void }).releaseProbe?.())
+
+const LONG_NAME = 'nuwan-ubuntu-workstation-in-the-upstairs-office-with-a-very-long-hostname'
+const waitingFor = (devices: string[]): PqReadiness['vault'] => ({ kind: 'header', version: 2, upgrade: 'waiting-devices', waiting: { reason: 'devices', devices } })
+
+/** The maintainer's 0.4.0 report: Check now changed nothing on screen, and "Waiting for 1 device" named no device. */
+test('UI: Post-quantum readiness, Check now and the devices it waits for', async () => {
+  test.setTimeout(900_000)
+  const { app, page } = await unlockedApp()
+  const pq = async (p: Page) => {
+    await openSecurity(p)
+    await expect(p.getByTestId('security-pq')).toBeVisible()
+    await p.getByTestId('security-pq').scrollIntoViewIfNeeded()
+  }
+  const review = (name: string, open: (p: Page) => Promise<void>) =>
+    reviewUi(app, page, `security pq ${name}`, { within: '[data-testid="security-pq"]', close: (p) => p.keyboard.press('Escape'), open })
+  try {
+    const hybrid = [{ ...OBS, kex: 'mlkem768x25519-sha256', pq: 'hybrid' as const, at: new Date().setHours(14, 5, 0, 0) }]
+    const ready: PqReadiness = { ...READY, vault: { kind: 'header', version: 3, upgrade: 'done' }, transports: hybrid }
+    await stubInvoke(app, 'vault:pq-readiness', ready)
+    // The reported defect: the probe found the same as before, and the screen must still say it ran.
+    await pq(page)
+    await holdProbe(app, hybrid)
+    await page.getByTestId('security-pq-check').click()
+    await expect(page.getByTestId('security-pq-check')).toHaveText('Checking…')
+    await releaseProbe(app)
+    await expect(page.getByTestId('security-pq-check-status')).toHaveText('Checked just now')
+    await expect(page.getByTestId('security-pq-check')).toHaveText('Check now')
+    await page.keyboard.press('Escape')
+    await review('check before', async (p) => {
+      await pq(p)
+      await expect(p.getByTestId('security-pq-sync')).toContainText('mlkem768x25519-sha256 · checked')
+    })
+    // Busy: the probe is held, so the button and the status line say what is happening.
+    await holdProbe(app, hybrid)
+    await review('check busy', async (p) => {
+      await pq(p)
+      await p.getByTestId('security-pq-check').click()
+      await expect(p.getByTestId('security-pq-check')).toBeDisabled()
+      await expect(p.getByTestId('security-pq-check-status')).toHaveText('Connecting to github.com…')
+    })
+    await stubInvoke(app, 'sync:check-transport', hybrid)
+    await review('check done', async (p) => {
+      await pq(p)
+      await p.getByTestId('security-pq-check').click()
+      await expect(p.getByTestId('security-pq-check-status')).toHaveText('Checked just now')
+    })
+
+    const waiting: Array<[string, PqReadiness['vault'], string]> = [
+      ['waiting one long', waitingFor([LONG_NAME]), `Waiting for "${LONG_NAME}" to update to Slate 0.4 or newer`],
+      ['waiting four', waitingFor(['Work laptop', 'Home desktop', 'nuwan-ubuntu', 'Old MacBook']), 'Waiting for 4 devices to update to Slate 0.4 or newer: "Work laptop", "Home desktop", "nuwan-ubuntu" and 1 more'],
+      ['waiting sync off', { kind: 'header', version: 2, upgrade: 'waiting-devices', waiting: { reason: 'sync-off' } }, 'Waiting for sync: turn it on so Slate can check your other devices'],
+    ]
+    await stubInvoke(app, 'sync:check-transport', [])
+    for (const [name, vault, text] of waiting) {
+      await stubInvoke(app, 'vault:pq-readiness', { ...READY, vault })
+      await page.keyboard.press('Escape')
+      await review(name, async (p) => {
+        await pq(p)
+        await expect(p.getByTestId('security-pq-vault')).toContainText(text)
+        await expect(p.getByTestId('security-pq-vault')).toContainText('This computer is ready.')
+        if (name === 'waiting sync off') {
+          await p.getByTestId('security-pq-check').click()
+          await expect(p.getByTestId('security-pq-check-status')).toHaveText('Nothing to check: sync is off')
+        }
+      })
+    }
   } finally {
     await app.close()
   }

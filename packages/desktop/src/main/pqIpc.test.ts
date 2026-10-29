@@ -23,9 +23,14 @@ describe('post-quantum IPC stubs', () => {
     await expect(Promise.resolve().then(() => h({} as never, 1))).rejects.toThrow()
   })
   it('T-PQ-B3-04: the vault field is the upgrade state machine\'s, device names included (the log has the count only)', async () => {
-    const vault: PqReadiness['vault'] = { kind: 'header', version: 2, upgrade: 'waiting-devices', blockingDevices: ['Old laptop'] }
+    const vault: PqReadiness['vault'] = { kind: 'header', version: 2, upgrade: 'waiting-devices', waiting: { reason: 'devices', devices: ['Old laptop'] } }
     vi.mocked(pqVaultReadiness).mockReturnValueOnce(vault)
     expect(await handlers.get(CH.vaultPqReadiness)!({} as never)).toMatchObject({ vault })
+    for (const waiting of [{ reason: 'sync-off' }, { reason: 'devices-unreadable' }] as const) {
+      const reason: PqReadiness['vault'] = { kind: 'header', version: 2, upgrade: 'waiting-devices', waiting }
+      vi.mocked(pqVaultReadiness).mockReturnValueOnce(reason)
+      expect(await handlers.get(CH.vaultPqReadiness)!({} as never)).toMatchObject({ vault: reason })
+    }
   })
 })
 
