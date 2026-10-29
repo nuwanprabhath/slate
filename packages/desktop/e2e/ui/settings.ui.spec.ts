@@ -14,7 +14,7 @@ test('UI: every Settings section', async ({ app, page }) => {
   await page.keyboard.press('Escape')
   for (const id of ids) {
     await reviewUi(app, page, `settings ${id}`, {
-      scroll: '[data-testid="settings-pane"]',
+      scroll: '[data-testid="settings-body"]',
       open: async (p) => {
         if (!(await p.getByTestId('settings-dialog').isVisible())) await p.keyboard.press(`${MOD}+,`)
         await p.getByTestId(`settings-nav-${id}`).click()
@@ -88,6 +88,57 @@ test('T-PQ-D2-03: UI: vault format banner', async () => {
     await stubInvoke(app, 'vault:pq-readiness', header(3, 'done'))
     await expect(banner).toContainText('Vault format updated', { timeout: 15_000 })
     await reviewUi(app, page, 'vault format banner done', { open: async (p) => expect(p.getByTestId('vault-format-banner')).toContainText('Vault format updated') })
+  } finally {
+    await app.close()
+  }
+})
+
+/** The close button stays reachable when a long section is scrolled to its end (Security, 800 px). */
+test('UI: Settings close button stays in view when Security is scrolled to the bottom', async () => {
+  test.setTimeout(240_000)
+  const { app, page } = await unlockedApp()
+  try {
+    await reviewUi(app, page, 'settings security scrolled bottom', {
+      widths: [800],
+      open: async (p) => {
+        if (!(await p.getByTestId('settings-dialog').isVisible())) await p.keyboard.press(`${MOD}+,`)
+        await p.getByTestId('settings-nav-security').click()
+        await expect(p.getByTestId('security-change-password')).toBeVisible()
+        const scrolled = await p.getByTestId('settings-dialog').evaluate((dialog) => {
+          const scroller = [...dialog.querySelectorAll<HTMLElement>('*')].find((el) => {
+            const overflowY = getComputedStyle(el).overflowY
+            return (overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1 && !el.closest('nav')
+          })
+          if (!scroller) return false
+          scroller.scrollTop = scroller.scrollHeight
+          return scroller.scrollTop > 0
+        })
+        expect(scrolled, 'Security is long enough to scroll at 800 px').toBe(true)
+        const close = p.getByTestId('settings-close')
+        const hit = await p.evaluate(() => {
+          const dialog = document.querySelector('[data-testid="settings-dialog"]')!.getBoundingClientRect()
+          const button = document.querySelector<HTMLElement>('[data-testid="settings-close"]')!
+          const r = button.getBoundingClientRect()
+          const x = r.left + r.width / 2
+          const y = r.top + r.height / 2
+          const inside = r.top >= dialog.top && r.bottom <= dialog.bottom && r.left >= dialog.left && r.right <= dialog.right
+          return { inside, covered: document.elementFromPoint(x, y) !== button && !button.contains(document.elementFromPoint(x, y)), w: r.width, h: r.height }
+        })
+        expect(hit.inside, 'close button is inside the dialog').toBe(true)
+        expect(hit.covered, 'close button is not covered').toBe(false)
+        expect(Math.round(hit.w)).toBe(24)
+        expect(Math.round(hit.h)).toBe(24)
+        await expect(close).toBeVisible()
+      },
+    })
+    await page.getByTestId('settings-dialog').waitFor({ state: 'hidden' }).catch(() => undefined)
+    if (!(await page.getByTestId('settings-dialog').isVisible())) await page.keyboard.press(`${MOD}+,`)
+    await page.getByTestId('settings-nav-security').click()
+    await page.getByTestId('settings-dialog').evaluate((d) => {
+      for (const el of d.querySelectorAll<HTMLElement>('*')) if (el.scrollHeight > el.clientHeight + 1 && getComputedStyle(el).overflowY === 'auto') el.scrollTop = el.scrollHeight
+    })
+    await page.getByTestId('settings-close').click()
+    await expect(page.getByTestId('settings-dialog')).toBeHidden()
   } finally {
     await app.close()
   }

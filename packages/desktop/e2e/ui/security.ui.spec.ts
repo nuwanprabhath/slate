@@ -15,7 +15,7 @@ test('UI: Security section of an encrypted vault', async () => {
   test.setTimeout(240_000)
   const { app, page } = await unlockedApp()
   try {
-    await reviewUi(app, page, 'security encrypted', { open: openSecurity, scroll: '[data-testid="settings-pane"]' })
+    await reviewUi(app, page, 'security encrypted', { open: openSecurity, scroll: '[data-testid="settings-body"]' })
     // Change password alone, so its screenshot shows the whole form; then with a weak password typed.
     await reviewUi(app, page, 'security change password', {
       within: '[data-testid="security-change-password"]',
