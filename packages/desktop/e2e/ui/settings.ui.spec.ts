@@ -74,7 +74,7 @@ test('T-PQ-D2-03: UI: Sync require post-quantum key exchange', async ({ app, pag
   }
 })
 
-const header = (version: 2 | 3, upgrade: 'running' | 'done'): PqReadiness => ({ atRest: 'symmetric-256', vault: { kind: 'header', version, upgrade, blockingDevices: [] }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
+const header = (version: 2 | 3, upgrade: 'running' | 'done'): PqReadiness => ({ atRest: 'symmetric-256', vault: { kind: 'header', version, upgrade }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
 
 /** T-PQ-D2-03: the vault format banner while the update runs and once it is done. */
 test('T-PQ-D2-03: UI: vault format banner', async () => {

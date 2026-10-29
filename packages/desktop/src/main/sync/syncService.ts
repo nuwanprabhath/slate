@@ -133,6 +133,8 @@ export interface RemoteDeviceRecord {
   epochs?: number
   /** The post-quantum header capability (PQ-B2); absent from builds that cannot read a v3 header. */
   pq?: number
+  /** This device's own record: it may still be an older build's until this build's first sync rewrites it. */
+  own?: boolean
 }
 
 /** The level of key-epoch support this build writes into its device record (D-7, review C9 L3). */
@@ -398,6 +400,7 @@ export class SyncService {
     const out: RemoteDeviceRecord[] = []
     for (const item of page.items) {
       if (item.deleted || !DEVICE_PATH.test(item.path)) continue
+      const own = item.path === `devices/${this.deviceId}.json` ? { own: true } : {}
       try {
         const r = JSON.parse(new TextDecoder().decode(await connection.drive.download(item.path))) as Partial<RemoteDeviceRecord>
         out.push({
@@ -406,9 +409,10 @@ export class SyncService {
           ...(typeof r.lastSeen === 'number' ? { lastSeen: r.lastSeen } : {}),
           ...(typeof r.epochs === 'number' ? { epochs: r.epochs } : {}),
           ...(typeof r.pq === 'number' ? { pq: r.pq } : {}),
+          ...own,
         })
       } catch {
-        out.push({ name: 'A device record Slate cannot read' })
+        out.push({ name: 'A device record Slate cannot read', ...own })
       }
     }
     // Device records under keys this ring does not hold (no epoch it reads) are devices too, of unknown version.

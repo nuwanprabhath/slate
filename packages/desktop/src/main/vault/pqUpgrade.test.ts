@@ -92,7 +92,7 @@ describe('PQ-B3: the v2 → v3 header upgrade', () => {
     expect(await notesUnder(d.dir, { mk: await openQuickUnlock(d.dir, platform) })).toBe(4)
     expect(existsSync(join(d.dir, MIGRATION_FILE))).toBe(false)
     expect(existsSync(join(d.dir, PQ_CANDIDATE_FILE))).toBe(false)
-    expect(pqVaultReadiness()).toEqual({ kind: 'header', version: 3, upgrade: 'done', blockingDevices: [] })
+    expect(pqVaultReadiness()).toEqual({ kind: 'header', version: 3, upgrade: 'done' })
   })
 
   it('T-PQ-B3-02: zero loss: every data-folder file but the header files, every blob_data row, the SQLCipher bytes and every remote path but e2ee/vault.json are byte-identical', async () => {
@@ -146,19 +146,31 @@ describe('PQ-B3: the v2 → v3 header upgrade', () => {
     const before = snapshot(d.dir)
     const writes = mem.writes()
     const out = await runPqUpgrade(deps(d, { remote: () => mem.remote, devices: async () => [{ name: 'This Mac', epochs: 1, pq: 1 }, { name: 'Old laptop', epochs: 1 }] }))
-    expect(out).toEqual({ state: 'waiting-devices', blocking: ['Old laptop'] })
+    expect(out).toEqual({ state: 'waiting-devices', waiting: { reason: 'devices', devices: ['Old laptop'] } })
     expect(snapshot(d.dir)).toEqual(before)
     expect(mem.writes()).toBe(writes)
     expect(waiting).toHaveBeenCalledWith({ devices: 1 })
-    expect(pqVaultReadiness()).toEqual({ kind: 'header', version: 2, upgrade: 'waiting-devices', blockingDevices: ['Old laptop'] })
-    // A record list that cannot be read blocks too.
+    expect(pqVaultReadiness()).toEqual({ kind: 'header', version: 2, upgrade: 'waiting-devices', waiting: { reason: 'devices', devices: ['Old laptop'] } })
+    // A record list that cannot be read blocks too, and the readiness says so instead of naming a device.
     const unread = await runPqUpgrade(deps(d, { remote: () => mem.remote, devices: async () => Promise.reject(new Error('offline')) }))
     expect(unread.state).toBe('waiting-devices')
     expect(snapshot(d.dir)).toEqual(before)
+    expect(pqVaultReadiness()).toEqual({ kind: 'header', version: 2, upgrade: 'waiting-devices', waiting: { reason: 'devices-unreadable' } })
     // Sync off on a vault that has synced before: its other devices cannot be asked, so it waits too.
     const off = await runPqUpgrade(deps(d, { remote: () => null }))
     expect(off.state).toBe('waiting-devices')
     expect(snapshot(d.dir)).toEqual(before)
+    expect(pqVaultReadiness()).toEqual({ kind: 'header', version: 2, upgrade: 'waiting-devices', waiting: { reason: 'sync-off' } })
+    expect(waiting.mock.calls.every(([f]) => Object.keys(f).join() === 'devices' && typeof f.devices === 'number')).toBe(true)
+  })
+
+  it("this device's own record from 0.3.0 (no pq until this build's first sync) does not hold the upgrade back", async () => {
+    const d = await device(1)
+    const mem = memoryRemote()
+    await onRemote(d, mem.remote)
+    const out = await runPqUpgrade(deps(d, { remote: () => mem.remote, devices: async () => [{ name: 'This Mac', epochs: 1, own: true }, { name: 'nuwan-ubuntu', epochs: 1, pq: 1 }] }))
+    expect(out).toEqual({ state: 'done' })
+    expect(pqVaultReadiness()).toEqual({ kind: 'header', version: 3, upgrade: 'done' })
   })
 
   it('T-PQ-B3-05: after the upgrade the old v2 header, locally or as the remote copy, is refused as a downgrade', async () => {

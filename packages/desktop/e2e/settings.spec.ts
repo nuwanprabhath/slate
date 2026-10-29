@@ -160,7 +160,7 @@ test('T-PQ-D2-02: the vault format banner never covers the editor or takes focus
   await createBoxAt(page, 200, 200)
   await page.keyboard.type('typing continues')
   const canvasTop = (await page.getByTestId('canvas').boundingBox())!.y
-  await stubInvoke(app, 'vault:pq-readiness', { atRest: 'symmetric-256', vault: { kind: 'header', version: 2, upgrade: 'running', blockingDevices: [] }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
+  await stubInvoke(app, 'vault:pq-readiness', { atRest: 'symmetric-256', vault: { kind: 'header', version: 2, upgrade: 'running' }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
   const banner = page.getByTestId('vault-format-banner')
   await expect(banner).toBeVisible({ timeout: 10_000 })
   // It sits above the notes (they moved down to make room) and does not overlap them.
@@ -174,7 +174,7 @@ test('T-PQ-D2-02: the vault format banner never covers the editor or takes focus
   await page.keyboard.type(' still')
   await expect(page.getByTestId('canvas')).toContainText('typing continues still')
   // When the update finishes the line becomes "updated", once.
-  await stubInvoke(app, 'vault:pq-readiness', { atRest: 'symmetric-256', vault: { kind: 'header', version: 3, upgrade: 'done', blockingDevices: [] }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
+  await stubInvoke(app, 'vault:pq-readiness', { atRest: 'symmetric-256', vault: { kind: 'header', version: 3, upgrade: 'done' }, transports: [], updateSignature: 'ed25519', plaintextSync: false, requirePq: false })
   await expect(banner).toContainText('Vault format updated', { timeout: 10_000 })
   expect(await banner.evaluate((el) => el.contains(document.activeElement))).toBe(false)
   await app.close()

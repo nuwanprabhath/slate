@@ -336,7 +336,7 @@ export class Migration {
     if (!check.ok) throw new Error(check.reason ?? 'Choose a longer password')
     const kdf = await kdfForProfile(profile, this.deps.kdf)
     // §3.5 `Created`: header v3 when the gate allows it (INV-PQ-5), else v2 for the upgrade to raise later.
-    const headerVersion = (await pqGateBlocking(this.deps)).length === 0 ? 3 : 2
+    const headerVersion = (await pqGateBlocking(this.deps)) === null ? 3 : 2
     const { header, mk, recoveryKey } = await createVault({ password, profile, kdf, headerVersion }, this.opts)
     this.prepared = { header, mk, confirmed: false }
     return { kind: 'recovery', recoveryKey: recoveryKey! }
@@ -606,7 +606,7 @@ export class Migration {
       // The password slot: what `rekeyHeader` moves into history must be the base's own password wrap.
       const kdf = await kdfForProfile(profile, this.deps.kdf)
       // PQ-B4 (roadmap §3.6): a v1 vault goes straight to v3 when the gate allows it, so in one remote CAS.
-      const headerVersion = kind === 'upgrade' && (await pqGateBlocking(this.deps)).length === 0 ? 3 : 2
+      const headerVersion = kind === 'upgrade' && (await pqGateBlocking(this.deps)) === null ? 3 : 2
       const made = await rekeyHeader({ kind, base, mk, proof, password: nextPassword, kdf, profile, headerVersion }, this.opts)
       this.rekeyPrepared = { kind, base, header: made.header, mk: made.mk, confirmed: false }
       return { recoveryKey: made.recoveryKey }

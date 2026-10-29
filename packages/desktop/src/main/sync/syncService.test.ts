@@ -144,6 +144,18 @@ describe('SyncService', () => {
     expect(records[0]).toMatchObject({ name: 'A', epochs: 1, pq: 1 })
   })
 
+  it("marks this device's own record, found by the path the engine writes it under (devices/<deviceId>.json)", async () => {
+    const a = await device('A')
+    const b = await device('B')
+    await a.service.now()
+    await b.service.now()
+    const mine = (records: Array<{ name: string; own?: boolean }>) => records.filter((r) => r.own === true).map((r) => r.name)
+    const fromA = await a.service.deviceRecords()
+    expect(fromA).toHaveLength(2)
+    expect(mine(fromA)).toEqual(['A'])
+    expect(mine(await b.service.deviceRecords())).toEqual(['B'])
+  })
+
   it('T-PQ-B2-03: a second sync with no change writes no new device record', async () => {
     const a = await device('A')
     await a.service.now()
