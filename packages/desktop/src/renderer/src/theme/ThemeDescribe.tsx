@@ -83,18 +83,18 @@ export function ThemeDescribe({ onSaved }: { onSaved: (id: string) => void }) {
         {busy ? (
           <>
             <span data-testid="theme-generating">Claude is designing, usually under a minute…</span>
-            <button type="button" className="settings-button" data-testid="theme-generate-cancel" onClick={() => void window.slate.themes.cancelGenerate()}>Cancel</button>
+            <button type="button" className="btn" data-testid="theme-generate-cancel" onClick={() => void window.slate.themes.cancelGenerate()}>Cancel</button>
           </>
         ) : (
-          <button type="button" className="settings-button" data-testid="theme-generate" disabled={request.trim() === ''} onClick={() => void generate()}>
+          <button type="button" className="btn" data-testid="theme-generate" disabled={request.trim() === ''} onClick={() => void generate()}>
             {result === null ? 'Generate' : 'Refine'}
           </button>
         )}
         {result !== null && !busy && (
           <>
             <span data-testid="theme-preview-name">Previewing <strong>{result.spec.name}</strong></span>
-            <button type="button" className="settings-button" data-testid="theme-preview-save" onClick={() => void save()}>Save</button>
-            <button type="button" className="settings-button" data-testid="theme-preview-discard" onClick={discard}>Discard</button>
+            <button type="button" className="btn" data-testid="theme-preview-save" onClick={() => void save()}>Save</button>
+            <button type="button" className="btn" data-testid="theme-preview-discard" onClick={discard}>Discard</button>
           </>
         )}
       </div>

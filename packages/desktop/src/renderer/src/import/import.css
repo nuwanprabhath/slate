@@ -6,16 +6,15 @@
 .import-dialog h3 { margin: 14px 0 6px; font-size: 13px; }
 .import-dialog header button { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
 .import-dialog .muted { color: var(--muted); }
-.import-dialog button { font: inherit; color: var(--text); background: var(--hover); border: 1px solid var(--border); border-radius: 4px; padding: 5px 12px; cursor: pointer; }
-.import-dialog button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
-.import-dialog button:disabled { opacity: 0.5; cursor: default; }
+/* The button look is controls.css's (.btn, .btn.primary); the close and link buttons drop it. */
+.import-dialog button { padding: 5px 12px; }
 .import-dialog button.link { background: none; border: none; padding: 0; color: var(--accent); }
 .import-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .import-dialog ol { padding-left: 20px; line-height: 1.6; }
 .import-dialog code { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .import-error { color: var(--danger); overflow-wrap: anywhere; }
 .import-client-id { display: flex; gap: 8px; }
-.import-client-id input { flex: 1; font: 13px ui-monospace, Menlo, Consolas, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; }
+.import-client-id input { flex: 1; font: 13px ui-monospace, Menlo, Consolas, monospace; padding: 5px 8px; }
 .import-tree, .import-tree ul { list-style: none; margin: 0; padding: 0; }
 .import-tree { border: 1px solid var(--border); border-radius: 4px; max-height: 40vh; overflow: auto; padding: 4px 0; }
 .import-tree-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer; user-select: none; }

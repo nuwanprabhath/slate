@@ -94,9 +94,8 @@ html[data-material='glass']:not([data-texture='none']) .page-view {
     linear-gradient(to right, var(--reading-edge), var(--bg) var(--reading-feather), var(--bg) calc(100% - var(--reading-feather)), var(--reading-edge));
 }
 
-/* Folio-style themes (an Inter UI font): pill-shaped buttons and dropdowns with a hairline border. */
+/* Folio-style themes (an Inter UI font): pill-shaped buttons and dropdowns. */
 html[data-ui-font='inter'] :is(.toolbar button, .toolbar select, .title-bar button) { border-radius: 999px; }
-html[data-ui-font='inter'] .toolbar select { border: 1px solid var(--border); }
 html[data-ui-font='inter'] .slate-box-content { line-height: 1.6; }
 
 /* Animations: Off (or automatic with the OS asking for less motion, or no GPU). */
@@ -116,9 +115,10 @@ html[data-motion='reduced'] *, html[data-motion='reduced'] *::before, html[data-
 .theme-card-name { font-weight: 600; }
 .theme-card-effects { color: var(--muted); font-size: 11px; }
 .theme-card-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; }
-.theme-card-actions button { padding: 1px 5px; font-size: 11px; background: var(--popover); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+/* Compact on purpose: they sit over the card's corner, so they keep their small type and the popover fill. */
+.theme-card-actions button { padding: 1px 5px; font-size: 11px; background: var(--popover); color: var(--text); border: 1px solid var(--control-border); border-radius: 4px; cursor: pointer; }
 .theme-describe { display: flex; flex-direction: column; gap: 6px; }
-.theme-describe textarea { font: inherit; padding: 6px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; resize: vertical; }
+.theme-describe textarea { padding: 6px 8px; resize: vertical; }
 .theme-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .theme-error { margin: 0; color: var(--danger); }
 .theme-note { margin: 0; color: var(--muted); font-size: 12px; }

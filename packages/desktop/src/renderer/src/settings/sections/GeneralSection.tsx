@@ -7,7 +7,7 @@ export function GeneralSection({ onShowConnectAgents }: SectionProps) {
         <strong>AI agents</strong>
         <span className="settings-help">Agents see only the notebooks, sections and pages you allow: right-click one → AI access.</span>
       </span>
-      <button type="button" className="settings-button" data-testid="settings-connect-agents" onClick={onShowConnectAgents}>
+      <button type="button" className="btn" data-testid="settings-connect-agents" onClick={onShowConnectAgents}>
         Connect AI agents…
       </button>
     </div>

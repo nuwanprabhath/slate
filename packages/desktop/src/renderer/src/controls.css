@@ -10,7 +10,7 @@
 :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select) {
   background-color: var(--control-bg);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-control);
 }
 :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea) { padding: 4px 8px; }
@@ -40,7 +40,7 @@
   height: 15px;
   margin: 2px 0 0;
   background: var(--control-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: 3px;
   cursor: pointer;
   vertical-align: middle;
@@ -59,8 +59,19 @@
 :where(input[type='radio']):checked::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-contrast); }
 :where(input, select, textarea):disabled { opacity: 0.5; cursor: default; }
 
-:where(input, select, textarea, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-:where(input:not([type='checkbox'], [type='radio']), select, textarea):focus { border-color: var(--accent); }
+/*
+ * One focus indicator per control. A field's is its own edge: the border turns accent and a flush
+ * 1px shadow makes it a 2px ring with no gap, on any focus (a click on a field or dropdown matches
+ * :focus-visible too, so an outline there drew a second ring a pixel outside the border). Wrapper
+ * fields (.find-input) do the same on :focus-within. Everything else gets the outline, from the
+ * keyboard only.
+ */
+:where(button, input:is([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'])):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), select, textarea):focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
 
 /* The font combo box (settings/fields/FontCombo.tsx). */
 .font-combo { position: relative; display: inline-flex; width: 240px; }
@@ -74,7 +85,9 @@
 /*
  * Buttons: `.btn` (secondary), `.btn.primary` (the one main action), `.btn.danger`. A <button> with
  * no class of its own gets the secondary look too, so none is ever left as the browser's grey
- * default (UI audit, native-control); a component class still overrides it (:where).
+ * default (UI audit, native-control); a component class still overrides it (:where). A secondary
+ * button is a field's fill with the control edge (3:1 on panel, bg and popover), so it reads as
+ * something to press on every theme's surface, not as a label.
  */
 :where(.btn, button:not([class])) {
   display: inline-flex;
@@ -83,9 +96,9 @@
   gap: 6px;
   min-height: 26px;
   padding: 3px 10px;
-  background: var(--hover);
+  background: var(--control-bg);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-control);
   white-space: nowrap;
   cursor: pointer;
