@@ -70,12 +70,14 @@ export function SettingsDialog({ settings, section, onClose, onShowConnectAgents
               ✕
             </button>
           </header>
-          {active && (
-            <>
-              <p className="settings-blurb">{active.blurb}</p>
-              <active.Component settings={shown} patch={patch} onClose={onClose} onShowConnectAgents={onShowConnectAgents} />
-            </>
-          )}
+          <div className="settings-body" data-testid="settings-body">
+            {active && (
+              <>
+                <p className="settings-blurb">{active.blurb}</p>
+                <active.Component settings={shown} patch={patch} onClose={onClose} onShowConnectAgents={onShowConnectAgents} />
+              </>
+            )}
+          </div>
         </div>
       </section>
     </div>

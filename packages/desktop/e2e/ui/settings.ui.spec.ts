@@ -14,7 +14,7 @@ test('UI: every Settings section', async ({ app, page }) => {
   await page.keyboard.press('Escape')
   for (const id of ids) {
     await reviewUi(app, page, `settings ${id}`, {
-      scroll: '[data-testid="settings-pane"]',
+      scroll: '[data-testid="settings-body"]',
       open: async (p) => {
         if (!(await p.getByTestId('settings-dialog').isVisible())) await p.keyboard.press(`${MOD}+,`)
         await p.getByTestId(`settings-nav-${id}`).click()
