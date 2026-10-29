@@ -109,7 +109,7 @@ Hybrid key id: first 16 hex digits of SHA-256(Ed25519 SPKI DER ‖ ML-DSA SPKI D
 | Id | Invariant | Closed by |
 | --- | --- | --- |
 | INV-PQ-1 | No artefact carries public-key encryption without ML-KEM | T-PQ-B1-04 (`header.test.ts`) |
-| INV-PQ-2 | No note ciphertext changes during the upgrade | T-PQ-B3-02 (`pqUpgrade.test.ts`, `e2e/pq-upgrade.spec.ts`) |
+| INV-PQ-2 | No note ciphertext changes during the upgrade | T-PQ-B3-02 (`pqUpgrade.test.ts`); T-PQ-B3-10 checks a note survives end to end |
 | INV-PQ-3 | Password, recovery key and quick unlock keep working | T-PQ-B3-01, T-PQ-B3-10 |
 | INV-PQ-4 | After v3, every v2 copy of the header is refused | T-PQ-B3-05 |
 | INV-PQ-5 | No v3 while any device lacks `pq ≥ 1` or cannot be read | T-PQ-B2-02, T-PQ-B3-04 |
