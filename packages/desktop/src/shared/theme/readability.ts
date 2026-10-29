@@ -23,6 +23,10 @@ export function emptyReport(): ThemeReport {
   return { droppedColors: 0, clamped: 0, unknown: 0, nudged: 0 }
 }
 
+/** The surfaces fields and buttons sit on, and how far their edge must stand out (WCAG 1.4.11, non-text contrast). */
+export const CONTROL_SURFACES: PaletteToken[] = ['panel', 'bg', 'popover']
+export const CONTROL_BORDER_MIN = 3
+
 const READING: PaletteToken[] = ['page', 'box-bg', 'panel', 'panel-2', 'toolbar-bg', 'sidebar-bg', 'popover', 'selected', 'hover']
 
 /** Which colours must be readable on which surfaces, and how readable. */
@@ -39,6 +43,8 @@ const PALETTE_CONTRAST: Array<{ fg: PaletteToken; on: PaletteToken[]; min: numbe
   { fg: 'code-comment', on: ['panel'], min: 3 },
   { fg: 'code-title', on: ['panel'], min: 3 },
   { fg: 'accent-contrast', on: ['accent'], min: 4.5 },
+  // Only when the theme sets it; otherwise `deriveControlBorder` makes one that passes.
+  { fg: 'control-border', on: CONTROL_SURFACES, min: CONTROL_BORDER_MIN },
 ]
 
 /** What each surface is drawn on, nearest first; anything not listed sits on the window (`bg`). */
@@ -127,6 +133,7 @@ export function ensureReadable(spec: ThemeSpec, report: ThemeReport): void {
     const set = all.filter((s) => spec.palette[s] !== undefined)
     const ends = gradientEnds(spec, all)
     const on = [...(set.length > 0 ? set : all), ...ends]
+    if (fg === 'control-border' && spec.palette[fg] === undefined) continue
     const touched = textured || ends.length > 0 || spec.effects.length > 0 || spec.palette[fg] !== undefined || set.length > 0
     if (!touched) continue
     let color = resolved(fg)
@@ -176,4 +183,23 @@ export function ensureReadable(spec: ThemeSpec, report: ThemeReport): void {
       }
     }
   }
+}
+
+/**
+ * The control edge of a theme that does not set one: its own border, darkened on a light theme or
+ * lightened on a dark one until it reaches 3:1 on every surface a control sits on. A theme that
+ * sets none of the colours this depends on keeps the default.
+ */
+export function deriveControlBorder(palette: Partial<Record<PaletteToken, string>>): string {
+  const inputs: PaletteToken[] = ['border', ...CONTROL_SURFACES]
+  if (inputs.every((t) => palette[t] === undefined)) return toHex8(parseColor(DEFAULT_PALETTE['control-border'])!)
+  const resolved = (t: PaletteToken): RGBA => parseColor(palette[t] ?? DEFAULT_PALETTE[t])!
+  const window = { ...resolved('bg'), a: 1 }
+  const surfaces = CONTROL_SURFACES.map((t) => (t === 'bg' ? window : composite(resolved(t), window)))
+  let edge = resolved('border')
+  // Two passes: fitting one surface can undo another when they differ a lot.
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const s of surfaces) if (contrastRatio(edge, s) < CONTROL_BORDER_MIN) edge = nudgeForContrast(edge, s, CONTROL_BORDER_MIN)
+  }
+  return toHex8(edge)
 }

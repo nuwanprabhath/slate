@@ -23,17 +23,23 @@
   display: flex;
   align-items: center;
   width: 260px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 2px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
 }
 
+/* A field around its input: the same one ring as controls.css gives a focused field. */
 .find-input:focus-within {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .find-input.has-error {
   border-color: var(--danger);
+}
+
+.find-input.has-error:focus-within {
+  box-shadow: 0 0 0 1px var(--danger);
 }
 
 .find-input input {
@@ -42,6 +48,7 @@
   padding: 3px 6px;
   border: none;
   outline: none;
+  box-shadow: none;
   background: transparent;
   color: inherit;
   font: inherit;

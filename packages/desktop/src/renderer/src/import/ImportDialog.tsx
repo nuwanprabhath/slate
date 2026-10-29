@@ -140,7 +140,7 @@ export function ImportDialog({ onClose, initial = 'graph' }: { onClose: () => vo
             )}
             <button
               type="button"
-              className="primary"
+              className="btn primary"
               data-testid="import-sign-in"
               onClick={() =>
                 void window.slate.onenote.signIn().then(refresh, (e: unknown) => setError(ERROR_TEXT(e)))
@@ -205,7 +205,7 @@ function NotConfigured({ onSaved }: { onSaved: () => void }) {
           autoComplete="off"
           aria-label="Application (client) ID"
         />
-        <button type="submit" className="primary" disabled={!id.trim()}>
+        <button type="submit" className="btn primary" disabled={!id.trim()}>
           Save
         </button>
       </form>
@@ -279,7 +279,7 @@ function Picker({ account, tree, onSignOut, onStart }: { account?: string; tree:
         </ul>
       )}
       <footer>
-        <button type="button" className="primary" data-testid="import-start" disabled={n === 0} onClick={() => onStart([...checked])}>
+        <button type="button" className="btn primary" data-testid="import-start" disabled={n === 0} onClick={() => onStart([...checked])}>
           Import {n} {n === 1 ? 'section' : 'sections'}
         </button>
       </footer>
@@ -343,7 +343,7 @@ function BackupPicker({ pick, onStart }: { pick: BackupPick | null; onStart: (id
         ))}
       </ul>
       <footer>
-        <button type="button" className="primary" data-testid="import-start" disabled={ids.length === 0} onClick={() => onStart(ids)}>
+        <button type="button" className="btn primary" data-testid="import-start" disabled={ids.length === 0} onClick={() => onStart(ids)}>
           Import {ids.length} {ids.length === 1 ? 'section' : 'sections'}
         </button>
       </footer>
@@ -407,7 +407,7 @@ function Report({ result, onRetry, onDone }: { result: ImportProgress; onRetry: 
         </>
       )}
       <footer>
-        <button type="button" className="primary" data-testid="import-done" onClick={onDone}>
+        <button type="button" className="btn primary" data-testid="import-done" onClick={onDone}>
           Done
         </button>
       </footer>

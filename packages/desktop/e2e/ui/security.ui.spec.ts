@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, MOD, test } from '../fixtures'
+import { EVERY_THEME, expectButtonVisible } from './controls'
 import { reviewUi } from './review'
 import type { CryptoModuleStatus, PqReadiness } from '../../src/shared/api'
 import { stubInvoke, unlockedApp } from './states'
@@ -31,6 +32,31 @@ test('UI: Security section of an encrypted vault', async () => {
         await p.getByTestId('security-new').fill('short')
         await expect(p.getByTestId('security-new-strength')).not.toContainText('A few unrelated words')
         await p.getByTestId('security-change-password').scrollIntoViewIfNeeded()
+      },
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+/**
+ * Settings → Security in every built-in theme: "Check now", "Rotate keys…" and "Convert to FIPS
+ * 140-3…" must read as buttons (in Folio they were a faint label on the panel).
+ */
+test('UI: Security section buttons in every built-in theme', async () => {
+  test.setTimeout(600_000)
+  const { app, page } = await unlockedApp()
+  try {
+    await reviewUi(app, page, 'security every theme', {
+      themes: EVERY_THEME,
+      scroll: '[data-testid="settings-pane"]',
+      open: async (p) => {
+        await openSecurity(p)
+        for (const id of ['security-pq-check', 'security-rotate', 'security-convert', 'security-change-submit']) {
+          const button = p.getByTestId(id)
+          await expect(button).toBeVisible()
+          await expectButtonVisible(button, id)
+        }
       },
     })
   } finally {
