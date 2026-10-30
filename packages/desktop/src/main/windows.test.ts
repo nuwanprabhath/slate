@@ -19,8 +19,8 @@ describe('the window factory', () => {
     expect(prefs.preload).toBe('/p.js')
   })
 
-  it("has Chromium's spell checker, which the session runs only while the setting is on (spellcheck.ts)", () => {
-    expect(windowOptions(base).webPreferences!.spellcheck).toBe(true)
+  it("has Chromium's spell checker only where it is the system's (spellcheck.ts); the session runs it only while the setting is on", () => {
+    expect(windowOptions(base).webPreferences!.spellcheck).toBe(process.platform === 'darwin' || process.platform === 'win32')
   })
 
   it('title-bar options cannot replace the preferences (red team 8a)', () => {

@@ -51,6 +51,7 @@ export function ThemeGrid({ all, activeId, onChoose, onDuplicate, onRename, onDe
             {renaming === t.id ? (
               <input
                 className="theme-rename"
+                spellCheck={false}
                 data-testid="theme-rename-input"
                 autoFocus
                 defaultValue={t.spec.name}

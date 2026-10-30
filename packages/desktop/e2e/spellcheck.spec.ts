@@ -35,3 +35,9 @@ test('"Underline misspelled words" starts off, and turns on the checker and the 
   await page.keyboard.press('Escape')
   await expect(page.locator('[data-testid="box-editor"]').first()).toHaveAttribute('spellcheck', 'false')
 })
+
+test('font names are never underlined as misspelled words', async ({ page }) => {
+  await page.getByTestId('activity-settings').click()
+  await page.locator('.settings-nav-item', { hasText: 'Appearance' }).click()
+  for (const id of ['setting-note-font', 'setting-app-font']) await expect(page.getByTestId(id)).toHaveAttribute('spellcheck', 'false')
+})

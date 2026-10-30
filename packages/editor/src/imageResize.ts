@@ -22,12 +22,14 @@ export interface CornerDrag {
 /**
  * The width a corner drag gives: whichever of the horizontal and vertical movement is larger, both
  * measured outward from the dragged corner, between 32px and `max` (the box's content width).
+ * Null when the box is narrower than 32px: there is no width to give.
  */
-export function resizedWidth({ corner, startWidth, aspect, dx, dy }: CornerDrag, max: number): number {
+export function resizedWidth({ corner, startWidth, aspect, dx, dy }: CornerDrag, max: number): number | null {
+  if (max < IMAGE_MIN_WIDTH) return null
   const fromX = corner.endsWith('e') ? dx : -dx
   const fromY = (corner.startsWith('s') ? dy : -dy) * aspect
   const grow = Math.abs(fromY) > Math.abs(fromX) ? fromY : fromX
-  return Math.round(Math.min(max, Math.max(IMAGE_MIN_WIDTH, startWidth + grow)))
+  return Math.round(Math.max(IMAGE_MIN_WIDTH, Math.min(max, startWidth + grow)))
 }
 
 /**
@@ -132,7 +134,7 @@ class ResizeHandles {
   }
 
   private listen(handle: HTMLElement, corner: Corner): void {
-    let drag: { start: CornerDrag; x: number; y: number; max: number; width: number } | null = null
+    let drag: { start: CornerDrag; x: number; y: number; max: number; width: number | null } | null = null
     handle.addEventListener('pointerdown', (e) => {
       const img = this.img
       if (!img || e.button !== 0) return
@@ -146,7 +148,7 @@ class ResizeHandles {
     handle.addEventListener('pointermove', (e) => {
       if (!drag || !this.img) return
       drag.width = resizedWidth({ ...drag.start, dx: e.clientX - drag.x, dy: e.clientY - drag.y }, drag.max)
-      this.img.style.width = `${drag.width}px`
+      this.img.style.width = drag.width === null ? '' : `${drag.width}px`
       this.place()
     })
     const end = (commit: boolean) => (e: PointerEvent) => {
@@ -155,7 +157,7 @@ class ResizeHandles {
       drag = null
       if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId)
       if (this.img) this.img.style.width = ''
-      if (commit && width !== start.startWidth) setImageWidth(this.view, this.pos, width, this.undo)
+      if (commit && width !== null && width !== start.startWidth) setImageWidth(this.view, this.pos, width, this.undo)
       else this.place()
     }
     handle.addEventListener('pointerup', end(true))

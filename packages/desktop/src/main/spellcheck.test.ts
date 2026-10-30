@@ -28,6 +28,21 @@ describe('applySpellcheck', () => {
     expect(session.calls).toEqual(['enabled false', 'enabled true'])
   })
 
+  it('on Windows follows the setting, but never has a reachable dictionary server, and no languages while off', () => {
+    const off = fakeSession()
+    applySpellcheck(off, { spellcheckUnderline: false }, 'win32')
+    expect(off.calls).toContain('enabled false')
+    expect(off.calls).toContain('languages []')
+    const on = fakeSession()
+    applySpellcheck(on, { spellcheckUnderline: true }, 'win32')
+    expect(on.calls).toContain('enabled true')
+    for (const s of [off, on]) {
+      const download = s.calls.find((c) => c.startsWith('download '))
+      expect(download).toBeDefined()
+      expect(new URL(download!.slice('download '.length)).hostname).toBe('127.0.0.1')
+    }
+  })
+
   it('on Linux never turns the checker on, and leaves it nothing to download from anywhere', () => {
     const session = fakeSession()
     applySpellcheck(session, { spellcheckUnderline: true }, 'linux')

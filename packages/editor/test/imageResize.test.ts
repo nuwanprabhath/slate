@@ -78,7 +78,12 @@ describe('resizedWidth', () => {
   it('stays between 32px and the box content width', () => {
     expect(resizedWidth({ ...drag, corner: 'se', dx: -500 }, 1000)).toBe(IMAGE_MIN_WIDTH)
     expect(resizedWidth({ ...drag, corner: 'se', dx: 500 }, 300)).toBe(300)
-    expect(resizedWidth({ ...drag, corner: 'se', dx: -500 }, 20)).toBe(20)
+  })
+
+  it('never goes below 32px, even in a box narrower than that (null: no width to store)', () => {
+    expect(resizedWidth({ ...drag, corner: 'se', dx: -500 }, 10)).toBeNull()
+    expect(resizedWidth({ ...drag, corner: 'se', dx: 500 }, 10)).toBeNull()
+    expect(resizedWidth({ ...drag, corner: 'se', dx: -500 }, -4)).toBeNull()
   })
 })
 
