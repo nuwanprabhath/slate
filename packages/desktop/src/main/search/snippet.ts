@@ -1,3 +1,5 @@
+import { snippetText } from '../../shared/snippetText'
+
 /**
  * About `context` characters either side of `[from, to)`, widened or narrowed to whole words so a
  * result never starts mid-word ("bectl -n api…"); cut ends get an ellipsis. `range` is the match
@@ -18,6 +20,6 @@ export function snippetAround(text: string, from: number, to: number, context: n
   }
   const head = start > 0 ? '…' : ''
   const tail = end < text.length ? '…' : ''
-  const snippet = head + text.slice(start, end).replace(/[￼\n]/g, ' ') + tail
+  const snippet = head + snippetText(text.slice(start, end)) + tail
   return { snippet, range: [from - start + head.length, to - start + head.length] }
 }

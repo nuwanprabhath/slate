@@ -1,4 +1,5 @@
 import { PageDoc, planReplace } from '@slate/core'
+import { snippetText } from '../../../shared/snippetText'
 import { PageSession, pageDocId, type DocPersistence, type FindOptions } from '@slate/editor'
 
 /** A Find in Notes replace: the ticked matches, by page, box, the match's index within its box and its text. */
@@ -149,7 +150,7 @@ export async function replaceInNotes(request: NotesReplace, deps: NotesReplaceDe
         count = session.replace(request.query, request.opts, request.replacement, {
           preserveCase: request.preserveCase,
           numbering: 'search-index',
-          only: (boxId, occurrence, matched) => wanted.get(`${boxId}\n${occurrence}`) === matched,
+          only: (boxId, occurrence, matched) => wanted.get(`${boxId}\n${occurrence}`) === snippetText(matched),
         })
       } catch {
         result.failed++

@@ -217,6 +217,19 @@ describe('replaceInNotes', () => {
     expect(result).toEqual({ replaced: 1, pages: 1, skipped: 1, failed: 0 })
     expect(await storedTexts(persistence, P)).toEqual(['|a+b c'])
   })
+
+  it('replaces a regex match spanning a code block line break, which its snippet shows as a space', async () => {
+    const persistence = store()
+    const P = newPageId('P')
+    const [p1] = seedBlocks(persistence, P, [{ type: 'codeBlock', content: [{ type: 'text', text: 'let a\nb = 1' }] }])
+    const result = await replaceInNotes(
+      request([{ pageId: P, picks: [pick(p1!, 0, 'a b')] }], { query: 'a\\sb', opts: { matchCase: true, wholeWord: false, regex: true }, replacement: 'ab' }),
+      deps(persistence),
+    )
+    await tick()
+    expect(result).toEqual({ replaced: 1, pages: 1, skipped: 0, failed: 0 })
+    expect(await storedTexts(persistence, P)).toEqual(['let ab = 1'])
+  })
 })
 
 describe('previewInNotes', () => {
