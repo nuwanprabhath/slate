@@ -18,9 +18,14 @@ function inside(child: string, parent: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
+/** Whether `path`, symlinks resolved, lies in Slate's data folder (a sync clone there would commit it). */
+export function insideDataDir(path: string, dataDir: string): boolean {
+  return inside(real(path), real(dataDir))
+}
+
 /** §7.1 step 5: a recovery key saved next to the notes it unlocks protects nothing. Null when fine. */
 export function refuseRecoveryPath(path: string, dataDir: string): string | null {
-  if (inside(real(path), real(dataDir))) return 'Save your recovery key outside Slate’s data folder, for example on a USB stick, or print it.'
+  if (insideDataDir(path, dataDir)) return 'Save your recovery key outside Slate’s data folder, for example on a USB stick, or print it.'
   return null
 }
 

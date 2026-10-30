@@ -1,20 +1,24 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { boxWithText } from './canvasHelpers'
 import { clickMenu, expect, test } from './fixtures'
 import { holdSaveDialog, pdfPageCount, pdfText, stubSystemPrint } from './printHelpers'
 
+/** Where the person saves: outside the app's data folder, which the export refuses. */
+const saveDir = () => mkdtempSync(join(tmpdir(), 'slate-print-out-'))
+
 async function titled(page: Page, title: string) {
   await page.getByTestId('page-title').fill(title)
   await page.getByTestId('page-title').press('Enter')
 }
 
-test('Export Page as PDF writes the page, its title and both boxes, to the file chosen in the save dialog', async ({ app, page, userData }) => {
+test('Export Page as PDF writes the page, its title and both boxes, to the file chosen in the save dialog', async ({ app, page }) => {
   await titled(page, 'Quarterly/plan')
   await boxWithText(page, 60, 60, 'AlphaPrinted first box')
   await boxWithText(page, 420, 200, 'BravoPrinted second box')
-  const out = join(userData, 'exported.pdf')
+  const out = join(saveDir(), 'exported.pdf')
   const dialog = await holdSaveDialog(app, out)
   await clickMenu(app, 'export-pdf')
   await expect.poll(dialog.asked).toMatch(/Quarterly plan\.pdf$/)
@@ -67,11 +71,11 @@ test('while printing, only the page shows: title, then the boxes where they are,
   await expect(page.locator('html.print-page')).toHaveCount(0)
 })
 
-test('a page taller than a sheet is split across sheets', async ({ app, page, userData }) => {
+test('a page taller than a sheet is split across sheets', async ({ app, page }) => {
   await boxWithText(page, 60, 60, 'TallStart')
   for (let i = 0; i < 70; i++) await page.keyboard.press('Enter')
   await page.keyboard.type('TallEnd')
-  const out = join(userData, 'tall.pdf')
+  const out = join(saveDir(), 'tall.pdf')
   const dialog = await holdSaveDialog(app, out)
   await clickMenu(app, 'export-pdf')
   await expect.poll(dialog.asked).toMatch(/\.pdf$/)
@@ -80,6 +84,22 @@ test('a page taller than a sheet is split across sheets', async ({ app, page, us
   const pdf = readFileSync(out)
   expect(pdfPageCount(pdf)).toBeGreaterThanOrEqual(2)
   expect(pdfText(pdf)).toContain('TallEnd')
+})
+
+test('a PDF is not saved inside Slate\'s data folder: the person is told and nothing is written', async ({ app, page, userData }) => {
+  await boxWithText(page, 60, 60, 'Refused')
+  const out = join(userData, 'inside.pdf')
+  await app.evaluate(({ dialog }) => {
+    const g = globalThis as { slatePrintWarned?: string[] }
+    g.slatePrintWarned = []
+    Object.assign(dialog, { showMessageBox: (...args: unknown[]) => (g.slatePrintWarned!.push((args[args.length - 1] as { message: string }).message), Promise.resolve({ response: 0, checkboxChecked: false })) })
+  })
+  const dialog = await holdSaveDialog(app, out)
+  await clickMenu(app, 'export-pdf')
+  await expect.poll(dialog.asked).not.toBeNull()
+  await dialog.release()
+  await expect.poll(() => app.evaluate(() => (globalThis as { slatePrintWarned?: string[] }).slatePrintWarned)).toEqual(['Choose a folder outside Slate’s data folder.'])
+  expect(existsSync(out)).toBe(false)
 })
 
 test('a cancelled save writes nothing, and File → Print goes to the system print with backgrounds on', async ({ app, page, userData }) => {

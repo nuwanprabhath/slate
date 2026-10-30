@@ -557,9 +557,10 @@ export interface SlateApi {
 
 /** `title` names the PDF in the save dialog; main never takes a path from the renderer. */
 export type PrintRequest = { kind: 'print' } | { kind: 'pdf'; title: string }
-/** `done` is false when the person cancelled the print or the save dialog. */
+/** `done` is false when the person cancelled, or the save failed (`error`: the error code only, never its message). */
 export interface PrintResult {
   done: boolean
+  error?: string
 }
 
 export interface BackupPick {

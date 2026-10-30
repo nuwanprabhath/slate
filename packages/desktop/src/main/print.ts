@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { PrintRequest, PrintResult } from '../shared/api'
 import { CH } from '../shared/ipc'
 import type { IpcRegistrar } from './ipcGuard'
+import { insideDataDir } from './vault/recoveryFile'
 
 const MAX_TITLE = 1000
 const MAX_NAME = 120
@@ -23,12 +24,12 @@ export function isPrintRequest(value: unknown): value is PrintRequest {
 
 /** The save dialog's suggested name: the title as one plain file name, never a path. */
 export function pdfFileName(title: string): string {
-  const name = Array.from(title, (c) => (c.charCodeAt(0) < 0x20 || c === '\u007f' || '/\\:*?"<>|'.includes(c) ? ' ' : c))
+  // Code points, so a cut never splits an emoji; \p{Cf} takes the bidi overrides that can disguise a name.
+  const cleaned = Array.from(title, (c) => (/[\p{Cc}\p{Cf}]/u.test(c) || '/\\:*?"<>|'.includes(c) ? ' ' : c))
     .join('')
     .replace(/\s+/g, ' ')
     .replace(/^[\s.]+/, '')
-    .slice(0, MAX_NAME)
-    .trim()
+  const name = Array.from(cleaned).slice(0, MAX_NAME).join('').trim()
   return `${name || 'Untitled page'}.pdf`
 }
 
@@ -41,32 +42,74 @@ export interface PrintHost {
   choosePdfPath(sender: WebContents, defaultName: string): Promise<string | null>
   writePdf(path: string, bytes: Uint8Array): Promise<void>
   paper(): Paper
+  /** Notes are open (unlocked or plaintext): rechecked after each await, since a lock can start meanwhile. */
+  isOpen(): boolean
+  /** Why `path` may not take the PDF, or null when it may. */
+  refusePath(path: string): string | null
+  /** A fixed message, never the error's own text: that quotes the path, i.e. the page title. */
+  showError(sender: WebContents, message: string): void
 }
 
-const electronHost: PrintHost = {
-  async choosePdfPath(sender, defaultName) {
-    const win = BrowserWindow.fromWebContents(sender)
-    const options = { title: 'Export Page as PDF', defaultPath: join(app.getPath('documents'), defaultName), filters: [{ name: 'PDF', extensions: ['pdf'] }] }
-    const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
-    return picked.canceled || !picked.filePath ? null : picked.filePath
-  },
-  // Straight to the chosen file: an encrypted vault's page never passes through a temp file.
-  writePdf: (path, bytes) => writeFile(path, bytes),
-  paper: () => paperFor(app.getLocaleCountryCode()),
+export function electronPrintHost(dataDir: string, isOpen: () => boolean): PrintHost {
+  return {
+    async choosePdfPath(sender, defaultName) {
+      const win = BrowserWindow.fromWebContents(sender)
+      const options = { title: 'Export Page as PDF', defaultPath: join(app.getPath('documents'), defaultName), filters: [{ name: 'PDF', extensions: ['pdf'] }] }
+      const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+      return picked.canceled || !picked.filePath ? null : picked.filePath
+    },
+    // Straight to the chosen file, owner-only: an encrypted vault's page never passes through a temp file.
+    writePdf: (path, bytes) => writeFile(path, bytes, { mode: 0o600 }),
+    paper: () => paperFor(app.getLocaleCountryCode()),
+    isOpen,
+    // A sync clone in the data folder would commit the decrypted page.
+    refusePath: (path) => (insideDataDir(path, dataDir) ? 'Choose a folder outside Slate’s data folder.' : null),
+    showError(sender, message) {
+      const win = sender.isDestroyed() ? null : BrowserWindow.fromWebContents(sender)
+      const box = { type: 'warning' as const, message }
+      void (win ? dialog.showMessageBox(win, box) : dialog.showMessageBox(box)).catch(() => {})
+    },
+  }
+}
+
+function errorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' && /^[A-Z0-9_]{1,32}$/.test(code) ? code : 'unknown'
 }
 
 /** File → Print… and File → Export Page as PDF…: the sender's own window, laid out by its print stylesheet. */
-export function registerPrintIpc(ipc: IpcRegistrar, host: PrintHost = electronHost): void {
+export function registerPrintIpc(ipc: IpcRegistrar, host: PrintHost): void {
+  // One dialog per window: a second request while one is open would queue another sheet.
+  const inFlight = new Set<number>()
+  const exportPdf = async (sender: WebContents, title: string): Promise<PrintResult> => {
+    const path = await host.choosePdfPath(sender, pdfFileName(title))
+    if (!path || sender.isDestroyed() || !host.isOpen()) return { done: false }
+    const refused = host.refusePath(path)
+    if (refused) {
+      host.showError(sender, refused)
+      return { done: false }
+    }
+    try {
+      const bytes = await sender.printToPDF({ printBackground: true, pageSize: host.paper() })
+      if (sender.isDestroyed() || !host.isOpen()) return { done: false }
+      await host.writePdf(path, bytes)
+      return { done: true }
+    } catch (error) {
+      const code = errorCode(error)
+      host.showError(sender, `Could not save the PDF (${code}).`)
+      return { done: false, error: code }
+    }
+  }
   ipc.handle(CH.pagePrint, async (e, request: unknown): Promise<PrintResult> => {
     if (!isPrintRequest(request)) throw new Error('Refused a malformed print request')
     const sender = e.sender
-    if (request.kind === 'print') {
-      return new Promise((resolve) => sender.print({ printBackground: true }, (done) => resolve({ done })))
+    if (inFlight.has(sender.id)) return { done: false }
+    inFlight.add(sender.id)
+    try {
+      if (request.kind === 'print') return await new Promise<PrintResult>((resolve) => sender.print({ printBackground: true }, (done) => resolve({ done })))
+      return await exportPdf(sender, request.title)
+    } finally {
+      inFlight.delete(sender.id)
     }
-    const path = await host.choosePdfPath(sender, pdfFileName(request.title))
-    if (!path) return { done: false }
-    const bytes = await sender.printToPDF({ printBackground: true, pageSize: host.paper() })
-    await host.writePdf(path, bytes)
-    return { done: true }
   })
 }
