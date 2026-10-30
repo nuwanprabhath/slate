@@ -85,6 +85,7 @@ export function buildMenu({ store: open, onCheckForUpdates, onLock }: MenuOption
         { type: 'separator' },
         { label: 'Insert Link…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, click: () => send({ cmd: 'link' }) },
         { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => send({ cmd: 'find' }) },
+        { label: 'Replace…', accelerator: isMac ? 'Alt+Cmd+F' : 'Ctrl+H', click: () => send({ cmd: 'replace' }) },
         { id: 'find-in-notes', label: 'Find in Notes…', accelerator: 'CmdOrCtrl+Shift+F', enabled: notes, click: () => send({ cmd: 'find-in-notes' }) },
       ],
     },

@@ -404,6 +404,7 @@ export type MenuCommand =
   | { cmd: 'show-settings'; section?: string }
   | { cmd: 'link' }
   | { cmd: 'find-in-notes' }
+  | { cmd: 'replace' }
 
 export type SearchScope = { kind: 'all' } | { kind: 'notebook'; id: string } | { kind: 'section'; id: string }
 
