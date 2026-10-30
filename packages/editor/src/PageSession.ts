@@ -1,5 +1,5 @@
 import { UndoManager, type LoroDoc } from 'loro-crdt'
-import { PageDoc, arrangeBoxes, computePush, hasOverlaps, contentToJSON, settleOverlaps, type BoxPatch, type BoxRect, type BoxState, type PMJSON } from '@slate/core'
+import { PageDoc, arrangeBoxes, computePush, hasOverlaps, contentToJSON, settleOverlaps, type BoxCopy, type BoxPatch, type BoxRect, type BoxState, type PMJSON } from '@slate/core'
 import { writeContent } from './content'
 import { isEmptyContent } from './emptyBox'
 import { schema } from './extensions'
@@ -8,6 +8,12 @@ import { findInPage, type FindMatch, type FindOptions } from './find'
 export interface DocPersistence {
   load(docId: string): Promise<Uint8Array[]>
   append(docId: string, update: Uint8Array): Promise<void>
+}
+
+/** Work an undo step does outside this page's doc (a box moved here from another page). */
+export interface UndoHook {
+  undo(): Promise<unknown>
+  redo(): Promise<unknown>
 }
 
 export const pageDocId = (pageId: string): string => `page:${pageId}`
@@ -28,11 +34,26 @@ export class PageSession {
   private localEdits = new Set<string>()
   private cleanup: Array<() => void> = []
   private settleTimer: ReturnType<typeof setTimeout> | undefined
+  private readonly persistence: DocPersistence
+  private undoHooks = new Map<string, UndoHook>()
+  private hookCount = 0
+  /** The hook tag the next undo item records: set only while a hooked step commits, or its inverse is pushed. */
+  private pushTag: string | null = null
 
   private constructor(readonly pageId: string, page: PageDoc, persistence: DocPersistence) {
     this.page = page
+    this.persistence = persistence
     // sys:* origins are loro-prosemirror's editor initialisation commits; never undo those.
     this.undoManager = new UndoManager(page.doc, { mergeInterval: UNDO_MERGE_MS, excludeOriginPrefixes: ['sys:'] })
+    this.undoManager.setOnPush(() => ({ value: this.pushTag, cursors: [] }))
+    // Loro pushes the popped step's inverse straight after this, so the tag rides along to redo and back.
+    this.undoManager.setOnPop((isUndo, meta) => {
+      const tag = meta.value
+      const hook = typeof tag === 'string' ? this.undoHooks.get(tag) : undefined
+      if (!hook) return
+      this.pushTag = tag as string
+      void (isUndo ? hook.undo() : hook.redo())
+    })
     this.snapshot = page.listBoxes()
     this.cleanup.push(page.doc.subscribeLocalUpdates((update) => void persistence.append(pageDocId(pageId), update)))
     this.cleanup.push(
@@ -82,6 +103,54 @@ export class PageSession {
     writeContent(this.page.contentMap(id)!, blocks, this.doc)
     this.doc.commit()
     return id
+  }
+
+  /** Boxes as data, back to front, so copies layer as the originals do. */
+  copyBoxes(ids: Iterable<string>): Array<{ id: string; copy: BoxCopy }> {
+    const wanted = new Set(ids)
+    return this.page.stackOrder().flatMap((id) => {
+      const copy = wanted.has(id) ? this.page.copyBox(id) : undefined
+      return copy ? [{ id, copy }] : []
+    })
+  }
+
+  /** Adds boxes from copies (fresh ids) as one undo step; `hook` runs when that step is undone or redone. */
+  addBoxCopies(copies: BoxCopy[], hook?: UndoHook): string[] {
+    let ids: string[] = []
+    if (copies.length > 0) this.ownStep(() => (ids = this.page.addBoxCopies(copies)), hook)
+    return ids
+  }
+
+  /** Puts cut boxes in place as one undo step: those still on the page move, those gone are made again under their ids. */
+  placeBoxes(moves: Map<string, BoxPatch>, remade: Array<{ id: string; copy: BoxCopy }>): void {
+    if (moves.size === 0 && remade.length === 0) return
+    this.ownStep(() => {
+      this.undoManager.groupStart()
+      try {
+        if (moves.size > 0) this.page.updateBoxes(moves)
+        if (remade.length > 0) this.page.addBoxCopies(remade.map((r) => r.copy), remade.map((r) => r.id))
+      } finally {
+        this.undoManager.groupEnd()
+      }
+    })
+  }
+
+  /**
+   * Edits another page's stored doc (one not open here) and waits until its changes are stored.
+   * Undefined when that page has no stored doc (deleted, or never written).
+   */
+  async editStoredPage<T>(pageId: string, edit: (page: PageDoc) => T): Promise<T | undefined> {
+    const updates = await this.persistence.load(pageDocId(pageId))
+    if (updates.length === 0) return undefined
+    const page = PageDoc.fromUpdates(updates)
+    const writes: Array<Promise<void>> = []
+    const off = page.doc.subscribeLocalUpdates((update) => void writes.push(this.persistence.append(pageDocId(pageId), update)))
+    try {
+      return edit(page)
+    } finally {
+      off()
+      await Promise.all(writes)
+    }
   }
 
   /** Removes a box left empty (no text, no image, not private). Returns whether it was removed. */
@@ -146,11 +215,16 @@ export class PageSession {
   }
 
   /** A change made right after typing would otherwise merge into that edit, and undo would take both back. */
-  private ownStep(change: () => void): void {
+  private ownStep(change: () => void, hook?: UndoHook): void {
     this.undoManager.setMergeInterval(0)
+    if (hook) {
+      this.pushTag = `hook:${++this.hookCount}`
+      this.undoHooks.set(this.pushTag, hook)
+    }
     try {
       change()
     } finally {
+      this.pushTag = null
       this.undoManager.setMergeInterval(UNDO_MERGE_MS)
     }
   }
@@ -198,11 +272,19 @@ export class PageSession {
   }
 
   undo(): boolean {
-    return this.undoManager.undo()
+    try {
+      return this.undoManager.undo()
+    } finally {
+      this.pushTag = null
+    }
   }
 
   redo(): boolean {
-    return this.undoManager.redo()
+    try {
+      return this.undoManager.redo()
+    } finally {
+      this.pushTag = null
+    }
   }
 
   close(): void {

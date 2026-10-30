@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { PMJSON } from '@slate/core'
 import { activeEditor } from './activeEditor'
 import { Box, type GroupDrag } from './Box'
+import { boxClipboard, clipMatches, copyBoxes, cutBoxes, duplicateBoxes, pasteBoxes } from './boxClipboard'
 import { CanvasMenu } from './CanvasMenu'
 import { imageFilesFrom, pasteHtml } from './images'
 import { linkedTextBlocks, pastePlain } from './links'
@@ -43,6 +44,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   const [menu, setMenu] = useState<Point | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
+  const cutIds = useSyncExternalStore(boxClipboard.subscribe, () => boxClipboard.cutIn(session.pageId))
 
   // Back to front: each box's place in the stack (z, then id), so overlapping boxes layer the same everywhere.
   const layers = useMemo(() => {
@@ -91,6 +93,30 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     if (!(onHandle && selectionRef.current.has(id)) && selectionRef.current.size > 0) setSelection(NO_SELECTION)
     return false
   }, [])
+
+  const onHandleClick = useCallback((id: string) => {
+    setSelection(new Set([id]))
+    // Out of the handle, so Mod+X/C/D, Delete and Escape act on the selection.
+    canvasRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  // Editing a box marked for cut takes the mark off: the cut no longer holds what the box does.
+  useEffect(() => {
+    if (cutIds.size === 0) return
+    return session.doc.subscribe((batch) => {
+      if (batch.by !== 'local' || batch.origin?.startsWith('sys:')) return
+      for (const e of batch.events) if (e.path.length > 2 && e.path[0] === 'boxes') boxClipboard.noteEdited(session.pageId, String(e.path[1]))
+    })
+  }, [cutIds, session])
+
+  useEffect(() => {
+    if (cutIds.size === 0) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') boxClipboard.cancelCut()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cutIds])
 
   const onGroupDrag = useCallback(
     (drag: GroupDrag | null, commit: boolean) => {
@@ -176,6 +202,16 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
       const files = imageFilesFrom(e.clipboardData)
       const text = e.clipboardData?.getData('text/plain') ?? ''
       const html = e.clipboardData?.getData('text/html') ?? ''
+      const clip = boxClipboard.get()
+      if (clip && clipMatches(clip, text, html)) {
+        e.preventDefault()
+        setCaret(null)
+        void pasteBoxes(session, at ?? { x: (scrollRoot?.scrollLeft ?? 0) + 40, y: (scrollRoot?.scrollTop ?? 0) + 40 }).then((ids) => {
+          setSelection(new Set(ids))
+          canvasRef.current?.focus({ preventScroll: true })
+        })
+        return
+      }
       if (files.length === 0 && text.trim() === '' && html.trim() === '') return
       e.preventDefault()
       if (at && files.length === 0) {
@@ -234,6 +270,19 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
       e.preventDefault()
       if (key === 'z' && !e.shiftKey) session.undo()
       else session.redo()
+      return
+    }
+    if (isMod(e) && !e.shiftKey && !e.altKey && (key === 'x' || key === 'c' || key === 'd') && selectionRef.current.size > 0) {
+      e.preventDefault()
+      const ids = selectionRef.current
+      if (key === 'd') {
+        setSelection(new Set(duplicateBoxes(session, ids)))
+        return
+      }
+      const clip = key === 'x' ? cutBoxes(session, ids) : copyBoxes(session, ids)
+      // The cut mark is what shows now; the selection's ring would draw over it.
+      if (key === 'x') setSelection(NO_SELECTION)
+      if (clip) void services.copyRich(clip.text, clip.html)
       return
     }
     const queue = queueRef.current
@@ -300,6 +349,8 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
               onPress={onBoxPress}
               onGroupDrag={onGroupDrag}
               groupDrag={groupDrag}
+              cut={cutIds.has(b.id)}
+              onHandleClick={onHandleClick}
             />
           ))}
       </div>

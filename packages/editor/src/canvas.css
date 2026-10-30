@@ -72,3 +72,6 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-box-content li[data-checked='true']::before { background: var(--accent); border-color: var(--accent); }
 .slate-box-content li[data-checked='true']::after { content: ''; position: absolute; left: calc(-1.4em + 0.34em); top: calc(0.3em + 0.14em); width: 0.24em; height: 0.48em; border: solid var(--accent-contrast); border-width: 0 2px 2px 0; transform: rotate(45deg); pointer-events: none; }
 .slate-box-content li[data-checked='true'] > p { color: var(--muted); text-decoration: line-through; }
+/* Marked by Mod+X until a paste moves it. The parts fade, not the box: opacity on .slate-box would make it a stacking context and break the layering above. */
+.slate-box.is-cut { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.slate-box.is-cut .slate-box-body { opacity: 0.5; }

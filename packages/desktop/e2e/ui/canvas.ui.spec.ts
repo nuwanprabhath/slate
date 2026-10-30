@@ -101,3 +101,28 @@ test('UI: an image inside a shift+click selection, and a clicked image', async (
     },
   })
 })
+
+test('UI: a box marked for cut', async ({ app, page }) => {
+  const a = await boxWithText(page, 60, 60, 'This box is cut: a paste moves it.')
+  await boxWithText(page, 60, 240, 'This box stays where it is.')
+  await a.hover()
+  await a.getByTestId('box-handle').click()
+  await page.keyboard.press(`${MOD}+x`)
+  await expect(a).toHaveClass(/is-cut/)
+  await page.mouse.move(1, 1)
+  await reviewUi(app, page, 'box marked for cut')
+})
+
+test('UI: pasted boxes', async ({ app, page }) => {
+  const a = await boxWithText(page, 60, 60, 'First copied box')
+  const b = await boxWithText(page, 60, 200, 'Second copied box')
+  await a.getByTestId('box-handle').click({ modifiers: [mod] })
+  await b.getByTestId('box-handle').click({ modifiers: [mod] })
+  await page.keyboard.press(`${MOD}+c`)
+  await page.getByTestId('canvas').click({ position: { x: 360, y: 360 } })
+  await page.keyboard.press(`${MOD}+v`)
+  await expect(page.getByTestId('box')).toHaveCount(4)
+  await expect(page.locator('[data-testid="box"][aria-selected="true"]')).toHaveCount(2)
+  await page.mouse.move(1, 1)
+  await reviewUi(app, page, 'pasted boxes')
+})
