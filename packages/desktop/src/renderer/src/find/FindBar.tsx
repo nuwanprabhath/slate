@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 import { compileQuery, findMatches, findStore, type FindMatch, type FindOptions, type PageSession } from '@slate/editor'
+import { currentToReplace } from './currentMatch'
 import './find.css'
 
 /** Quiet time after a page edit before the search re-runs. */
@@ -206,10 +207,11 @@ export function FindBar({ session }: { session: PageSession }) {
   }
 
   const replaceCurrent = () => {
-    const match = matches[index]
-    if (!match) return
-    const occurrence = matches.slice(0, index).filter((m) => m.boxId === match.boxId).length
-    session.replace(query, opts, replacement, { preserveCase, only: (boxId, n) => boxId === match.boxId && n === occurrence })
+    const fresh = session.find(query, opts)
+    const target = currentToReplace(matches, index, fresh)
+    // Stale highlights: show the page's matches as they are now, and let the user press again.
+    if (!target) return setMatches(fresh)
+    session.replace(query, opts, replacement, { preserveCase, only: (boxId, n) => boxId === target.boxId && n === target.occurrence })
     // The next match slides into this place, unless the replacement is itself a match: step past it.
     if (!opts.regex) setCurrent(index + findMatches(replacement, query, opts).length)
   }
