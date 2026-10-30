@@ -44,11 +44,15 @@ interface Props {
   onGroupDrag: (drag: GroupDrag | null, commit: boolean) => void
   /** The selection's live offset while one of its handles is dragged. */
   groupDrag: GroupDrag | null
+  /** Marked by Mod+X: the next paste moves it. */
+  cut: boolean
+  /** A press and release on the handle without moving: selects the box. */
+  onHandleClick: (id: string) => void
 }
 
 type Gesture = { x: number; y: number; width: number; height?: number }
 
-function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick, layer, selected, handleShown, onPress, onGroupDrag, groupDrag }: Props) {
+function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick, layer, selected, handleShown, onPress, onGroupDrag, groupDrag, cut, onHandleClick }: Props) {
   const onFocus = () => {
     session.bringToFront(box.id)
     onFocusBox(box.id)
@@ -124,6 +128,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
       target.removeEventListener('pointerup', up)
       if (group) {
         onGroupDrag(groupDelta, true)
+        if (groupDelta.dx === 0 && groupDelta.dy === 0) onHandleClick(box.id)
         return
       }
       const patch: BoxPatch = { x: Math.round(current.x), y: Math.round(current.y), width: Math.round(current.width) }
@@ -131,6 +136,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
       if (current.height !== undefined) patch.height = current.height <= minHeight + 1 ? null : Math.round(current.height)
       if (patch.x === box.x && patch.y === box.y && patch.width === box.width && (patch.height === undefined || (patch.height ?? undefined) === box.height)) {
         setGesture(null)
+        if (mode === 'move') onHandleClick(box.id)
         return
       }
       if (patch.height !== undefined) session.resizeBox(box.id, patch, startHeight, Math.max(minHeight, current.height ?? 0))
@@ -159,7 +165,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
   return (
     <div
       ref={ref}
-      className={['slate-box', box.private && 'is-private', conflict && 'has-conflict', selected && 'is-selected', handleShown && 'handle-shown'].filter(Boolean).join(' ')}
+      className={['slate-box', box.private && 'is-private', conflict && 'has-conflict', selected && 'is-selected', cut && 'is-cut', handleShown && 'handle-shown'].filter(Boolean).join(' ')}
       data-testid="box"
       data-box-id={box.id}
       aria-selected={selected}
@@ -251,6 +257,8 @@ export const Box = memo(
     a.layer === b.layer &&
     a.selected === b.selected &&
     a.handleShown === b.handleShown &&
+    a.cut === b.cut &&
+    a.onHandleClick === b.onHandleClick &&
     a.onPress === b.onPress &&
     a.onGroupDrag === b.onGroupDrag &&
     (a.selected ? a.groupDrag === b.groupDrag : true) &&
