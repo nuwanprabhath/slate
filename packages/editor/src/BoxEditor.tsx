@@ -6,7 +6,7 @@ import type { BoxState } from '@slate/core'
 import { activeEditor } from './activeEditor'
 import { SlateCaret } from './caret'
 import { currentTheme, onThemeChange } from './colorContrast'
-import { cleanPastedHtml, hasDataImage, makeClipboardSerializer, serializeSliceAsText } from './clipboard'
+import { cleanPastedHtml, makeClipboardSerializer, mayHoldImages, serializeSliceAsText } from './clipboard'
 import { buildExtensions, schema } from './extensions'
 import { findHighlightPlugin } from './find'
 import { copyWithImages, imageFilesFrom, insertImages, pasteHtml } from './images'
@@ -64,7 +64,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
             return true
           }
           const html = event.clipboardData?.getData('text/html') ?? ''
-          if (hasDataImage(html)) {
+          if (mayHoldImages(html)) {
             event.preventDefault()
             pasteHtml(view, html, services.putBlob)
             return true

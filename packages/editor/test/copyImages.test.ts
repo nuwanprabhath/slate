@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { buildExtensions } from '../src/extensions'
-import { storeDataImages } from '../src/clipboard'
+import { mayHoldImages, storeDataImages } from '../src/clipboard'
 import { copyWithImages, pasteHtml } from '../src/images'
 
 const editors: Editor[] = []
@@ -101,6 +101,24 @@ describe('storeDataImages', () => {
   })
 })
 
+describe('pasted HTML checks', () => {
+  it('finds pictures by what the parser reads, so an entity or a slash cannot hide one', async () => {
+    const put: string[] = []
+    const store = async (_bytes: Uint8Array, mime: string) => (put.push(mime), IMG)
+    expect(await storeDataImages(`<img src="&#100;ata:image/png;base64,${DATA.split(',')[1]}"><img/src="${DATA}"><img src=" \tda\nta:image/png;base64,${DATA.split(',')[1]}">`, store)).toBe(
+      `<img src="${IMG}"><img src="${IMG}"><img src="${IMG}">`,
+    )
+    expect(put).toHaveLength(3)
+  })
+
+  it('stays fast on a crafted paste', () => {
+    const start = performance.now()
+    mayHoldImages('<img '.repeat(40_000))
+    mayHoldImages(`<p>${'x'.repeat(200_000)}</p>`)
+    expect(performance.now() - start).toBeLessThan(250)
+  })
+})
+
 describe('pasteHtml', () => {
   it('pastes embedded images as stored images, never as data in the page', async () => {
     const editor = make('<p></p>')
@@ -110,5 +128,14 @@ describe('pasteHtml', () => {
     editor.state.doc.descendants((n) => void (n.type.name === 'image' && srcs.push(String(n.attrs.src))))
     expect(srcs).toEqual([IMG])
     expect(editor.state.doc.textContent).toBe('BeforeAfter')
+  })
+
+  it('never keeps image bytes in the page, even when the paste hides them from a text check', async () => {
+    const editor = make('<p></p>')
+    pasteHtml(editor.view, `<p>a</p><img/src="data:image/svg+xml;base64,PHN2Zz4="><img src="&#100;ata:image/png;base64,${DATA.split(',')[1]}">`, async () => IMG)
+    await new Promise((r) => setTimeout(r, 0))
+    const srcs: string[] = []
+    editor.state.doc.descendants((n) => void (n.type.name === 'image' && srcs.push(String(n.attrs.src))))
+    expect(srcs).toEqual([IMG])
   })
 })

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, powerMonitor, protocol, session, systemPreferences } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage, powerMonitor, protocol, session, systemPreferences } from 'electron'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { arch, homedir, release, tmpdir } from 'node:os'
@@ -263,10 +263,24 @@ void app.whenReady().then(async () => {
     (docId) => services().search.docRemoved(docId),
   )
   registerSearchIpc(ipc, () => services().search)
+  // What Slate last put on the clipboard, for the lock to clear (shouldClearClipboard).
+  let copied: { at: number; text: string } | null = null
   registerCopyIpc(
     ipc,
     () => services().blobs,
-    (item) => clipboard.write([new ClipboardItem(Object.fromEntries(Object.entries(item).map(([type, value]) => [type, new Blob([value], { type })])))]),
+    {
+      writeRich: (item) => clipboard.write([new ClipboardItem(Object.fromEntries(Object.entries(item).map(([type, value]) => [type, new Blob([value], { type })])))]),
+      writeImage: async (bytes) => {
+        const image = nativeImage.createFromBuffer(Buffer.from(bytes))
+        if (image.isEmpty()) return false
+        // Electron 45's clipboard is the async W3C-style API; there is no writeImage.
+        await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }) })])
+        return true
+      },
+    },
+    (text) => {
+      copied = { at: Date.now(), text }
+    },
   )
   // out/main sits four levels under the repo root when running from a checkout.
   ipc.handle(CH.mcpLauncher, () =>
@@ -367,7 +381,6 @@ void app.whenReady().then(async () => {
   let failures = 0
   let passwordChangedElsewhere = false
   let preunlockTampered = false
-  let copied: { at: number; text: string } | null = null
   const liveHandles = (): number => {
     try {
       return vaultNative().status().liveHandles

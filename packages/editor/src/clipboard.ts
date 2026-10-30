@@ -37,9 +37,19 @@ export function cleanPastedHtml(html: string): string {
 const PICTURE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp'])
 const BASE64_PICTURE = /^data:(image\/[a-z]+);base64,([a-z0-9+/=\s]*)$/i
 
-/** Pasted HTML with a picture inside it as a data URL: Slate's own copy, Word, some web pages. */
-export function hasDataImage(html: string): boolean {
-  return /<img\s[^>]*src\s*=\s*["']?\s*data:/i.test(html)
+/**
+ * Whether pasted HTML has any picture, which then goes through `storeDataImages`. A cheap test on
+ * the text: whether a src holds a data URL is decided from the parsed attribute, since entities
+ * (`&#100;ata:`) and `<img/src=…>` hide it from any pattern.
+ */
+export function mayHoldImages(html: string): boolean {
+  return /<img/i.test(html)
+}
+
+/** A src as the URL parser reads it: tabs and newlines removed, surrounding spaces and controls trimmed. */
+function urlOf(src: string): string {
+  // eslint-disable-next-line no-control-regex -- the URL standard strips exactly these
+  return src.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '')
 }
 
 /**
@@ -50,7 +60,7 @@ export function hasDataImage(html: string): boolean {
 export async function storeDataImages(html: string, put: (bytes: Uint8Array, mime: string) => Promise<string>): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   for (const img of Array.from(doc.querySelectorAll('img'))) {
-    const src = (img.getAttribute('src') ?? '').trim()
+    const src = urlOf(img.getAttribute('src') ?? '')
     if (!/^data:/i.test(src)) continue
     const match = BASE64_PICTURE.exec(src)
     const mime = match?.[1]?.toLowerCase() ?? ''

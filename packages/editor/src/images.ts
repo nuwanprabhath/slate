@@ -1,6 +1,6 @@
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
-import { hasDataImage, makeClipboardSerializer, serializeSliceAsText, storeDataImages } from './clipboard'
+import { mayHoldImages, makeClipboardSerializer, serializeSliceAsText, storeDataImages } from './clipboard'
 import type { EditorServices } from './services'
 
 /** Image files on the clipboard. Ignored when there is text too (Office apps add a picture of copied text). */
@@ -51,7 +51,7 @@ export function copyWithImages(view: EditorView, event: ClipboardEvent, services
 
 /** Pastes HTML, first storing any picture embedded in it. */
 export function pasteHtml(view: EditorView, html: string, putBlob: EditorServices['putBlob']): void {
-  if (!hasDataImage(html)) {
+  if (!mayHoldImages(html)) {
     view.pasteHTML(html)
     return
   }
