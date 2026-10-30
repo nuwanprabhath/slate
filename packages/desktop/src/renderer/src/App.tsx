@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { activeEditor, EditorServicesContext, openLinkPopover, pastePlainOrLink, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
+import { spellcheckAvailable } from '../../shared/settings/spellcheck'
 import { ActivityBar } from './activity/ActivityBar'
 import { toolsFromViews } from './activity/tools'
 import { usePlugins } from './plugins/usePlugins'
@@ -90,7 +91,7 @@ export function useServices(settings: Settings): EditorServices {
       markdownShortcuts: settings.markdownShortcuts,
       autoBullets: settings.autoBullets,
       linkPastedUrls: settings.linkPastedUrls,
-      spellcheckUnderline: settings.spellcheckUnderline,
+      spellcheckUnderline: settings.spellcheckUnderline && spellcheckAvailable(window.slate.chrome.platform),
       openExternal: (url) => window.slate.openExternal(url),
     }),
     [settings.markdownShortcuts, settings.autoBullets, settings.linkPastedUrls, settings.spellcheckUnderline],

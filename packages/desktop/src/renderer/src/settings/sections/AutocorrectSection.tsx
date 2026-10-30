@@ -1,7 +1,9 @@
 import type { SectionProps } from '../registry'
 import { CheckboxSetting } from '../fields/CheckboxSetting'
+import { SPELLCHECK_UNAVAILABLE_HELP, spellcheckAvailable } from '../../../../shared/settings/spellcheck'
 
 export function AutocorrectSection({ settings, patch }: SectionProps) {
+  const spelling = spellcheckAvailable(window.slate.chrome.platform)
   return (
     <>
       <CheckboxSetting
@@ -28,8 +30,9 @@ export function AutocorrectSection({ settings, patch }: SectionProps) {
       <CheckboxSetting
         testId="setting-spellcheck-underline"
         label="Underline misspelled words"
-        help="Slate never corrects them for you."
-        checked={settings.spellcheckUnderline}
+        help={spelling ? 'Slate never corrects them for you.' : SPELLCHECK_UNAVAILABLE_HELP}
+        checked={spelling && settings.spellcheckUnderline}
+        disabled={!spelling}
         onChange={(spellcheckUnderline) => patch({ spellcheckUnderline })}
       />
     </>

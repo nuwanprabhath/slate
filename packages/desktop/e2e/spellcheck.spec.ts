@@ -13,6 +13,14 @@ test('"Underline misspelled words" starts off, and turns on the checker and the 
   await page.getByTestId('activity-settings').click()
   const setting = page.getByTestId('setting-spellcheck-underline')
   await expect(setting).not.toBeChecked()
+  if (process.platform === 'linux') {
+    // Chromium would download dictionaries from Google there; the row says why it is off.
+    await expect(setting).toBeDisabled()
+    await expect(page.locator('.settings-row', { has: setting })).toContainText('Not available on Linux: it would download dictionaries from the internet.')
+    expect(await checkerOn(app)).toBe(false)
+    return
+  }
+  await expect(setting).toBeEnabled()
   await setting.check()
   await expect.poll(() => checkerOn(app)).toBe(true)
   await page.keyboard.press('Escape')
