@@ -6,14 +6,16 @@ const COMMANDS: readonly EditCommand[] = ['cut', 'copy', 'paste']
 
 const isEditCommand = (value: unknown): value is EditCommand => typeof value === 'string' && (COMMANDS as readonly string[]).includes(value)
 
-// Presses only: a page can make the pointer move or the wheel turn reach it, never a press it did not get.
-const PRESSES: ReadonlySet<string> = new Set(['mouseDown', 'mouseUp', 'keyDown', 'rawKeyDown'])
+// Mouse presses only: a page can make the pointer move or the wheel turn reach it, never a press it did
+// not get. Key presses do not count: the text menu has no keyboard path, and every keystroke in a note
+// would otherwise open a window for the page to paste the rich clipboard into itself.
+const PRESSES: ReadonlySet<string> = new Set(['mouseDown', 'mouseUp'])
 
-/** How long after a person's press on a window it may still ask main for a clipboard command. */
+/** How long after a person's mouse press on a window it may still ask main for a clipboard command. */
 export const USER_INPUT_WINDOW_MS = 1000
 
 /**
- * The last press of a real mouse button or key on each window, from Electron's `input-event`, which
+ * The last press of a real mouse button on each window, from Electron's `input-event`, which
  * only input from the OS (or the e2e driver) raises; a page's synthetic DOM events never do.
  */
 export class UserInputClock {
@@ -34,7 +36,7 @@ export class UserInputClock {
  * The text menu's Cut, Copy and Paste. Main runs them on the window that asked, as the Edit menu's
  * roles do, so the editor gets the same trusted clipboard event as for the keystroke. That paste
  * event carries the whole clipboard (HTML, image files), which a page cannot otherwise read, so each
- * command needs a person's press on that window within the last second: a compromised page cannot
+ * command needs a person's mouse press on that window within the last second: a compromised page cannot
  * paste the clipboard into itself unasked.
  */
 export function registerEditIpc(ipc: IpcRegistrar, input: UserInputClock): void {

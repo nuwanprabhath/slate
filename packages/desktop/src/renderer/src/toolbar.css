@@ -1,23 +1,31 @@
-.toolbar { display: flex; align-items: center; gap: 4px 2px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--toolbar-bg); }
-.toolbar button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text); font: inherit; font-size: 14px; line-height: 1; vertical-align: middle; cursor: pointer; }
+.toolbar { container: toolbar / inline-size; display: flex; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--toolbar-bg); }
+/* Related controls wrap as one group, never one button alone. Each group draws its separator before
+   it; the one starting a row keeps the space but not the line (useRowStarts), and the groups sit one
+   separator to the left so that space falls in the toolbar's padding. */
+.toolbar-flow { flex: 1; min-width: 0; }
+.toolbar-groups { display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; margin-left: -11px; }
+.toolbar .tb-group { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 2px; }
+.toolbar .tb-group::before { content: ''; flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--border); }
+.toolbar .tb-group.tb-status { margin-left: auto; }
+.toolbar .tb-group.tb-status::before, .toolbar .tb-group.row-start::before { background: none; }
+.toolbar button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 4px; background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text); font: inherit; font-size: 14px; line-height: 1; vertical-align: middle; cursor: pointer; }
 .toolbar button:hover:not(:disabled) { background: var(--hover); }
 .toolbar button.active { background: var(--selected); border-color: var(--border); }
 .toolbar button:disabled, .toolbar select:disabled { opacity: 0.4; cursor: default; }
 /* Colours, chevron and padding come from controls.css; the widths keep text clear of the chevron. */
 .toolbar select { height: 28px; min-width: 76px; margin: 0 2px; }
-.toolbar select[data-testid='tb-font'] { min-width: 128px; }
-.toolbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 6px; }
+.toolbar select[data-testid='tb-font'] { min-width: 88px; }
 .toolbar .split, .toolbar .split-menu { position: relative; display: inline-flex; align-items: center; }
 .toolbar .chevron { min-width: 14px; width: 14px; padding: 0; }
 .toolbar .style-menu { position: absolute; top: 32px; left: -28px; z-index: 50; display: flex; flex-direction: column; min-width: 110px; padding: 4px; background: var(--popover); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.35); }
 .toolbar .style-menu button { justify-content: flex-start; white-space: nowrap; }
 .toolbar .style-menu .menu-item { display: block; text-align: left; padding: 6px 10px; background: none; border: none; border-radius: 4px; color: var(--text); font: inherit; cursor: pointer; }
 .toolbar .style-menu .menu-item:hover { background: var(--hover); }
-.toolbar button.toolbar-lock { margin-left: auto; }
-.toolbar-lock + .sync-status-wrap { margin-left: 0; }
 .toolbar .align-button { gap: 2px; padding: 0 4px; }
 .toolbar .align-menu { left: 0; min-width: 190px; }
 .toolbar .align-menu .menu-item { display: flex; align-items: center; gap: 8px; }
 .toolbar .align-menu .menu-item.active { background: var(--selected); }
 .toolbar .align-menu .align-label { flex: 1; }
 .toolbar .align-menu .align-keys { color: var(--muted); font-size: 12px; }
+.toolbar .align-menu .menu-icon { display: inline-flex; justify-content: center; min-width: 20px; }
+.toolbar .style-menu.open-left { left: auto; right: 0; }

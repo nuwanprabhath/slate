@@ -1,4 +1,5 @@
 import { PageDoc, planReplace } from '@slate/core'
+import { snippetText } from '../../../shared/snippetText'
 import { PageSession, pageDocId, type DocPersistence, type FindOptions } from '@slate/editor'
 
 /** A Find in Notes replace: the ticked matches, by page, box, the match's index within its box and its text. */
@@ -149,7 +150,7 @@ export async function replaceInNotes(request: NotesReplace, deps: NotesReplaceDe
         count = session.replace(request.query, request.opts, request.replacement, {
           preserveCase: request.preserveCase,
           numbering: 'search-index',
-          only: (boxId, occurrence, matched) => wanted.get(`${boxId}\n${occurrence}`) === matched,
+          only: (boxId, occurrence, matched) => wanted.get(`${boxId}\n${occurrence}`) === snippetText(matched),
         })
       } catch {
         result.failed++
@@ -176,12 +177,18 @@ export const previewKey = (pageId: string, boxId: string, occurrence: number): s
 /**
  * What each ticked match would become, worked out on its whole block (a regex's lookbehind, anchors
  * and groups can need more than a result's snippet), from the stored pages, without writing.
+ * `loaded` holds pages already read, so a caller can reuse them across calls.
  */
-export async function previewInNotes(request: NotesReplace, persistence: DocPersistence): Promise<Map<string, string>> {
+export async function previewInNotes(request: NotesReplace, persistence: DocPersistence, loaded = new Map<string, Promise<PageDoc>>()): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   for (const { pageId, picks } of request.pages) {
     const wanted = new Set(picks.map((p) => `${p.boxId}\n${String(p.occurrence)}`))
-    const page = PageDoc.fromUpdates(await persistence.load(pageDocId(pageId)))
+    let doc = loaded.get(pageId)
+    if (!doc) {
+      doc = persistence.load(pageDocId(pageId)).then((updates) => PageDoc.fromUpdates(updates))
+      loaded.set(pageId, doc)
+    }
+    const page = await doc
     const edits = planReplace(page, request.query, request.opts, request.replacement, {
       preserveCase: request.preserveCase,
       only: (boxId, occurrence) => wanted.has(`${boxId}\n${String(occurrence)}`),
@@ -189,4 +196,22 @@ export async function previewInNotes(request: NotesReplace, persistence: DocPers
     for (const e of edits) out.set(previewKey(pageId, e.boxId, e.occurrence), e.with)
   }
   return out
+}
+
+/**
+ * `previewInNotes` for a preview that is being typed into: pages are read once per set of results
+ * (query, options and picks), not on every keystroke in the replace field. New results, as after a
+ * replace or a fresh search, read them again.
+ */
+export function previewer(persistence: DocPersistence): (request: NotesReplace) => Promise<Map<string, string>> {
+  let resultsKey = ''
+  let loaded = new Map<string, Promise<PageDoc>>()
+  return (request) => {
+    const key = JSON.stringify([request.query, request.opts, request.pages])
+    if (key !== resultsKey) {
+      resultsKey = key
+      loaded = new Map()
+    }
+    return previewInNotes(request, persistence, loaded)
+  }
 }

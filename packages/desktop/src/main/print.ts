@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, type WebContents } from 'electron'
-import { writeFile } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { PrintRequest, PrintResult } from '../shared/api'
 import { CH } from '../shared/ipc'
@@ -59,7 +59,16 @@ export function electronPrintHost(dataDir: string, isOpen: () => boolean): Print
       return picked.canceled || !picked.filePath ? null : picked.filePath
     },
     // Straight to the chosen file, owner-only: an encrypted vault's page never passes through a temp file.
-    writePdf: (path, bytes) => writeFile(path, bytes, { mode: 0o600 }),
+    // The mode at open only applies to a new file, so a replaced one is narrowed before the page lands in it.
+    async writePdf(path, bytes) {
+      const file = await open(path, 'w', 0o600)
+      try {
+        await file.chmod(0o600)
+        await file.writeFile(bytes)
+      } finally {
+        await file.close()
+      }
+    },
     paper: () => paperFor(app.getLocaleCountryCode()),
     isOpen,
     // A sync clone in the data folder would commit the decrypted page.

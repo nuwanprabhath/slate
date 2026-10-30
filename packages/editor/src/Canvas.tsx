@@ -194,6 +194,33 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     [services],
   )
 
+  // Mod+X and Mod+C on the focused canvas, and Edit → Cut and Copy chosen with the mouse.
+  const takeSelected = (kind: 'cut' | 'copy') => {
+    const ids = selectionRef.current
+    const clip = kind === 'cut' ? cutBoxes(session, ids) : copyBoxes(session, ids)
+    // The cut mark is what shows now; the selection's ring would draw over it.
+    if (kind === 'cut') setSelection(NO_SELECTION)
+    if (clip) void services.copyRich(clip.text, clip.html)
+  }
+  const takeSelectedRef = useRef(takeSelected)
+  takeSelectedRef.current = takeSelected
+
+  useEffect(() => {
+    // The menu's Cut and Copy roles fire these events, not a keydown. Mod+X/C never get here: their
+    // keydown is handled above, and a handled key does not reach the menu.
+    const onCopyOrCut = (e: ClipboardEvent) => {
+      if (document.activeElement !== canvasRef.current || selectionRef.current.size === 0) return
+      e.preventDefault()
+      takeSelectedRef.current(e.type === 'cut' ? 'cut' : 'copy')
+    }
+    document.addEventListener('copy', onCopyOrCut)
+    document.addEventListener('cut', onCopyOrCut)
+    return () => {
+      document.removeEventListener('copy', onCopyOrCut)
+      document.removeEventListener('cut', onCopyOrCut)
+    }
+  }, [])
+
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null
@@ -279,10 +306,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
         setSelection(new Set(duplicateBoxes(session, ids)))
         return
       }
-      const clip = key === 'x' ? cutBoxes(session, ids) : copyBoxes(session, ids)
-      // The cut mark is what shows now; the selection's ring would draw over it.
-      if (key === 'x') setSelection(NO_SELECTION)
-      if (clip) void services.copyRich(clip.text, clip.html)
+      takeSelected(key === 'x' ? 'cut' : 'copy')
       return
     }
     const queue = queueRef.current

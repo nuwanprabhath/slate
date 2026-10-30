@@ -2,7 +2,8 @@
 .toolbar button.sync-status { display: flex; align-items: center; gap: 6px; padding: 0 6px; }
 .sync-age { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .toolbar button.sync-chevron { min-width: 16px; padding: 0; color: var(--muted); font-size: 10px; }
-@media (max-width: 700px) { .sync-age { display: none; } }
+/* The age (also in the tooltip and popover) shows only where the toolbar has room for it on its one row. */
+@container toolbar (max-width: 1099px) { .sync-age { display: none; } }
 .sync-status.sync-signed-out, .sync-status.sync-disabled { opacity: 0.55; }
 .sync-status.sync-error { color: var(--danger); }
 .sync-arrows { transform-origin: 10px 11.5px; animation: sync-spin 1.2s linear infinite; }

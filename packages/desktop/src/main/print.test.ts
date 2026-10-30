@@ -3,7 +3,7 @@ import { CH } from '../shared/ipc'
 import type { Channel, Handler, IpcRegistrar } from './ipcGuard'
 import { logHandlers } from './log/ipcLog'
 import type { Logger } from './log/logger'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -185,6 +185,13 @@ describe('electronPrintHost', () => {
       const out = join(dir, 'page.pdf')
       await host.writePdf(out, Uint8Array.from([1, 2, 3]))
       expect(statSync(out).mode & 0o777).toBe(0o600)
+      // Replacing a file the person already had: writeFile's mode only applies when it creates the file.
+      const old = join(dir, 'old.pdf')
+      writeFileSync(old, 'x', { mode: 0o644 })
+      chmodSync(old, 0o644)
+      await host.writePdf(old, Uint8Array.from([4, 5]))
+      expect(statSync(old).mode & 0o777).toBe(0o600)
+      expect(readFileSync(old)).toEqual(Buffer.from([4, 5]))
       expect(host.refusePath(join(dataDir, 'git-sync', 'abc', 'page.pdf'))).toBe('Choose a folder outside Slate’s data folder.')
       expect(host.refusePath(out)).toBeNull()
     } finally {

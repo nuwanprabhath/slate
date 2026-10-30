@@ -104,6 +104,32 @@ describe('PageSession.replace', () => {
     session.close()
   })
 
+  it('appends nothing at all when a write fails: the edits are tried on a fork of the page first', async () => {
+    const { session, ids, persistence } = await sessionWith(['cat'], ['cat'])
+    await new Promise((r) => setTimeout(r, 0))
+    const key = `page:${session.pageId}`
+    const storedBefore = persistence.data.get(key)?.length ?? 0
+    const real = LoroText.prototype.applyDelta
+    let calls = 0
+    const spy = vi.spyOn(LoroText.prototype, 'applyDelta').mockImplementation(function (this: LoroText, delta) {
+      if (++calls === 2) throw new Error('write failed')
+      return real.call(this, delta)
+    })
+    expect(() => session.replace('cat', plain, 'dog', {})).toThrow('write failed')
+    spy.mockRestore()
+    await new Promise((r) => setTimeout(r, 0))
+    // Nothing to persist, so a lock or crash at any point cannot leave half the replace stored.
+    expect(persistence.data.get(key)?.length ?? 0).toBe(storedBefore)
+    expect(texts(session, ids[0]!)).toEqual(['cat'])
+    // The real doc is untouched, so a replace right after works and is one undo step.
+    expect(session.replace('cat', plain, 'dog', {})).toBe(2)
+    expect(texts(session, ids[0]!)).toEqual(['dog'])
+    session.undoManager.undo()
+    expect(texts(session, ids[0]!)).toEqual(['cat'])
+    expect(texts(session, ids[1]!)).toEqual(['cat'])
+    session.close()
+  })
+
   it('pushes the boxes below when a replace grows a box, as typing does', async () => {
     const { session, ids } = await sessionWith(['cat'], ['below'])
     const box = session.getBoxes().find((b) => b.id === ids[0])!

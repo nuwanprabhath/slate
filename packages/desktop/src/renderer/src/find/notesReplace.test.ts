@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { contentToJSON, PageDoc, writeContent, type PMJSON } from '@slate/core'
 import { PageSession, pageDocId, type DocPersistence } from '@slate/editor'
-import { closePageSession, dropPageSessions, KEPT_PAGES, openPageSession, previewInNotes, replaceInNotes, type NotesReplace } from './notesReplace'
+import { closePageSession, dropPageSessions, KEPT_PAGES, openPageSession, previewer, previewInNotes, replaceInNotes, type NotesReplace } from './notesReplace'
 
 const plain = { matchCase: false, wholeWord: false, regex: false }
 const para = (t: string): PMJSON => ({ type: 'paragraph', content: [{ type: 'text', text: t }] })
@@ -217,6 +217,19 @@ describe('replaceInNotes', () => {
     expect(result).toEqual({ replaced: 1, pages: 1, skipped: 1, failed: 0 })
     expect(await storedTexts(persistence, P)).toEqual(['|a+b c'])
   })
+
+  it('replaces a regex match spanning a code block line break, which its snippet shows as a space', async () => {
+    const persistence = store()
+    const P = newPageId('P')
+    const [p1] = seedBlocks(persistence, P, [{ type: 'codeBlock', content: [{ type: 'text', text: 'let a\nb = 1' }] }])
+    const result = await replaceInNotes(
+      request([{ pageId: P, picks: [pick(p1!, 0, 'a b')] }], { query: 'a\\sb', opts: { matchCase: true, wholeWord: false, regex: true }, replacement: 'ab' }),
+      deps(persistence),
+    )
+    await tick()
+    expect(result).toEqual({ replaced: 1, pages: 1, skipped: 0, failed: 0 })
+    expect(await storedTexts(persistence, P)).toEqual(['let ab = 1'])
+  })
 })
 
 describe('previewInNotes', () => {
@@ -230,5 +243,21 @@ describe('previewInNotes', () => {
       persistence,
     )
     expect(texts.get(`${P}\n${p1!}\n0`)).toBe('ba')
+  })
+
+  it('loads each page once while only the replacement changes, and afresh for new picks', async () => {
+    const persistence = store()
+    const P = newPageId('P')
+    const [p1] = seed(persistence, P, 'a cat')
+    const loads = vi.spyOn(persistence, 'load')
+    const preview = previewer(persistence)
+    const regex = { matchCase: false, wholeWord: false, regex: true }
+    const req = (replacement: string, picks = [pick(p1!, 0)]) => request([{ pageId: P, picks }], { query: 'c(a)t', opts: regex, replacement })
+    expect((await preview(req('d$1g'))).get(`${P}\n${p1!}\n0`)).toBe('dag')
+    expect((await preview(req('d$1gs'))).get(`${P}\n${p1!}\n0`)).toBe('dags')
+    expect(loads).toHaveBeenCalledTimes(1)
+    // New results (here: other picks) can mean the page changed since: load it again.
+    await preview(req('x', [pick(p1!, 0, 'Cat')]))
+    expect(loads).toHaveBeenCalledTimes(2)
   })
 })

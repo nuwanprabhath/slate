@@ -54,13 +54,25 @@ test('UI: sub and superscript', async ({ app, page }) => {
   await newBox(page, 'Water is H2O and e = mc2')
   await page.keyboard.press('End')
   await page.keyboard.press('Shift+ArrowLeft')
+  await page.getByTestId('tb-text-styles').click()
   await page.getByTestId('tb-superscript').click()
   for (let i = 0; i < 'O and e = mc2'.length; i++) await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('Shift+ArrowLeft')
+  await page.getByTestId('tb-text-styles').click()
   await page.getByTestId('tb-subscript').click()
   const editor = page.getByTestId('box-editor')
   await expect(editor.locator('sub')).toHaveText('2')
   await expect(editor.locator('sup')).toHaveText('2')
-  await expect(page.getByTestId('tb-subscript')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('tb-text-styles')).toHaveClass(/active/)
   await reviewUi(app, page, 'sub and superscript')
+  await reviewUi(app, page, 'more text styles menu open', {
+    open: async (p) => {
+      await p.getByTestId('tb-text-styles').click()
+      await expect(p.getByTestId('tb-superscript')).toBeVisible()
+    },
+    close: async (p) => {
+      await p.keyboard.press('Escape')
+      await expect(p.getByTestId('tb-subscript')).toHaveCount(0)
+    },
+  })
 })

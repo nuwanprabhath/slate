@@ -103,3 +103,36 @@ test('folding a heading hides its section until the next heading and shows "…"
   await groceries.locator('.slate-fold-toggle').click()
   await expect(editor.getByText('milk')).toBeVisible()
 })
+
+test('find opens a fold hiding the match it moves to, from the find bar and from Find in Notes', async ({ page }) => {
+  await newBox(page, ['Groceries', 'milk', 'Chores', 'dishes'])
+  const editor = page.getByTestId('box-editor')
+  for (const text of ['Groceries', 'Chores']) {
+    await editor.getByText(text).click()
+    await page.getByTestId('tb-h2').click()
+  }
+  const fold = async (heading: string) => {
+    const h = editor.locator('h2', { hasText: heading })
+    await h.hover()
+    await h.locator('.slate-fold-toggle').click()
+    await expect(h).toHaveClass(/slate-folded/)
+  }
+  await fold('Groceries')
+  await expect(editor.getByText('milk')).toBeHidden()
+
+  await page.keyboard.press(`${MOD}+f`)
+  await page.getByTestId('find-input').fill('milk')
+  await expect(page.getByTestId('find-count')).toHaveText('1 of 1')
+  await expect(page.locator('.slate-find-current')).toBeVisible()
+  await expect(editor.locator('h2', { hasText: 'Groceries' })).not.toHaveClass(/slate-folded/)
+  await page.keyboard.press('Escape')
+
+  await fold('Chores')
+  await expect(editor.getByText('dishes')).toBeHidden()
+  await page.keyboard.press(`${MOD}+Shift+f`)
+  await page.getByTestId('search-input').fill('dishes')
+  await page.getByTestId('search-match').click()
+  await expect(page.locator('.slate-find-current')).toBeVisible()
+  await expect(editor.getByText('dishes')).toBeVisible()
+  await expect(editor.locator('h2', { hasText: 'Chores' })).not.toHaveClass(/slate-folded/)
+})
