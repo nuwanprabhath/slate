@@ -156,3 +156,14 @@ export function ScriptIcon({ position }: { position: 'sub' | 'super' }) {
     </Icon>
   )
 }
+
+/** A paint brush: the format painter. */
+export function FormatPainterIcon() {
+  return (
+    <Icon>
+      <rect x="3" y="2.5" width="12" height="5" rx="1" />
+      <path d="M15 5h2v4.5h-7V12" />
+      <path d="M8.8 12h2.4v5.5a1.2 1.2 0 0 1-2.4 0Z" fill={ACCENT} stroke={ACCENT} />
+    </Icon>
+  )
+}
