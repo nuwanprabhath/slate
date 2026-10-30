@@ -1,6 +1,9 @@
 import { Extension } from '@tiptap/core'
 import { NodeSelection, Plugin } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import type { PageSession } from './PageSession'
+
+type UndoSteps = Pick<PageSession, 'ownUndoStep'>
 
 export const IMAGE_MIN_WIDTH = 32
 export type Corner = 'nw' | 'ne' | 'sw' | 'se'
@@ -27,12 +30,18 @@ export function resizedWidth({ corner, startWidth, aspect, dx, dy }: CornerDrag,
   return Math.round(Math.min(max, Math.max(IMAGE_MIN_WIDTH, startWidth + grow)))
 }
 
-/** Sets (null: clears, back to natural size) an image's width as one undo step, keeping it selected. */
-export function setImageWidth(view: EditorView, pos: number, width: number | null): void {
+/**
+ * Sets (null: clears, back to natural size) an image's width, keeping it selected. With the page's
+ * session it is an undo step of its own: a drag right after typing, or after another drag, would
+ * otherwise merge into it.
+ */
+export function setImageWidth(view: EditorView, pos: number, width: number | null, undo?: UndoSteps | null): void {
   const node = view.state.doc.nodeAt(pos)
   if (node?.type.name !== 'image' || node.attrs.width === width) return
   const tr = view.state.tr.setNodeAttribute(pos, 'width', width)
-  view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
+  const change = () => view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)))
+  if (undo) undo.ownUndoStep(change)
+  else change()
 }
 
 function contentWidth(view: EditorView): number {
@@ -43,8 +52,8 @@ function contentWidth(view: EditorView): number {
 /**
  * The four corner handles of a clicked image. An image has no children to hold them and its DOM
  * keeps the selection classes the canvas and the tests read, so the handles are a layer laid over
- * it in its positioned ancestor (the box body), placed from the image's offsets, which the canvas
- * never transforms.
+ * it beside the editor (ProseMirror removes foreign nodes inside its own DOM), placed from the
+ * image's offsets, which a transform on the canvas would not skew.
  */
 class ResizeHandles {
   private layer: HTMLDivElement | null = null
@@ -52,7 +61,10 @@ class ResizeHandles {
   private pos = -1
   private readonly observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.place())
 
-  constructor(private readonly view: EditorView) {
+  constructor(
+    private readonly view: EditorView,
+    private readonly undo: UndoSteps | null,
+  ) {
     this.update()
   }
 
@@ -69,7 +81,7 @@ class ResizeHandles {
       this.hide()
       this.img = dom as HTMLImageElement
       this.layer = this.buildLayer()
-      ;(this.img.offsetParent ?? this.view.dom.parentElement ?? this.view.dom).appendChild(this.layer)
+      this.view.dom.parentElement?.appendChild(this.layer)
       this.observer?.observe(this.img)
       this.observer?.observe(this.view.dom)
     }
@@ -91,8 +103,14 @@ class ResizeHandles {
   private place(): void {
     const { layer, img } = this
     if (!layer || !img) return
-    layer.style.left = `${img.offsetLeft}px`
-    layer.style.top = `${img.offsetTop}px`
+    let left = 0
+    let top = 0
+    for (let el: Element | null = img; el instanceof HTMLElement && el !== layer.offsetParent; el = el.offsetParent) {
+      left += el.offsetLeft + (el === img ? 0 : el.clientLeft)
+      top += el.offsetTop + (el === img ? 0 : el.clientTop)
+    }
+    layer.style.left = `${left}px`
+    layer.style.top = `${top}px`
     layer.style.width = `${img.offsetWidth}px`
     layer.style.height = `${img.offsetHeight}px`
   }
@@ -137,17 +155,21 @@ class ResizeHandles {
       drag = null
       if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId)
       if (this.img) this.img.style.width = ''
-      if (commit && width !== start.startWidth) setImageWidth(this.view, this.pos, width)
+      if (commit && width !== start.startWidth) setImageWidth(this.view, this.pos, width, this.undo)
       else this.place()
     }
     handle.addEventListener('pointerup', end(true))
     handle.addEventListener('pointercancel', end(false))
-    handle.addEventListener('dblclick', () => setImageWidth(this.view, this.pos, null))
+    handle.addEventListener('dblclick', () => setImageWidth(this.view, this.pos, null, this.undo))
   }
 }
 
 /** Corner handles that resize a clicked image, keeping its aspect ratio; the width is the image node's `width`. */
-export const ImageResize = Extension.create({
+export const ImageResize = Extension.create<{ session: UndoSteps | null }>({
   name: 'imageResize',
-  addProseMirrorPlugins: () => [new Plugin({ view: (view) => new ResizeHandles(view) })],
+  addOptions: () => ({ session: null }),
+  addProseMirrorPlugins() {
+    const { session } = this.options
+    return [new Plugin({ view: (view) => new ResizeHandles(view, session) })]
+  },
 })

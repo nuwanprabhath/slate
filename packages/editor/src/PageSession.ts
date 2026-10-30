@@ -145,6 +145,11 @@ export class PageSession {
     if (moved.size > 0) this.ownStep(() => this.page.moveBoxes(moved))
   }
 
+  /** Runs an editor change (an image resize) that undo takes back by itself, not with the edits just before. */
+  ownUndoStep(change: () => void): void {
+    this.ownStep(change)
+  }
+
   /** A change made right after typing would otherwise merge into that edit, and undo would take both back. */
   private ownStep(change: () => void): void {
     this.undoManager.setMergeInterval(0)

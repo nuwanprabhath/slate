@@ -5,6 +5,9 @@ import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { cleanPastedHtml, makeClipboardSerializer } from '../src/clipboard'
 import { buildExtensions, schema } from '../src/extensions'
 import { IMAGE_MIN_WIDTH, ImageResize, resizedWidth, setImageWidth } from '../src/imageResize'
+import { LoroBinding } from '../src/loroBinding'
+import { PageSession } from '../src/PageSession'
+import { writeContent } from '../src/content'
 
 const PNG = 'slate-blob://blob/abc.png'
 const editors: Editor[] = []
@@ -92,6 +95,32 @@ describe('setImageWidth', () => {
     setImageWidth(editor.view, IMAGE_POS, null)
     expect(editor.state.doc.nodeAt(IMAGE_POS)?.attrs.width).toBeNull()
     expect(steps).toBe(2)
+  })
+})
+
+describe('resizes and undo', () => {
+  it('undoes each resize on its own, however quickly they follow each other or typing', async () => {
+    const session = await PageSession.open('resize', { load: async () => [], append: async () => {} })
+    const boxId = session.createBox(0, 0)
+    const box = session.getBoxes().find((b) => b.id === boxId)!
+    const root = session.doc.getContainerById(box.contentId) as Parameters<typeof writeContent>[0]
+    writeContent(root, [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }, { type: 'image', attrs: { src: PNG } }])
+    session.doc.commit()
+    const editor = new Editor({
+      extensions: [...buildExtensions(), LoroBinding.configure({ doc: session.doc, containerId: box.contentId }), ImageResize.configure({ session })],
+    })
+    editors.push(editor)
+    await new Promise((r) => setTimeout(r, 0))
+    editor.commands.insertContentAt(2, 'b')
+    setImageWidth(editor.view, IMAGE_POS + 1, 200, session)
+    setImageWidth(editor.view, IMAGE_POS + 1, 120, session)
+    expect(editor.state.doc.nodeAt(IMAGE_POS + 1)?.attrs.width).toBe(120)
+    session.undo()
+    expect(editor.state.doc.nodeAt(IMAGE_POS + 1)?.attrs.width).toBe(200)
+    session.undo()
+    expect(editor.state.doc.nodeAt(IMAGE_POS + 1)?.attrs.width).toBeNull()
+    expect(editor.getText()).toContain('ab')
+    session.close()
   })
 })
 

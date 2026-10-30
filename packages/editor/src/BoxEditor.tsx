@@ -41,7 +41,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         SlateKeymap.configure({ session, services }),
         SlateCaret,
         ImageSelection,
-        ImageResize,
+        ImageResize.configure({ session }),
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
       ],
