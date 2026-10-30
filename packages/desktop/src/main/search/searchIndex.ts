@@ -1,6 +1,6 @@
 import { compileQuery, contentToJSON, matchAll, NotebookDoc, PageDoc, type PMJSON, type TreeItem } from '@slate/core'
 import type { SearchMatch, SearchPageResult, SearchQuery, SearchResults } from '../../shared/api'
-import type { DocStore, SearchRow } from '../store'
+import type { DocCursor, DocStore, SearchRow } from '../store'
 import { snippetAround } from './snippet'
 
 /** Bump when the rows' shape or text extraction changes: the next start rebuilds the index. */
@@ -10,6 +10,8 @@ export const MAX_MATCHES = 500
 const CONTEXT = 40
 // FTS5's trigram tokenizer matches no rows for a phrase shorter than this.
 const MIN_PHRASE = 3
+/** Pages being edited, kept in memory so a re-index imports only their new rows. */
+const LIVE_PAGES = 4
 
 interface PageMeta {
   pageTitle: string
@@ -56,6 +58,8 @@ export class SearchIndex {
   private readonly debounceMs: number
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
   private meta: Map<string, PageMeta> | null = null
+  /** Recently edited pages, least recent first, and how far into their rows each has read. */
+  private readonly live = new Map<string, { page: PageDoc; cursor: DocCursor }>()
 
   constructor(private readonly store: DocStore, options: { debounceMs?: number } = {}) {
     this.debounceMs = options.debounceMs ?? 500
@@ -86,6 +90,7 @@ export class SearchIndex {
   docRemoved(docId: string): void {
     clearTimeout(this.timers.get(docId))
     this.timers.delete(docId)
+    this.live.delete(docId)
     if (docId.startsWith('page:')) this.store.removeSearchPage(docId.slice('page:'.length))
     else if (docId.startsWith('notebook:')) this.meta = null
   }
@@ -135,13 +140,37 @@ export class SearchIndex {
   close(): void {
     for (const t of this.timers.values()) clearTimeout(t)
     this.timers.clear()
+    this.live.clear()
   }
 
   private run(docId: string): void {
     clearTimeout(this.timers.get(docId))
     this.timers.delete(docId)
-    if (docId.startsWith('page:')) this.indexPage(docId.slice('page:'.length))
+    if (docId.startsWith('page:')) this.indexLivePage(docId)
     else this.refreshScopes()
+  }
+
+  /**
+   * An edit's re-index runs on the main thread, which also routes key presses: rebuilding a long
+   * page from every stored row there stalled typing, so the page stays in memory and takes only its
+   * new rows.
+   */
+  private indexLivePage(docId: string): void {
+    const pageId = docId.slice('page:'.length)
+    const known = this.live.get(docId)
+    const { parts, cursor, full } = this.store.loadSince(docId, known?.cursor)
+    this.live.delete(docId)
+    if (full && parts.length === 0) return this.store.removeSearchPage(pageId)
+    if (known && !full && parts.length === 0) {
+      this.live.set(docId, known)
+      return
+    }
+    const page = full || !known ? PageDoc.fromUpdates(parts) : known.page
+    if (!full && known) page.doc.importBatch(parts)
+    this.live.set(docId, { page, cursor })
+    if (this.live.size > LIVE_PAGES) this.live.delete(this.live.keys().next().value!)
+    const m = this.pageMeta().get(pageId)
+    this.store.replaceSearchPage({ pageId, sectionId: m?.sectionId ?? '', notebookId: m?.notebookId ?? '' }, pageRows(page))
   }
 
   private indexPage(pageId: string): void {

@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LoroDoc } from 'loro-crdt'
-import { DocStore } from './store'
+import { COMPACT_IDLE_MS, DocStore } from './store'
 import { openDatabase } from './db/openDatabase'
 import { testKey } from './db/testModule'
 import type { TransportObservation } from '../shared/api'
@@ -48,9 +48,12 @@ describe('DocStore', () => {
   })
 
   it('compacts automatically and preserves document state', () => {
+    vi.useFakeTimers()
     const store = new DocStore(tempDb())
     const { doc, updates } = edits(520)
     for (const u of updates) store.append('page:c', u)
+    vi.advanceTimersByTime(COMPACT_IDLE_MS)
+    vi.useRealTimers()
     const parts = store.load('page:c')
     expect(parts.length).toBeLessThan(30)
     const restored = new LoroDoc()
@@ -101,6 +104,106 @@ describe('DocStore', () => {
     expect(app.updatesSince(since).map((u) => [u.docId, Array.from(u.data)])).toEqual([['page:x', [7]]])
     app.close()
     cli.close()
+  })
+
+  it('compacts once appends go quiet, never on the keystroke that crossed the threshold', () => {
+    vi.useFakeTimers()
+    try {
+      const store = new DocStore(tempDb())
+      const { updates } = edits(520)
+      for (const u of updates) store.append('page:q', u)
+      // Compaction rebuilds the whole page on the main thread, which also routes key presses.
+      expect(store.load('page:q')).toHaveLength(520)
+      vi.advanceTimersByTime(COMPACT_IDLE_MS - 1)
+      store.append('page:q', edits(1).updates[0]!)
+      vi.advanceTimersByTime(COMPACT_IDLE_MS - 1)
+      expect(store.load('page:q')).toHaveLength(521)
+      vi.advanceTimersByTime(1)
+      expect(store.load('page:q').length).toBeLessThan(30)
+      store.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops a pending compaction when closed', () => {
+    vi.useFakeTimers()
+    try {
+      const store = new DocStore(tempDb())
+      for (const u of edits(520).updates) store.append('page:z', u)
+      store.close()
+      expect(() => vi.advanceTimersByTime(COMPACT_IDLE_MS)).not.toThrow()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('loadSince returns only rows after the given id, or the whole doc once compaction folded them', () => {
+    vi.useFakeTimers()
+    try {
+      const store = new DocStore(tempDb())
+      const [u0, u1, ...rest] = edits(522).updates
+      store.append('page:s', u0!)
+      store.append('page:other', new Uint8Array([9]))
+      const first = store.loadSince('page:s', undefined)
+      expect(first.full).toBe(true)
+      expect(first.parts).toEqual([u0])
+      store.append('page:s', u1!)
+      const next = store.loadSince('page:s', first.cursor)
+      expect(next.full).toBe(false)
+      expect(next.parts).toEqual([u1])
+      expect(store.loadSince('page:s', next.cursor)).toEqual({ parts: [], full: false, cursor: next.cursor })
+
+      for (const u of rest) store.append('page:s', u)
+      vi.advanceTimersByTime(COMPACT_IDLE_MS)
+      // Rows after next.cursor are now inside the snapshot: a reader that stopped there must reload.
+      const after = store.loadSince('page:s', next.cursor)
+      expect(after.full).toBe(true)
+      expect(after.parts.length).toBeLessThan(30)
+
+      // A removed and rewritten doc is a different doc: the reader must not merge the old one in.
+      store.remove('page:s')
+      store.append('page:s', u0!)
+      expect(store.loadSince('page:s', after.cursor)).toMatchObject({ parts: [u0], full: true })
+      store.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rewrites only the search rows an edit changed, in reading order', () => {
+    const file = tempDb()
+    const db = openDatabase(file, null)
+    const store = new DocStore(db)
+    const scope = { pageId: 'p', sectionId: 's', notebookId: 'n' }
+    const rows = (texts: string[]) => texts.map((text, ord) => ({ boxId: text.startsWith('b2') ? 'b2' : 'b1', ord, text }))
+    const writes = () => (db.prepare('SELECT total_changes() AS n').get() as { n: number }).n
+    const read = () => store.searchRows(null, null).map((r) => [r.boxId, r.text])
+    const lines = Array.from({ length: 50 }, (_, i) => `b1 line ${i}`)
+    store.replaceSearchPage(scope, rows([...lines, 'b2 tail']))
+    const before = writes()
+
+    // Typing in one line: the other 50 rows (and their trigram entries) stay as they are.
+    const typed = [...lines.slice(0, 20), 'b1 line 20 and more', ...lines.slice(21), 'b2 tail']
+    store.replaceSearchPage(scope, rows(typed))
+    expect(read()).toEqual(rows(typed).map((r) => [r.boxId, r.text]))
+    // One row out and one in, plus FTS5's own bookkeeping rows; rewriting the page was over 300.
+    expect(writes() - before).toBeLessThan(20)
+
+    // Enter in the middle, many times at one spot, then a line removed: order holds throughout.
+    let current = typed
+    for (let i = 0; i < 80; i++) {
+      current = [...current.slice(0, 10), `b1 new ${i}`, ...current.slice(10)]
+      store.replaceSearchPage(scope, rows(current))
+    }
+    current = [...current.slice(0, 5), ...current.slice(6)]
+    store.replaceSearchPage(scope, rows(current))
+    expect(read()).toEqual(rows(current).map((r) => [r.boxId, r.text]))
+
+    // A page moved to another section rewrites its scope everywhere.
+    store.replaceSearchPage({ ...scope, sectionId: 's2' }, rows(current))
+    expect(store.searchRows({ column: 'section_id', id: 's2' }, null)).toHaveLength(current.length)
+    store.close()
   })
 
   it('never compacts when compact is false', () => {

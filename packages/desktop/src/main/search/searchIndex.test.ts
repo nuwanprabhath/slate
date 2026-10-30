@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { NotebookDoc, PageDoc, writeContent, type PMJSON } from '@slate/core'
 import type { SearchQuery } from '../../shared/api'
-import { DocStore } from '../store'
+import { COMPACT_IDLE_MS, DocStore } from '../store'
 import { SearchIndex } from './searchIndex'
 
 const dirs: string[] = []
@@ -82,6 +82,55 @@ describe('SearchIndex', () => {
     // A query flushes the pending re-index, so it never returns stale rows.
     expect(index.query(q('delta')).total).toBe(1)
     expect(index.query(q('beta')).total).toBe(0)
+  })
+
+  it('re-indexes an edited page from the new rows only, without rebuilding it from the database', () => {
+    const { index, store, p1 } = setup()
+    const docId = `page:${p1.pageId}`
+    const page = PageDoc.fromUpdates(store.load(docId))
+    const [boxId] = page.listBoxes().map((b) => b.id)
+    const edit = (lines: string[]) => {
+      const from = page.doc.oplogVersion()
+      writeContent(page.contentMap(boxId!)!, lines.map(para), page.doc)
+      page.doc.commit()
+      store.append(docId, page.doc.export({ mode: 'update', from }))
+      index.docChanged(docId)
+    }
+    edit(['first edit'])
+    expect(index.query(q('first edit')).total).toBe(1)
+    // On the main thread a full rebuild of a long page stalls the key presses it routes.
+    const load = vi.spyOn(store, 'load')
+    edit(['second edit'])
+    expect(index.query(q('second edit')).total).toBe(1)
+    expect(index.query(q('first edit')).total).toBe(0)
+    expect(load).not.toHaveBeenCalledWith(docId)
+  })
+
+  it('stays right when a compaction folds rows it has not read into the snapshot', () => {
+    vi.useFakeTimers()
+    try {
+      const { index, store, p1 } = setup()
+      const docId = `page:${p1.pageId}`
+      const page = PageDoc.fromUpdates(store.load(docId))
+      const [boxId] = page.listBoxes().map((b) => b.id)
+      const edit = (text: string) => {
+        const from = page.doc.oplogVersion()
+        writeContent(page.contentMap(boxId!)!, [para(text)], page.doc)
+        page.doc.commit()
+        store.append(docId, page.doc.export({ mode: 'update', from }))
+      }
+      edit('seen')
+      index.docChanged(docId)
+      expect(index.query(q('seen')).total).toBe(1)
+      for (let i = 0; i < 520; i++) edit(`unseen ${i}`)
+      vi.advanceTimersByTime(COMPACT_IDLE_MS)
+      expect(store.load(docId).length).toBeLessThan(30)
+      index.docChanged(docId)
+      expect(index.query(q('unseen 519')).total).toBe(1)
+      expect(index.query(q('seen')).total).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('drops a removed page', () => {
