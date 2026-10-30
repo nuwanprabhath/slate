@@ -1,4 +1,4 @@
-import { LoroList, LoroMap, LoroText, type Delta, type Value } from 'loro-crdt'
+import { LoroList, LoroMap, LoroText, type Delta, type LoroDoc, type Value } from 'loro-crdt'
 import { compileQuery, matchAll, type FindOptions } from './find'
 import type { PageDoc } from './page'
 
@@ -144,6 +144,23 @@ export function applyReplace(edits: PlannedEdit[]): void {
     if (e.at === 0) delta.shift()
     e.text.applyDelta(delta)
   }
+}
+
+/**
+ * Writes `edits` to a throwaway fork of `doc` (with the same text styles), so a write that would
+ * throw does so before anything reaches `doc`: Loro cannot drop a half-written transaction, and
+ * committing one even to revert it hands the partial edit to whoever saves commits.
+ */
+export function rehearseReplace(doc: LoroDoc, edits: PlannedEdit[], textStyles: Parameters<LoroDoc['configTextStyle']>[0]): void {
+  const trial = doc.fork()
+  trial.configTextStyle(textStyles)
+  applyReplace(
+    edits.map((e) => {
+      const text = trial.getContainerById(e.text.id)
+      if (!(text instanceof LoroText)) throw new Error('A replaced text is missing from the fork')
+      return { ...e, text }
+    }),
+  )
 }
 
 /**

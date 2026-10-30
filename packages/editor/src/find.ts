@@ -1,7 +1,7 @@
 import type { Node as PMNode, Schema } from '@tiptap/pm/model'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { applyReplace, compileQuery, matchAll, planReplace, type FindOptions, type PageDoc, type PlannedEdit, type ReplaceOptions } from '@slate/core'
+import { applyReplace, compileQuery, matchAll, planReplace, rehearseReplace, type FindOptions, type PageDoc, type PlannedEdit, type ReplaceOptions } from '@slate/core'
 import { loadBoxNode } from './staticRender'
 
 export { compileQuery, expandReplacement, findMatches, preserveCaseOf, type FindOptions } from '@slate/core'
@@ -60,7 +60,8 @@ const ABORT_ORIGIN = 'sys:replace-aborted'
  */
 export function replaceInPageDoc(page: PageDoc, schema: Schema, query: string, opts: FindOptions, replacement: string, choice: ReplaceChoice): PlannedEdit[] {
   // The text styles loro-prosemirror configures, so a page with no editor mounted marks text the same way.
-  page.doc.configTextStyle(Object.fromEntries(Object.entries(schema.marks).map(([name, type]) => [name, { expand: type.spec.inclusive === false ? 'none' : 'after' }])))
+  const styles = Object.fromEntries(Object.entries(schema.marks).map(([name, type]) => [name, { expand: type.spec.inclusive === false ? ('none' as const) : ('after' as const) }]))
+  page.doc.configTextStyle(styles)
   // Reading only: a throw here has written nothing.
   const edits = planReplace(page, query, opts, replacement, {
     preserveCase: choice.preserveCase ?? false,
@@ -68,12 +69,15 @@ export function replaceInPageDoc(page: PageDoc, schema: Schema, query: string, o
     ...(choice.numbering === 'search-index' ? {} : { isTextblock: (name: string) => schema.nodes[name]?.isTextblock ?? false }),
   })
   if (edits.length === 0) return edits
+  // On a fork first: a write that throws does so there, and the page has nothing pending to save.
+  rehearseReplace(page.doc, edits, styles)
   const before = page.doc.frontiers()
   try {
     applyReplace(edits)
   } catch (err) {
-    // Never leave half a replace pending for the next commit to save: commit it and its reversal
-    // under a sys:* origin (no undo step), so the page is exactly as before and editors had nothing to draw.
+    // Unreachable unless the same writes behave differently on the page than on its fork. Then the
+    // only way not to leave half a replace pending for the next commit is to commit it with its
+    // reversal under a sys:* origin (no undo step).
     page.doc.commit({ origin: ABORT_ORIGIN })
     page.doc.revertTo(before)
     page.doc.commit({ origin: ABORT_ORIGIN })
