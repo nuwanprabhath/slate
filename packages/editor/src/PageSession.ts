@@ -70,9 +70,12 @@ export class PageSession {
 
   /** Find and replace in every box, as one undo step of its own. Returns how many it replaced. */
   replace(query: string, opts: FindOptions, replacement: string, choice: ReplaceChoice): number {
-    let count = 0
-    this.ownStep(() => (count = replaceInPageDoc(this.page, schema, query, opts, replacement, choice)))
-    return count
+    let edits: Array<{ boxId: string }> = []
+    this.ownStep(() => (edits = replaceInPageDoc(this.page, schema, query, opts, replacement, choice)))
+    // The commit's origin makes mounted editors report the change as remote; it is the user's, so
+    // a box it grows pushes the boxes below, as typing does.
+    for (const e of edits) this.noteLocalEdit(e.boxId)
+    return edits.length
   }
 
   /** Any change to the page, text inside boxes included. */

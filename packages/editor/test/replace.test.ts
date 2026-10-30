@@ -1,15 +1,17 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { LoroText } from 'loro-crdt'
 import { Editor } from '@tiptap/core'
-import { contentToJSON, type PMJSON } from '@slate/core'
+import { contentToJSON, PageDoc, type PMJSON } from '@slate/core'
 import { writeContent } from '../src/content'
 import { buildExtensions } from '../src/extensions'
 import { LoroBinding } from '../src/loroBinding'
 import { PageSession, type DocPersistence } from '../src/PageSession'
 
-function memoryPersistence(): DocPersistence {
+function memoryPersistence(): DocPersistence & { data: Map<string, Uint8Array[]> } {
   const data = new Map<string, Uint8Array[]>()
   return {
+    data,
     load: async (id) => data.get(id) ?? [],
     append: async (id, update) => {
       data.set(id, [...(data.get(id) ?? []), update])
@@ -20,11 +22,12 @@ function memoryPersistence(): DocPersistence {
 const plain = { matchCase: false, wholeWord: false, regex: false }
 const para = (t: string): PMJSON => ({ type: 'paragraph', content: [{ type: 'text', text: t }] })
 
-async function sessionWith(...boxes: string[][]): Promise<{ session: PageSession; ids: string[] }> {
-  const session = await PageSession.open(`p-${Math.random()}`, memoryPersistence())
+async function sessionWith(...boxes: string[][]): Promise<{ session: PageSession; ids: string[]; persistence: ReturnType<typeof memoryPersistence> }> {
+  const persistence = memoryPersistence()
+  const session = await PageSession.open(`p-${Math.random()}`, persistence)
   const ids = boxes.map((paras, i) => session.createBoxWithContent(0, i * 100, paras.map(para)))
   session.undoManager.clear()
-  return { session, ids }
+  return { session, ids, persistence }
 }
 
 const texts = (session: PageSession, id: string) => (contentToJSON(session.page.contentMap(id)!)!.content ?? []).map((p) => p.content?.[0]?.text ?? '')
@@ -75,6 +78,42 @@ describe('PageSession.replace', () => {
     expect(editor.getText()).toBe('hello cat')
     session.replace('cat', plain, 'dog', {})
     expect(editor.getText()).toBe('hello dog')
+    editor.destroy()
+    session.close()
+  })
+
+  it('is all or nothing: a failure while writing leaves no change, no undo step and nothing saved', async () => {
+    const { session, ids, persistence } = await sessionWith(['cat'], ['cat'])
+    const real = LoroText.prototype.applyDelta
+    let calls = 0
+    const spy = vi.spyOn(LoroText.prototype, 'applyDelta').mockImplementation(function (this: LoroText, delta) {
+      // Edits are written back to front: the second write is the first box's.
+      if (++calls === 2) throw new Error('write failed')
+      return real.call(this, delta)
+    })
+    expect(() => session.replace('cat', plain, 'dog', {})).toThrow('write failed')
+    spy.mockRestore()
+    expect(texts(session, ids[0]!)).toEqual(['cat'])
+    expect(texts(session, ids[1]!)).toEqual(['cat'])
+    expect(session.undoManager.canUndo()).toBe(false)
+    // The next ordinary commit saves nothing of the failed replace.
+    session.bringToFront(ids[0]!)
+    await new Promise((r) => setTimeout(r, 0))
+    const stored = PageDoc.fromUpdates(persistence.data.get(`page:${session.pageId}`)!)
+    expect(contentToJSON(stored.contentMap(ids[1]!)!)!.content![0]!.content![0]!.text).toBe('cat')
+    session.close()
+  })
+
+  it('pushes the boxes below when a replace grows a box, as typing does', async () => {
+    const { session, ids } = await sessionWith(['cat'], ['below'])
+    const box = session.getBoxes().find((b) => b.id === ids[0])!
+    const editor = new Editor({ extensions: [...buildExtensions({ autoBullets: false }), LoroBinding.configure({ doc: session.doc, containerId: box.contentId })] })
+    await new Promise((r) => setTimeout(r, 0))
+    session.reportHeight(ids[0]!, 40)
+    session.reportHeight(ids[1]!, 40)
+    session.replace('cat', plain, 'a much longer text that wraps onto more lines', {})
+    session.reportHeight(ids[0]!, 140)
+    expect(session.page.getBox(ids[1]!)!.y).toBeGreaterThan(100)
     editor.destroy()
     session.close()
   })
