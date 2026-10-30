@@ -27,7 +27,10 @@ export function cleanPastedHtml(html: string): string {
     if (el.style.fontStyle === 'italic' && !/^(I|EM)$/.test(el.tagName)) wrapContents(el, 'em')
   }
   for (const el of Array.from(doc.body.querySelectorAll('*'))) {
-    for (const attr of Array.from(el.attributes)) if (!KEEP_PASTE_ATTRS.has(attr.name)) el.removeAttribute(attr.name)
+    for (const attr of Array.from(el.attributes)) {
+      // An image's width is its size on the page (imageResize.ts), not the source's styling.
+      if (!KEEP_PASTE_ATTRS.has(attr.name) && !(attr.name === 'width' && el.tagName === 'IMG')) el.removeAttribute(attr.name)
+    }
   }
   doc.body.querySelectorAll('font, span').forEach(unwrap)
   return doc.body.innerHTML

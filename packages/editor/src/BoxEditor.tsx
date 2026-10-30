@@ -10,6 +10,7 @@ import { cleanPastedHtml, makeClipboardSerializer, mayHoldImages, serializeSlice
 import { buildExtensions, schema } from './extensions'
 import { findHighlightPlugin } from './find'
 import { copyWithImages, imageFilesFrom, insertImages, pasteHtml } from './images'
+import { ImageResize } from './imageResize'
 import { ImageSelection } from './imageSelection'
 import { SlateKeymap } from './keymap'
 import { LinkPopover } from './LinkPopover'
@@ -40,6 +41,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         SlateKeymap.configure({ session, services }),
         SlateCaret,
         ImageSelection,
+        ImageResize,
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
       ],

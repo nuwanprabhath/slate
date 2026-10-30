@@ -52,6 +52,13 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-box-content img { max-width: 100%; display: block; }
 /* A clicked image, or one inside a selected range (imageSelection.ts): a ring that reads at a glance, drawn just inside the image so it never covers the lines around it. */
 .slate-box-content img.ProseMirror-selectednode, .slate-box-content img.slate-image-selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+/* imageResize.ts: a clicked image's four 8px corner handles, laid flush inside the ring's corners so they read as part of it. */
+.slate-image-handles { position: absolute; z-index: 1; pointer-events: none; }
+.slate-image-handle { position: absolute; width: 8px; height: 8px; background: var(--accent); pointer-events: auto; touch-action: none; }
+.slate-image-handle[data-corner='nw'] { left: 0; top: 0; cursor: nwse-resize; }
+.slate-image-handle[data-corner='ne'] { right: 0; top: 0; cursor: nesw-resize; }
+.slate-image-handle[data-corner='sw'] { left: 0; bottom: 0; cursor: nesw-resize; }
+.slate-image-handle[data-corner='se'] { right: 0; bottom: 0; cursor: nwse-resize; }
 .slate-box-content .selectedCell { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: var(--code-keyword); }
 .hljs-string, .hljs-attr { color: var(--code-string); }
