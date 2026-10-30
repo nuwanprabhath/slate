@@ -41,6 +41,13 @@ describe('toMarkdown', () => {
     expect(toMarkdown([{ type: 'taskList', content: [task(false, 'buy milk'), task(true, 'ship it'), nested] }])).toBe('- [ ] buy milk\n- [x] ship it\n- [ ] parent\n  - [x] child')
   })
 
+  it('renders a list item with a checked attribute as a task item, in bullet and numbered lists', () => {
+    const item = (checked: boolean | null, s: string): PMJSON => ({ type: 'listItem', attrs: { checked }, content: [p(t(s))] })
+    const nested: PMJSON = { type: 'listItem', attrs: { checked: true }, content: [p(t('parent')), { type: 'bulletList', content: [item(false, 'child')] }] }
+    expect(toMarkdown([{ type: 'bulletList', content: [item(false, 'todo'), item(true, 'done'), item(null, 'plain'), nested] }])).toBe('- [ ] todo\n- [x] done\n- plain\n- [x] parent\n  - [ ] child')
+    expect(toMarkdown([{ type: 'orderedList', attrs: { start: 1 }, content: [item(false, 'first'), item(true, 'second')] }])).toBe('1. [ ] first\n2. [x] second')
+  })
+
   it('nests bullet lists by 2 spaces and continues a broken line under its item', () => {
     const doc = [{ type: 'bulletList', content: [li(p(t('a'), { type: 'hardBreak' }, t('more')), { type: 'bulletList', content: [li(p(t('b')), { type: 'bulletList', content: [li(p(t('c')))] })] })] }]
     expect(toMarkdown(doc)).toBe('- a  \n  more\n  - b\n    - c')

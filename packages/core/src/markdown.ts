@@ -39,8 +39,11 @@ const indented = (pad: string) => (line: string) => (line === '' ? '' : pad + li
 function listLines(list: PMJSON, marker: (i: number, item: PMJSON) => string, padWidth?: number): string[] {
   const out: string[] = []
   ;(list.content ?? []).forEach((item, i) => {
-    const m = marker(i, item)
-    const pad = indented(' '.repeat(padWidth ?? m.length))
+    const marker0 = marker(i, item)
+    const pad = indented(' '.repeat(padWidth ?? marker0.length))
+    // A to-do item is a list item whose `checked` is true or false (null: a plain item).
+    const checked = item.attrs?.checked
+    const m = typeof checked === 'boolean' && item.type === 'listItem' ? `${marker0}[${checked ? 'x' : ' '}] ` : marker0
     const children = item.content ?? []
     const first = children[0]
     const leads = first !== undefined && (first.type === 'paragraph' || first.type === 'heading')
