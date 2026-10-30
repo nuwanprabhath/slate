@@ -9,6 +9,7 @@ import { effectiveScope, resolveScope, summaryText, type StoredScope } from './s
 import './search.css'
 
 const TYPE_DEBOUNCE_MS = 200
+const PREVIEW_DEBOUNCE_MS = 250
 const isMac = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
 
 interface SearchState {
@@ -197,11 +198,15 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
     let stale = false
     store.update({ previewTexts: null })
     const all = replaceRequest(results, new Set(), { query, opts, replacement, preserveCase })
-    void ctx.app.previewReplacements(all).then((texts) => {
-      if (!stale) store.update({ previewTexts: texts })
-    })
+    // Not per keystroke in the replace field: each run plans every listed page.
+    const timer = setTimeout(() => {
+      void ctx.app.previewReplacements(all).then((texts) => {
+        if (!stale) store.update({ previewTexts: texts })
+      })
+    }, PREVIEW_DEBOUNCE_MS)
     return () => {
       stale = true
+      clearTimeout(timer)
     }
   }, [ctx, store, previewing, results, query, opts, replacement, preserveCase])
   const replaceWith = (pageId: string, m: SearchMatch) =>

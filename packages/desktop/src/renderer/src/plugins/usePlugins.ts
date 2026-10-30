@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { NotebookDoc, TreeItem } from '@slate/core'
 import { findBar } from '../find/FindBar'
-import { previewInNotes, replaceInNotes } from '../find/notesReplace'
+import { previewer, replaceInNotes } from '../find/notesReplace'
 import type { Library } from '../library'
 import type { Selection } from '../selection'
 import { builtinPlugins } from './builtins'
@@ -52,7 +52,7 @@ export function usePlugins(host: HostState, onShowView: (viewId: string) => void
       getLibrary: (): LibraryNotebook[] => latest.current.library.notebooks().map((e) => ({ id: e.id, name: e.doc.name, sections: sectionsOf(e.doc) })),
       currentNotebookId: () => latest.current.notebookId,
       search: (query) => window.slate.search.query(query),
-      previewReplacements: (request) => previewInNotes(request, window.slate.docs),
+      previewReplacements: previewer(window.slate.docs),
       replaceInPages: (request) =>
         replaceInNotes(request, { persistence: window.slate.docs, exists: (pageId) => latest.current.library.notebooks().some((e) => locate(e.doc, pageId) !== null) }),
       openPage(pageId, options) {
