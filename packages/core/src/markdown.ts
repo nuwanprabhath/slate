@@ -5,20 +5,15 @@ const clean = (s: string) => s.replace(/\u00A0/g, ' ').replace(/[\u200B-\u200D\u
 const isInline = (n: PMJSON) => n.type === 'text' || n.type === 'hardBreak'
 const isList = (n: PMJSON) => n.type === 'bulletList' || n.type === 'orderedList' || n.type === 'taskList'
 
-/** The longest run of backticks in `s`, or only those starting a line. A loop: spreading every run into Math.max overflows the stack. */
-function longestTicks(s: string, lineStartsOnly = false): number {
+/** The longest run of backticks in `s`. A loop: spreading every run into Math.max overflows the stack. */
+function longestTicks(s: string): number {
   let longest = 0
   let run = 0
-  let atLineStart = true
   for (let i = 0; i < s.length; i++) {
-    const c = s[i]
-    if (c === '`' && (!lineStartsOnly || atLineStart)) {
+    if (s[i] === '`') {
       run++
       if (run > longest) longest = run
-      continue
-    }
-    run = 0
-    atLineStart = c === '\n'
+    } else run = 0
   }
   return longest
 }
@@ -115,7 +110,8 @@ function blockLines(node: PMJSON): string[] {
     case 'codeBlock': {
       const lang = typeof node.attrs?.language === 'string' && node.attrs.language !== 'plaintext' ? node.attrs.language : ''
       const code = (node.content ?? []).map((n) => (n.text ?? '').replace(/\r\n?/g, '\n')).join('')
-      const fence = '`'.repeat(Math.max(2, longestTicks(code, true)) + 1)
+      // Longer than any run anywhere, not just at a line start: CommonMark closes on an indented fence too.
+      const fence = '`'.repeat(Math.max(2, longestTicks(code)) + 1)
       return [fence + lang, ...code.split('\n'), fence]
     }
     case 'blockquote':

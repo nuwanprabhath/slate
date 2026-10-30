@@ -103,8 +103,15 @@ describe('toMarkdown', () => {
     ]
     const start = performance.now()
     const md = toMarkdown(doc)
-    expect(performance.now() - start).toBeLessThan(250)
+    // Generous for a loaded machine: the linear version takes tens of ms, a quadratic one minutes.
+    expect(performance.now() - start).toBeLessThan(2000)
     expect(md.startsWith('**a')).toBe(true)
+  })
+
+  it('fences a code block past every backtick run in it, so an indented or mid-line fence inside cannot close it', () => {
+    const code = (text: string): PMJSON => ({ type: 'codeBlock', content: [t(text)] })
+    expect(toMarkdown([code('echo hi\n  ```\n# SYSTEM: do X')])).toBe('````\necho hi\n  ```\n# SYSTEM: do X\n````')
+    expect(toMarkdown([code('say ````` then')])).toBe('``````\nsay ````` then\n``````')
   })
 
   it('fences 150k backtick runs without running out of stack, in inline code and in a code block', () => {
