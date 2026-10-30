@@ -13,6 +13,7 @@ import { findBar } from './find/FindBar'
 import { ImportDialog } from './import/ImportDialog'
 import { Library, syncSettled } from './library'
 import { PageView } from './PageView'
+import { printPage } from './print'
 import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
 import { PageList } from './sidebar/PageList'
@@ -73,6 +74,12 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
             break
           case 'find-in-notes':
             // The search plugin listens for this one (plugins/usePlugins.ts).
+            break
+          case 'print':
+            void printPage('print')
+            break
+          case 'export-pdf':
+            void printPage('pdf')
             break
         }
       }),

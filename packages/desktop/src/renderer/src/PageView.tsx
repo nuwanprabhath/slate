@@ -95,6 +95,7 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
           nb.setTitle(item.id, e.target.value)
         }}
       />
+      <h1 className="page-print-title">{title || 'Untitled page'}</h1>
       {session && <Canvas session={session} conflicts={conflictBoxes} onConflictClick={openConflict} />}
       {session && <FindBar session={session} />}
       {resolving &&<ConflictResolver conflict={resolving} onClose={closeResolver} />}

@@ -1,0 +1,56 @@
+/*
+ * File → Print… and Export Page as PDF… (print.ts sets html.print-page and the --print-* sizes). Only
+ * the open page prints: its title, then the canvas as on screen, dark on white whatever the theme,
+ * without the app around it or the boxes' handles, rings and carets.
+ */
+.page-print-title { display: none; }
+
+@media print {
+  html.print-page {
+    --bg: #ffffff !important;
+    --page: #ffffff !important;
+    --panel: #f4f4f4 !important;
+    --panel-2: #ececec !important;
+    --box-bg: transparent !important;
+    --box-border: #d0d0d0 !important;
+    --border: #d0d0d0 !important;
+    --text: #1a1a1a !important;
+    --muted: #5c5c5c !important;
+    --link: #0b57d0 !important;
+    --code-keyword: #8b2fc9 !important;
+    --code-string: #2e7d32 !important;
+    --code-number: #b4530a !important;
+    --code-comment: #6a6f78 !important;
+    --code-title: #1f5fbf !important;
+    --texture-image: none !important;
+    color-scheme: light !important;
+  }
+  html.print-page, html.print-page body, html.print-page #root { height: auto; overflow: visible; background: #ffffff; }
+  /* The recovery-key sheet's print rule (vault.css) hides everything else. */
+  html.print-page body * { visibility: visible; }
+  html.print-page body *:not(.page-view, .page-view *, :has(.page-view)) { display: none !important; }
+  html.print-page body :has(.page-view), html.print-page .page-view {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: visible !important;
+    background: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+  html.print-page .page-view > :not(.page-print-title, .slate-scroll) { display: none !important; }
+  html.print-page .page-print-title { display: block; margin: 0 0 12px; font: 600 22px/1.25 var(--font-ui); color: #1a1a1a; overflow-wrap: anywhere; }
+  /* zoom, not a transform: the scaled height is what Chromium splits into sheets. */
+  html.print-page .slate-scroll { display: block; overflow: visible; zoom: var(--print-zoom, 1); width: var(--print-width); height: var(--print-height); }
+  html.print-page .slate-canvas { width: 100%; height: 100%; min-width: 0 !important; min-height: 0 !important; }
+  html.print-page :is(.slate-box-bar, .slate-box-resize, .slate-pending-caret) { display: none !important; }
+  html.print-page .slate-box { border-color: transparent !important; }
+  html.print-page .slate-canvas * { outline: none !important; caret-color: transparent; }
+  html.print-page .slate-find-match { background: none !important; }
+}
