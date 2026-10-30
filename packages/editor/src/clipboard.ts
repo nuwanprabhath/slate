@@ -16,6 +16,8 @@ function wrapContents(el: Element, tag: string): void {
 // Alignment is structure, not styling: paste and copy keep it (the one inline style besides colour).
 const ALIGNMENTS = new Set(['center', 'right'])
 const ALIGNABLE = /^(P|H[1-6])$/
+// So is a paragraph's indent (WP-C2), kept as a pixel left margin.
+const indentMargin = (el: HTMLElement): string => (ALIGNABLE.test(el.tagName) && /^\d+(\.\d+)?px$/.test(el.style.marginLeft) ? el.style.marginLeft : '')
 
 /** Default paste: keep structure and bold/italic, drop the source's fonts, sizes, colours and classes. */
 export function cleanPastedHtml(html: string): string {
@@ -32,10 +34,12 @@ export function cleanPastedHtml(html: string): string {
   }
   for (const el of Array.from(doc.body.querySelectorAll<HTMLElement>('*'))) {
     const align = ALIGNABLE.test(el.tagName) && ALIGNMENTS.has(el.style.textAlign) ? el.style.textAlign : ''
+    const margin = indentMargin(el)
     // A to-do item's box (Slate's own copy, GitHub task lists) keeps its type and tick.
     const keep = (name: string) => KEEP_PASTE_ATTRS.has(name) || (el.tagName === 'INPUT' && (name === 'type' || name === 'checked'))
     for (const attr of Array.from(el.attributes)) if (!keep(attr.name)) el.removeAttribute(attr.name)
     if (align) el.style.textAlign = align
+    if (margin) el.style.marginLeft = margin
   }
   doc.body.querySelectorAll('font, span').forEach(unwrap)
   return doc.body.innerHTML
@@ -93,11 +97,13 @@ export function stripCopiedStyles(root: ParentNode): void {
     const color = stored && el.style.color && el.style.color !== 'inherit' ? stored : el.style.color
     const align = ALIGNMENTS.has(el.style.textAlign) ? el.style.textAlign : ''
     const taskList = el.getAttribute('data-type') === 'taskList'
+    const margin = indentMargin(el)
     el.removeAttribute('style')
     el.removeAttribute('class')
     for (const attr of Array.from(el.attributes)) if (attr.name.startsWith('data-')) el.removeAttribute(attr.name)
     if (align) el.style.textAlign = align
     if (color) el.style.color = color
+    if (margin) el.style.marginLeft = margin
     if (taskList) el.setAttribute('data-type', 'taskList')
   }
 }

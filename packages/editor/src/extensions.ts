@@ -10,6 +10,7 @@ import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model'
 import { Plugin, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { currentTheme, readableColor, readableHighlight } from './colorContrast'
+import { MoveBlocks } from './moveBlocks'
 
 const lowlight = createLowlight(common)
 
@@ -357,6 +358,71 @@ const VerticalAlignment = Extension.create({
   },
 })
 
+// --- WP-C2: indent, move blocks, format painter ---
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    slateIndent: { indent: (step: 1 | -1) => ReturnType }
+  }
+}
+
+export const INDENT_STEP_PX = 24
+export const MAX_INDENT = 8
+const INDENTABLE = new Set(['paragraph', 'heading'])
+// Inside these, Tab keeps its own meaning (nest, next cell, the code's own indentation).
+const TAB_OWNERS = new Set(['listItem', 'tableCell', 'tableHeader', 'codeBlock'])
+
+function indentFromMargin(el: HTMLElement): number | null {
+  const level = Math.round(parseFloat(el.style.marginLeft.endsWith('px') ? el.style.marginLeft : '') / INDENT_STEP_PX)
+  return Number.isFinite(level) && level > 0 ? Math.min(level, MAX_INDENT) : null
+}
+
+/**
+ * Paragraph and heading indent, in 24px steps up to 8: an attribute on the existing nodes, so 0.4.3
+ * keeps it (test/olderVersions.test.ts). Tab and Shift+Tab, only outside lists, tables and code.
+ */
+export const Indent = Extension.create({
+  name: 'indent',
+  addGlobalAttributes() {
+    return [
+      {
+        types: [...INDENTABLE],
+        attributes: {
+          indent: {
+            default: null,
+            parseHTML: (el) => indentFromMargin(el),
+            renderHTML: (attrs) => (typeof attrs.indent === 'number' && attrs.indent > 0 ? { style: `margin-left: ${attrs.indent * INDENT_STEP_PX}px` } : {}),
+          },
+        },
+      },
+    ]
+  },
+  addCommands() {
+    return {
+      indent:
+        (step) =>
+        ({ state, tr, dispatch }) => {
+          const { $from, from, to } = state.selection
+          for (let d = $from.depth; d > 0; d--) if (TAB_OWNERS.has($from.node(d).type.name)) return false
+          if (!dispatch) return true
+          tr.doc.nodesBetween(from, to, (node, pos) => {
+            if (!INDENTABLE.has(node.type.name)) return !node.isTextblock && !TAB_OWNERS.has(node.type.name)
+            const level = Math.max(0, Math.min(MAX_INDENT, ((node.attrs.indent as number | null) ?? 0) + step))
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: level || null })
+            return false
+          })
+          return true
+        },
+    }
+  },
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => this.editor.commands.indent(1),
+      'Shift-Tab': () => this.editor.commands.indent(-1),
+    }
+  },
+})
+
 /**
  * Every box editor uses exactly this extension list, so the static renderer's schema matches.
  * Undo/redo is handled per page by Loro (PageSession), not by TipTap history.
@@ -388,6 +454,9 @@ export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extension
     TodoList,
     TextAlignment,
     VerticalAlignment,
+    // --- WP-C2 ---
+    Indent,
+    MoveBlocks,
   ]
 }
 
