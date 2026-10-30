@@ -12,4 +12,8 @@ describe('auto-formatting defaults', () => {
   it('pasted addresses become links by default (the maintainer decided in 0.4.2)', () => {
     expect(DEFAULT_SETTINGS.linkPastedUrls).toBe(true)
   })
+
+  it('misspelled words are not underlined by default, and never corrected (phase 15 WP-D)', () => {
+    expect(DEFAULT_SETTINGS.spellcheckUnderline).toBe(false)
+  })
 })

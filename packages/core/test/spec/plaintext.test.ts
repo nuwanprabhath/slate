@@ -77,4 +77,9 @@ describe('toPlainText', () => {
       expect(toPlainText([{ type: 'bulletList', attrs: { listStyle }, content: [li(p('x'))] }])).toBe('- x')
     }
   })
+
+  it('writes to-do items as `- [ ]` and `- [x]`, nested by 2 spaces (phase 15)', () => {
+    const todo = (checked: boolean, ...content: PMJSON[]): PMJSON => ({ type: 'listItem', attrs: { checked }, content })
+    expect(toPlainText([ul([todo(false, p('milk')), todo(true, p('eggs'), ul([todo(true, p('brown'))]))])])).toBe('- [ ] milk\n- [x] eggs\n  - [x] brown')
+  })
 })
