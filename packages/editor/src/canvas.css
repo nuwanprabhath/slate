@@ -50,7 +50,8 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-box-content td, .slate-box-content th { border: 1px solid var(--border); padding: 4px 6px; min-width: 60px; vertical-align: top; }
 .slate-box-content th { background: var(--panel); text-align: left; }
 .slate-box-content img { max-width: 100%; display: block; }
-.slate-box-content img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+/* A clicked image, or one inside a selected range (imageSelection.ts): a ring that reads at a glance, drawn just inside the image so it never covers the lines around it. */
+.slate-box-content img.ProseMirror-selectednode, .slate-box-content img.slate-image-selected { outline: 3px solid var(--accent); outline-offset: -3px; }
 .slate-box-content .selectedCell { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: var(--code-keyword); }
 .hljs-string, .hljs-attr { color: var(--code-string); }

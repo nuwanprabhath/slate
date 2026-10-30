@@ -38,7 +38,7 @@ export const SECTIONS: SettingsSection[] = [
     id: 'autocorrect',
     label: 'Autocorrect',
     blurb: 'What Slate changes as you type. Everything else stays exactly as typed.',
-    keywords: ['bullets', 'lists', 'markdown', 'shortcuts', 'headings', 'code'],
+    keywords: ['bullets', 'lists', 'markdown', 'shortcuts', 'headings', 'code', 'links', 'urls', 'paste'],
     Component: AutocorrectSection,
   },
   {

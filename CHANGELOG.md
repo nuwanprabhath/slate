@@ -6,6 +6,21 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-30
+
+### Added
+
+- A pasted web or mail address (http, https, mailto, www.) becomes a link, whether it is pasted into a box, onto the canvas or inside other text. Paste as plain text leaves it as text, and Settings → Autocorrect → **Make pasted web addresses links** turns it off.
+
+### Changed
+
+- A clicked picture's highlight is a 3 px ring in the theme's accent colour, drawn just inside the picture so it never covers the lines around it.
+
+### Fixed
+
+- Typing no longer stalls when you pause and start again on a long page. Slate re-indexed the page for search in the meantime by rebuilding it from the database, and the window's key presses waited behind that. It now updates only what changed. Saving's occasional clean-up of a page's history also waits until you stop typing.
+- Shift+click from the line above a picture to the line below it selected the picture with nothing to show it; a picture inside a selection now shows the same ring as a clicked one.
+
 ## [0.4.1] - 2026-10-29
 
 ### Changed

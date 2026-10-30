@@ -6,6 +6,11 @@ import type { ConflictRecord } from '@slate/sync'
 import type { PqLevel, TransportObservation } from '../shared/api'
 
 const COMPACT_THRESHOLD = 500
+/**
+ * Compaction rebuilds the whole doc on the main thread, which also routes the window's key presses,
+ * so it waits for this long without an append to that doc rather than stalling a keystroke.
+ */
+export const COMPACT_IDLE_MS = 3_000
 
 export interface AuditRow {
   id: number
@@ -13,6 +18,12 @@ export interface AuditRow {
   tool: string
   target: string
   outcome: string
+}
+
+/** How far a `loadSince` reader has read one doc. */
+export interface DocCursor {
+  lastId: number
+  removals: number
 }
 
 export interface SearchRow {
@@ -31,6 +42,10 @@ export class DocStore {
 
   /** `compact: false` is for the MCP CLI: only the app compacts, so the two never race on it. */
   private readonly options: { compact?: boolean }
+  private readonly compactTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Per doc, the highest update id the last compaction folded into the snapshot (`loadSince`). */
+  private readonly compactedThrough = new Map<string, number>()
+  private readonly removals = new Map<string, number>()
 
   /** The key is used to open the connection and not kept (§15 N9). */
   constructor(fileOrDb: string | Database.Database, options: { compact?: boolean; key?: KeyHandle | null } = {}) {
@@ -197,16 +212,49 @@ export class DocStore {
     return [...(snapshot ? [snapshot.data] : []), ...updates.map((u) => u.data)].map((b) => new Uint8Array(b))
   }
 
+  /**
+   * The doc's rows after `cursor`, for a reader that keeps the doc in memory. `full` when the reader has
+   * nothing yet, or a compaction or removal changed rows it had read: then `parts` is the whole doc and
+   * the reader starts over.
+   */
+  loadSince(docId: string, cursor: DocCursor | undefined): { parts: Uint8Array[]; cursor: DocCursor; full: boolean } {
+    return this.db.transaction(() => {
+      const { last } = this.db.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
+      const folded = this.compactedThrough.get(docId) ?? 0
+      const removals = this.removals.get(docId) ?? 0
+      const next = { lastId: Math.max(last ?? 0, folded, cursor?.lastId ?? 0), removals }
+      if (!cursor || cursor.removals !== removals || folded > cursor.lastId) return { parts: this.load(docId), cursor: next, full: true }
+      const rows = this.db.prepare('SELECT data FROM updates WHERE doc_id = ? AND id > ? ORDER BY id').all(docId, cursor.lastId) as Array<{ data: Buffer }>
+      return { parts: rows.map((r) => new Uint8Array(r.data)), cursor: next, full: false }
+    })()
+  }
+
   append(docId: string, update: Uint8Array, origin: 'local' | 'remote' = 'local'): void {
     this.db.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
+    if (this.options.compact === false) return
     const { n } = this.db.prepare('SELECT COUNT(*) AS n FROM updates WHERE doc_id = ?').get(docId) as { n: number }
-    if (n >= COMPACT_THRESHOLD && this.options.compact !== false) this.compact(docId)
+    if (n < COMPACT_THRESHOLD) return
+    clearTimeout(this.compactTimers.get(docId))
+    this.compactTimers.set(
+      docId,
+      setTimeout(() => {
+        this.compactTimers.delete(docId)
+        // Only an optimisation: on failure (a busy database) the rows stay, and the next append tries again.
+        try {
+          this.compact(docId)
+        } catch {
+          return
+        }
+      }, COMPACT_IDLE_MS),
+    )
   }
 
   compact(docId: string): void {
     this.db.transaction(() => {
       const parts = this.load(docId)
       if (parts.length === 0) return
+      const { last } = this.db.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
+      if (last !== null) this.compactedThrough.set(docId, last)
       const doc = new LoroDoc()
       doc.importBatch(parts)
       const snapshot = doc.export({ mode: 'snapshot' })
@@ -218,18 +266,46 @@ export class DocStore {
   }
 
   remove(docId: string): void {
+    clearTimeout(this.compactTimers.get(docId))
+    this.compactTimers.delete(docId)
+    this.removals.set(docId, (this.removals.get(docId) ?? 0) + 1)
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM snapshots WHERE doc_id = ?').run(docId)
       this.db.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
     })()
   }
 
-  /** The search index's rows for one page: one per text block, `ord` in reading order. */
+  /**
+   * The search index's rows for one page: one per text block, in reading order. Only the rows between
+   * the unchanged first and last ones are rewritten: an edit re-indexes on the main thread, and
+   * rewriting every trigram of a long page there stalled typing. Rows a rewrite puts between two kept
+   * ones get an `ord` between theirs, so `ord` only orders a page's rows.
+   */
   replaceSearchPage(page: { pageId: string; sectionId: string; notebookId: string }, rows: SearchRow[]): void {
     this.db.transaction(() => {
-      this.db.prepare('DELETE FROM search WHERE page_id = ?').run(page.pageId)
       const insert = this.db.prepare('INSERT INTO search (page_id, section_id, notebook_id, box_id, ord, text) VALUES (?, ?, ?, ?, ?, ?)')
-      for (const r of rows) insert.run(page.pageId, page.sectionId, page.notebookId, r.boxId, r.ord, r.text)
+      const old = this.db
+        .prepare('SELECT rowid AS id, section_id AS sectionId, notebook_id AS notebookId, box_id AS boxId, ord, text FROM search WHERE page_id = ? ORDER BY ord')
+        .all(page.pageId) as Array<SearchRow & { id: number; sectionId: string; notebookId: string }>
+      const same = (a: SearchRow, b: SearchRow) => a.boxId === b.boxId && a.text === b.text
+      let head = 0
+      while (head < old.length && head < rows.length && same(old[head]!, rows[head]!)) head++
+      let tail = 0
+      while (tail < old.length - head && tail < rows.length - head && same(old[old.length - 1 - tail]!, rows[rows.length - 1 - tail]!)) tail++
+      const added = rows.slice(head, rows.length - tail)
+      const low = head > 0 ? old[head - 1]!.ord : (old[0]?.ord ?? 0) - added.length - 1
+      const high = tail > 0 ? old[old.length - tail]!.ord : low + added.length + 1
+      const step = (high - low) / (added.length + 1)
+      const moved = old.some((r) => r.sectionId !== page.sectionId || r.notebookId !== page.notebookId)
+      // Repeated inserts at one spot halve the gap each time: renumber before it runs out of precision.
+      if (moved || old.length === 0 || step < 1e-6) {
+        this.db.prepare('DELETE FROM search WHERE page_id = ?').run(page.pageId)
+        rows.forEach((r, ord) => insert.run(page.pageId, page.sectionId, page.notebookId, r.boxId, ord, r.text))
+        return
+      }
+      const remove = this.db.prepare('DELETE FROM search WHERE rowid = ?')
+      for (const r of old.slice(head, old.length - tail)) remove.run(r.id)
+      added.forEach((r, i) => insert.run(page.pageId, page.sectionId, page.notebookId, r.boxId, low + step * (i + 1), r.text))
     })()
   }
 
@@ -277,6 +353,8 @@ export class DocStore {
   }
 
   close(): void {
+    for (const t of this.compactTimers.values()) clearTimeout(t)
+    this.compactTimers.clear()
     this.db.close()
   }
 }

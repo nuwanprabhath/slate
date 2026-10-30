@@ -176,7 +176,10 @@ Checked by `.claude/hooks/definition-of-done.mjs` (Stop hook) on the whole branc
   command. TipTap input/paste rules are off unless the "Markdown Shortcuts" setting is on. No
   smart quotes, autocorrect, autocapitalise or spellcheck replacement. The one exception is
   `* ` at the start of a paragraph becoming a bullet list (`autoBullets`): on by default,
-  switchable in Settings → Autocorrect, and undone by Backspace right after.
+  switchable in Settings → Autocorrect, and undone by Backspace right after. Pasted http, https,
+  mailto and www. addresses become links (`linkPastedUrls`, on by default, the maintainer's
+  decision in 0.4.2), through `PastedLinks` in `packages/editor/src/links.ts`, never a paste rule;
+  paste as plain text never links.
 - **Copy as plain text**: real list numbers, 2-space nesting, `- ` bullets, code verbatim, tabs
   between table cells, LF only, NBSP → space, no zero-width characters, trailing newlines trimmed.
   Lives in `toPlainText` (`packages/core/src/plaintext.ts`); extend it there, never a second copy.

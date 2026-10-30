@@ -4,6 +4,7 @@ import { activeEditor } from './activeEditor'
 import { Box, type GroupDrag } from './Box'
 import { CanvasMenu } from './CanvasMenu'
 import { imageFilesFrom } from './images'
+import { linkedTextBlocks, pastePlain } from './links'
 import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
 import './canvas.css'
@@ -160,7 +161,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
           else view.pasteText(input.plain)
         } else
           void services.readClipboardText().then((text) => {
-            if (!view.isDestroyed) view.pasteText(text)
+            if (!view.isDestroyed) pastePlain(view, text)
           })
       }
     },
@@ -189,7 +190,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
         const blocks: PMJSON[] =
           files.length > 0
             ? await Promise.all(files.map(async (f) => ({ type: 'image', attrs: { src: await services.putBlob(new Uint8Array(await f.arrayBuffer()), f.type) } })))
-            : text.replace(/\r\n?/g, '\n').split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] }))
+            : linkedTextBlocks(text, services.linkPastedUrls)
         session.createBoxWithContent(x, y, blocks)
       })()
     }

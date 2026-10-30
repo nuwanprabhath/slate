@@ -8,6 +8,12 @@ describe('settings schema', () => {
     expect(mergeSettings({ syncRequirePq: true }).syncRequirePq).toBe(true)
   })
 
+  it('pasted addresses become links by default, and a stored non-boolean falls back to that', () => {
+    expect(DEFAULT_SETTINGS.linkPastedUrls).toBe(true)
+    for (const v of ['false', 0, null]) expect(mergeSettings({ linkPastedUrls: v }).linkPastedUrls, String(v)).toBe(true)
+    expect(mergeSettings({ linkPastedUrls: false }).linkPastedUrls).toBe(false)
+  })
+
   it('fills every key from its default', () => {
     expect(mergeSettings({})).toEqual(DEFAULT_SETTINGS)
     expect(DEFAULT_SETTINGS.autoBullets).toBe(true)

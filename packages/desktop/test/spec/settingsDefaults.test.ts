@@ -8,4 +8,8 @@ describe('auto-formatting defaults', () => {
     expect(DEFAULT_SETTINGS.markdownShortcuts).toBe(false)
     expect(DEFAULT_SETTINGS.autoBullets).toBe(true)
   })
+
+  it('pasted addresses become links by default (the maintainer decided in 0.4.2)', () => {
+    expect(DEFAULT_SETTINGS.linkPastedUrls).toBe(true)
+  })
 })

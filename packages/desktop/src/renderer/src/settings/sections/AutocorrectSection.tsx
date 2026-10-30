@@ -18,6 +18,13 @@ export function AutocorrectSection({ settings, patch }: SectionProps) {
         checked={settings.markdownShortcuts}
         onChange={(markdownShortcuts) => patch({ markdownShortcuts })}
       />
+      <CheckboxSetting
+        testId="setting-link-pasted-urls"
+        label="Make pasted web addresses links"
+        help="Web, mail and www. addresses. Paste as plain text leaves them as text."
+        checked={settings.linkPastedUrls}
+        onChange={(linkPastedUrls) => patch({ linkPastedUrls })}
+      />
     </>
   )
 }
