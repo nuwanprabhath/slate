@@ -12,16 +12,28 @@ import { findHighlightPlugin } from './find'
 import { foldPlugin } from './fold'
 import { FormatPainter } from './formatPainter'
 import { copyWithImages, imageFilesFrom, insertImages, pasteHtml } from './images'
+import { ImageResize } from './imageResize'
 import { ImageSelection } from './imageSelection'
 import { SlateKeymap } from './keymap'
 import { LinkPopover } from './LinkPopover'
 import { isSingleUrl, PastedLinks, pastePlainOrLink } from './links'
 import { LoroBinding } from './loroBinding'
 import type { PageSession } from './PageSession'
-import { useEditorServices } from './services'
+import { useEditorServices, type EditorServices } from './services'
 import { editorRuleOptions } from './inputRules'
 
 const clipboardSerializer = makeClipboardSerializer(schema)
+
+/** Slate never changes text on its own: the browser may underline misspellings (a setting), never correct them. */
+export function boxEditorAttributes({ spellcheckUnderline }: Pick<EditorServices, 'spellcheckUnderline'>): Record<string, string> {
+  return {
+    class: 'slate-box-content',
+    spellcheck: spellcheckUnderline ? 'true' : 'false',
+    autocorrect: 'off',
+    autocapitalize: 'off',
+    'data-testid': 'box-editor',
+  }
+}
 
 interface Props {
   box: BoxState
@@ -42,6 +54,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         SlateKeymap.configure({ session, services }),
         SlateCaret,
         ImageSelection,
+        ImageResize.configure({ session }),
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
         FormatPainter,
@@ -50,13 +63,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
       ...editorRuleOptions(services),
       autofocus: autoFocus ? 'end' : false,
       editorProps: {
-        attributes: {
-          class: 'slate-box-content',
-          spellcheck: 'false',
-          autocorrect: 'off',
-          autocapitalize: 'off',
-          'data-testid': 'box-editor',
-        },
+        attributes: boxEditorAttributes(services),
         clipboardTextSerializer: serializeSliceAsText,
         clipboardSerializer,
         transformPastedHTML: cleanPastedHtml,
@@ -110,7 +117,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         session.deleteIfEmpty(box.id)
       },
     },
-    [box.contentId, services.markdownShortcuts, services.autoBullets, services.linkPastedUrls, theme],
+    [box.contentId, services.markdownShortcuts, services.autoBullets, services.linkPastedUrls, services.spellcheckUnderline, theme],
   )
   useEffect(
     () => () => {

@@ -85,6 +85,7 @@ export function FontCombo({ testId, label, value, onChange }: {
       <span className="font-combo">
         <input
           data-testid={testId}
+          spellCheck={false}
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}

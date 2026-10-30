@@ -3,6 +3,7 @@ import type { ChromeOptions } from '../shared/windowChrome/chrome'
 import { appUrl, devServerOrigin, pageQuery, type PageKind } from './appProtocol'
 import { boundaryGuardsInstalled } from './hardening'
 import { env } from './testHooks'
+import { spellcheckAvailable } from '../shared/settings/spellcheck'
 
 /**
  * The window factory: the only `new BrowserWindow` (lint rule `slate/windows-from-the-factory`).
@@ -32,7 +33,8 @@ export function windowOptions({ backgroundColor, chrome = {}, iconPath, preloadP
       preload: preloadPath,
       contextIsolation: true,
       sandbox: true,
-      spellcheck: false,
+      // Only where the checker is the system's; the session runs it only while the setting is on (spellcheck.ts).
+      spellcheck: spellcheckAvailable(process.platform),
       backgroundThrottling: !isE2E,
     },
   }

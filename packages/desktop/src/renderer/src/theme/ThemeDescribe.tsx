@@ -64,6 +64,7 @@ export function ThemeDescribe({ onSaved }: { onSaved: (id: string) => void }) {
       </label>
       <textarea
         id="theme-describe"
+        spellCheck={false}
         data-testid="theme-describe"
         rows={2}
         maxLength={2000}

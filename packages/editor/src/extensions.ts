@@ -522,6 +522,27 @@ export const FormatPaste = Extension.create({
 })
 
 /**
+ * An image's width in CSS pixels, set by dragging a corner handle (imageResize.ts); null is its
+ * natural size, capped by the box. Tiptap's own attribute would keep "50%" or "auto" as text.
+ * 0.4.3 has the same attribute name, so it keeps and draws the width (test/olderVersions.test.ts).
+ */
+const SizedImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: (el) => {
+          const width = el.getAttribute('width') ?? ''
+          return /^\d+$/.test(width) && Number(width) > 0 ? Number(width) : null
+        },
+        renderHTML: (attrs) => (typeof attrs.width === 'number' ? { width: String(attrs.width) } : {}),
+      },
+    }
+  },
+})
+
+/**
  * Every box editor uses exactly this extension list, so the static renderer's schema matches.
  * Undo/redo is handled per page by Loro (PageSession), not by TipTap history.
  * No Typography extension: no smart quotes or dash replacement.
@@ -543,7 +564,7 @@ export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extension
     FontSize,
     AdaptiveHighlight.configure({ multicolor: true }),
     // A pasted data-URL picture is stored first (storeDataImages); one that slips past is dropped, never kept in the page.
-    Image.configure({ inline: false, allowBase64: false }),
+    SizedImage.configure({ inline: false, allowBase64: false }),
     TableKit.configure({ table: { resizable: false } }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'plaintext' }),
     // --- autoBullets (WP-H) ---

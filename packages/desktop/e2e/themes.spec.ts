@@ -127,6 +127,8 @@ test('a theme generated with (fake) Claude is previewed, then saved to the grid'
   const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_CLAUDE_THEME: '1' })
   try {
     await openAppearance(page)
+    // What is typed here is a request, not a note: never underlined (spellcheck.ts).
+    await expect(page.getByTestId('theme-describe')).toHaveAttribute('spellcheck', 'false')
     await page.getByTestId('theme-describe').fill('calm forest green, low contrast borders')
     await page.getByTestId('theme-generate').click()
     await expect(page.getByTestId('theme-preview-name')).toContainText('Calm Forest')

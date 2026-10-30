@@ -36,7 +36,9 @@ export function cleanPastedHtml(html: string): string {
     const align = ALIGNABLE.test(el.tagName) && ALIGNMENTS.has(el.style.textAlign) ? el.style.textAlign : ''
     const margin = indentMargin(el)
     // A to-do item's box (Slate's own copy, GitHub task lists) keeps its type and tick.
-    const keep = (name: string) => KEEP_PASTE_ATTRS.has(name) || (el.tagName === 'INPUT' && (name === 'type' || name === 'checked'))
+    // An image's width is its size on the page (imageResize.ts), not the source's styling.
+    const keep = (name: string) =>
+      KEEP_PASTE_ATTRS.has(name) || (el.tagName === 'INPUT' && (name === 'type' || name === 'checked')) || (el.tagName === 'IMG' && name === 'width')
     for (const attr of Array.from(el.attributes)) if (!keep(attr.name)) el.removeAttribute(attr.name)
     if (align) el.style.textAlign = align
     if (margin) el.style.marginLeft = margin
