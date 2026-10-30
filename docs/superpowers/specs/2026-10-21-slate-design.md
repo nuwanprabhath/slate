@@ -85,7 +85,8 @@ When a box's rendered height changes by Δ, every box whose top is at or below t
 ### No auto-formatting by default
 - Lists, headings and code blocks are created only by an explicit command: shortcut, toolbar or `/` menu.
 - Typing `1.` or `-` at the start of a line stays plain text by default. Markdown input rules can be enabled in settings.
-- Off by default: auto-capitalisation, smart quotes, dash replacement, link auto-formatting, spell-check auto-replace.
+- Off by default: auto-capitalisation, smart quotes, dash replacement, link auto-formatting while typing, spell-check auto-replace.
+- On by default (the maintainer's decision, 0.4.2): a pasted http, https, mailto or www. address becomes a link (`linkPastedUrls`, Settings → Autocorrect). Paste as plain text never links.
 
 ### Copy
 Slate writes these clipboard formats itself:
