@@ -88,9 +88,10 @@ export function useServices(settings: Settings): EditorServices {
       readClipboardText: () => window.slate.clipboardText(),
       markdownShortcuts: settings.markdownShortcuts,
       autoBullets: settings.autoBullets,
+      linkPastedUrls: settings.linkPastedUrls,
       openExternal: (url) => window.slate.openExternal(url),
     }),
-    [settings.markdownShortcuts, settings.autoBullets],
+    [settings.markdownShortcuts, settings.autoBullets, settings.linkPastedUrls],
   )
 }
 

@@ -7,6 +7,8 @@ export interface EditorServices {
   readClipboardText(): Promise<string>
   markdownShortcuts: boolean
   autoBullets: boolean
+  /** Pasted web and mail addresses become links. */
+  linkPastedUrls: boolean
   /** Opens a link in the system browser; the renderer never navigates itself. */
   openExternal(url: string): Promise<void>
 }

@@ -33,6 +33,8 @@ export interface Settings {
   markdownShortcuts: boolean
   /** Typing `* ` at the start of a line starts a bulleted list. On by default. */
   autoBullets: boolean
+  /** Pasted http, https, mailto and www. addresses become links. On by default. */
+  linkPastedUrls: boolean
   /** Application (client) id of the user's Azure app registration, for OneNote import. */
   msClientId: string | null
   /** Where notebooks sync to; null (the default) is off, and sync then never touches the network. */

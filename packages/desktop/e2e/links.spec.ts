@@ -92,10 +92,42 @@ test('pasting a URL onto selected text links it and keeps the text', async ({ ap
   await expect(editor(page)).toHaveText('my repo')
 })
 
-test('pasting a URL with no selection inserts the URL text', async ({ app, page }) => {
+test('a pasted URL becomes a link by default, also inside pasted text', async ({ app, page }) => {
   await boxWith(page, 'go to ')
   await writeText(app, 'https://github.com')
   await paste(app)
   await expect(editor(page)).toHaveText('go to https://github.com')
+  const link = page.locator('[data-testid="box-editor"] a')
+  await expect(link).toHaveText('https://github.com')
+  await expect(link).toHaveAttribute('href', 'https://github.com')
+
+  await writeText(app, ' and the docs at www.example.com/docs.')
+  await paste(app)
+  await expect(editor(page)).toHaveText('go to https://github.com and the docs at www.example.com/docs.')
+  await expect(link.nth(1)).toHaveText('www.example.com/docs')
+  await expect(link.nth(1)).toHaveAttribute('href', 'https://www.example.com/docs')
+})
+
+test('a URL pasted onto the bare canvas becomes a link in the new box', async ({ app, page }) => {
+  await page.getByTestId('canvas').click({ position: { x: 200, y: 200 } })
+  await writeText(app, 'https://github.com')
+  await page.keyboard.press(`${MOD}+v`)
+  const link = page.locator('[data-testid="box-editor"] a')
+  await expect(link).toHaveAttribute('href', 'https://github.com')
+})
+
+test('paste as plain text, and the setting off, insert the URL as text', async ({ app, page }) => {
+  await boxWith(page, 'plain ')
+  await writeText(app, 'https://github.com')
+  await page.keyboard.press(`${MOD}+Shift+v`)
+  await expect(editor(page)).toHaveText('plain https://github.com')
+  await expect(page.locator('[data-testid="box-editor"] a')).toHaveCount(0)
+
+  await page.evaluate(() => window.slate.settings.set({ linkPastedUrls: false }))
+  await page.locator('[data-testid="box-editor"]').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' off ')
+  await paste(app)
+  await expect(page.locator('[data-testid="box-editor"]')).toHaveText('plain https://github.com off https://github.com')
   await expect(page.locator('[data-testid="box-editor"] a')).toHaveCount(0)
 })

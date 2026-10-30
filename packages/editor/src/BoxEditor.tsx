@@ -13,7 +13,7 @@ import { copySelectedImage, imageFilesFrom, insertImages } from './images'
 import { ImageSelection } from './imageSelection'
 import { SlateKeymap } from './keymap'
 import { LinkPopover } from './LinkPopover'
-import { isSingleUrl, pastePlainOrLink } from './links'
+import { isSingleUrl, PastedLinks, pastePlainOrLink } from './links'
 import { LoroBinding } from './loroBinding'
 import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
@@ -40,6 +40,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         SlateKeymap.configure({ session, services }),
         SlateCaret,
         ImageSelection,
+        PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
       ],
       ...editorRuleOptions(services),
@@ -98,7 +99,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         session.deleteIfEmpty(box.id)
       },
     },
-    [box.contentId, services.markdownShortcuts, services.autoBullets, theme],
+    [box.contentId, services.markdownShortcuts, services.autoBullets, services.linkPastedUrls, theme],
   )
   useEffect(
     () => () => {
