@@ -72,7 +72,10 @@ export function pdfText(pdf: Buffer): string {
     for (const [, name, hex, et] of stream.matchAll(/\/([^\s/]+)\s+[-\d.]+\s+Tf|<([0-9A-Fa-f]+)>|\b(ET)\b/g)) {
       if (name !== undefined) font = fonts.get(name)
       else if (et !== undefined) out += '\n'
-      else if (font && hex !== undefined) out += (hex.match(new RegExp(`.{${String(font.width)}}`, 'g')) ?? []).map((c) => font.map.get(parseInt(c, 16)) ?? '').join('')
+      else if (font && hex !== undefined) {
+        const { width, map } = font
+        out += (hex.match(new RegExp(`.{${String(width)}}`, 'g')) ?? []).map((c) => map.get(parseInt(c, 16)) ?? '').join('')
+      }
     }
   }
   return out
