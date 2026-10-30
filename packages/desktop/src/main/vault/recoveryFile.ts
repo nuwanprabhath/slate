@@ -2,11 +2,14 @@ import { realpathSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, isAbsolute } from 'node:path'
 import { canonicalRecoveryText } from './recovery'
 
-/** The real path of `path`, resolving symlinks in whatever part of it exists. */
+/**
+ * The real path of `path`, resolving symlinks in whatever part of it exists. `.native` also gives the
+ * case the disk stores, so on a case-insensitive disk `…/SLATE` is the data folder `…/Slate`.
+ */
 function real(path: string): string {
   const abs = resolve(path)
   try {
-    return realpathSync(abs)
+    return realpathSync.native(abs)
   } catch {
     const parent = dirname(abs)
     return parent === abs ? abs : join(real(parent), basename(abs))
