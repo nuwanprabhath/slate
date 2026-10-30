@@ -35,6 +35,7 @@ import { createIpc } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
 import { registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
 import { registerCopyIpc } from './copyHtml'
+import { registerEditIpc } from './editCommands'
 import { configureLogging, configureSecurityLog, registerDiagnosticsIpc } from './log/configure'
 import { log } from './log/logger'
 import { buildMenu, syncMenuChecks } from './menu'
@@ -263,6 +264,7 @@ void app.whenReady().then(async () => {
     (docId) => services().search.docRemoved(docId),
   )
   registerSearchIpc(ipc, () => services().search)
+  registerEditIpc(ipc)
   // What Slate last put on the clipboard, for the lock to clear (shouldClearClipboard).
   let copied: { at: number; text: string } | null = null
   registerCopyIpc(
