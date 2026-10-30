@@ -104,7 +104,7 @@ function Snippet({ match, replaceWith }: { match: SearchMatch; replaceWith?: (sn
   }
   if (at < match.snippet.length) parts.push({ text: match.snippet.slice(at), hit: false, from: at })
   return (
-    <span className="search-snippet">
+    <span className="search-snippet" title={match.snippet}>
       {parts.map((p, i) =>
         !p.hit ? (
           <Fragment key={i}>{p.text}</Fragment>
@@ -359,8 +359,13 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
                   onChange={(on) => setTicks(row.page.matches.map((_, m) => tickKey(row.page.pageId, m)), on)}
                 />
               )}
-              <span className="search-page-title">{row.page.pageTitle || 'Untitled page'}</span>
-              <span className="search-section">{row.page.sectionName}</span>
+              {/* The inner spans keep an ellipsised name's text inside its own box (UI audit: overlap). */}
+              <span className="search-page-title" title={row.page.pageTitle || 'Untitled page'}>
+                <span>{row.page.pageTitle || 'Untitled page'}</span>
+              </span>
+              <span className="search-section" title={row.page.sectionName}>
+                <span>{row.page.sectionName}</span>
+              </span>
               <span className="search-count" data-testid="search-count">
                 {row.page.matches.length}
               </span>

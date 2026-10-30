@@ -108,7 +108,9 @@ export function ReplaceToggle({ open, onToggle, testId }: { open: boolean; onTog
       onMouseDown={(e) => e.preventDefault()}
       onClick={onToggle}
     >
-      {open ? '▾' : '▸'}
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={open ? { transform: 'rotate(90deg)' } : undefined}>
+        <path d="M6 4l4 4-4 4" />
+      </svg>
     </button>
   )
 }

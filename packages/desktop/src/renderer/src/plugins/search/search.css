@@ -31,3 +31,5 @@
 .search-tick { flex: none; }
 .search-snippet del { background: rgb(234 92 0 / 0.25); color: inherit; text-decoration: line-through; border-radius: 2px; }
 .search-snippet ins { background: rgb(40 160 70 / 0.3); color: inherit; text-decoration: none; border-radius: 2px; }
+.search-tick:indeterminate { background: var(--accent); border-color: var(--accent); }
+.search-tick:indeterminate::before { content: ''; width: 7px; height: 2px; background: var(--accent-contrast); }

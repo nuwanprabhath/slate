@@ -41,9 +41,12 @@
   border-radius: 3px;
   background: transparent;
   color: var(--muted);
-  font: inherit;
-  font-size: 11px;
   cursor: pointer;
+}
+
+.find-replace-toggle svg {
+  display: block;
+  margin: auto;
 }
 
 .find-replace-toggle:hover {
