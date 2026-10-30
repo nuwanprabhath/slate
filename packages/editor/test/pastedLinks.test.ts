@@ -43,6 +43,14 @@ describe('findUrls', () => {
     expect(urls('https://en.wikipedia.org/wiki/Slate_(rock)')).toEqual([['https://en.wikipedia.org/wiki/Slate_(rock)', 'https://en.wikipedia.org/wiki/Slate_(rock)']])
   })
 
+  it('stays fast on a crafted paste of brackets and punctuation', () => {
+    const start = performance.now()
+    findUrls(`https://a.io/${')'.repeat(40_000)}`)
+    findUrls(`https://a.io/${'.x'.repeat(20_000)}${'.'.repeat(20_000)}`)
+    findUrls(`www.${'('.repeat(20_000)}${')'.repeat(20_000)}`)
+    expect(performance.now() - start).toBeLessThan(250)
+  })
+
   it('never links a script-bearing scheme, a bare scheme or a word that only contains one', () => {
     expect(urls('javascript:alert(1) data:text/html,x vbscript:x')).toEqual([])
     expect(urls('https:// and mailto: alone')).toEqual([])

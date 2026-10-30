@@ -126,6 +126,22 @@ describe('DocStore', () => {
     }
   })
 
+  it('a compaction that fails keeps the rows and throws nothing into the main process', () => {
+    vi.useFakeTimers()
+    try {
+      const store = new DocStore(tempDb())
+      for (const u of edits(520).updates) store.append('page:f', u)
+      vi.spyOn(store, 'compact').mockImplementation(() => {
+        throw new Error('SQLITE_BUSY: database is locked')
+      })
+      expect(() => vi.advanceTimersByTime(COMPACT_IDLE_MS)).not.toThrow()
+      expect(store.load('page:f')).toHaveLength(520)
+      store.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('drops a pending compaction when closed', () => {
     vi.useFakeTimers()
     try {

@@ -239,7 +239,12 @@ export class DocStore {
       docId,
       setTimeout(() => {
         this.compactTimers.delete(docId)
-        this.compact(docId)
+        // Only an optimisation: on failure (a busy database) the rows stay, and the next append tries again.
+        try {
+          this.compact(docId)
+        } catch {
+          return
+        }
       }, COMPACT_IDLE_MS),
     )
   }

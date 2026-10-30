@@ -99,21 +99,37 @@ export function pastePlainOrLink(view: EditorView, text: string): void {
 // A scheme or "www." at the start of a word, then everything up to whitespace or a character that
 // cannot be in an address; what ends a sentence or wraps the address is trimmed off after.
 const URL_CANDIDATE = /(?<![\w@.:/-])(?:https?:\/\/|mailto:|www\.)[^\s<>"'`]+/gi
-const TRAILING = /[.,;:!?*_~]+$/
+const TRAILING = new Set('.,;:!?*_~')
+const CLOSES: Record<string, string> = { ')': '(', ']': '[' }
+/** Longer than any address a person pastes; also keeps a crafted paste cheap. */
+const MAX_ADDRESS = 2048
 
+/**
+ * Drops what ends a sentence or wraps the address, in one backward scan. A closing bracket is the
+ * address's own only when it closes one inside it: wiki/Slate_(rock).
+ */
 function trimAddress(raw: string): string {
-  let url = raw.replace(TRAILING, '')
-  // A closing bracket is the address's own only when it closes one inside it: wiki/Slate_(rock).
-  for (const [open, close] of [['(', ')'], ['[', ']']] as const) {
-    while (url.endsWith(close) && url.split(close).length > url.split(open).length) url = url.slice(0, -1).replace(TRAILING, '')
+  const count = (ch: string) => raw.split(ch).length - 1
+  const open = { '(': count('('), '[': count('[') }
+  const close = { ')': count(')'), ']': count(']') }
+  let end = raw.length
+  for (;;) {
+    const ch = raw[end - 1]!
+    if (TRAILING.has(ch)) end--
+    else if ((ch === ')' || ch === ']') && close[ch] > open[CLOSES[ch] as '(' | '[']) {
+      close[ch]--
+      end--
+    } else break
+    if (end === 0) break
   }
-  return url
+  return raw.slice(0, end)
 }
 
 /** The web and mail addresses in `text`, each with the href a link to it gets. */
 export function findUrls(text: string): Array<{ from: number; to: number; href: string }> {
   const found: Array<{ from: number; to: number; href: string }> = []
   for (const m of text.matchAll(URL_CANDIDATE)) {
+    if (m[0].length > MAX_ADDRESS) continue
     const url = trimAddress(m[0])
     const rest = url.replace(/^(?:https?:\/\/|mailto:|www\.)/i, '')
     if (!/[\w]/.test(rest) || (/^mailto:/i.test(url) && !rest.includes('@'))) continue
