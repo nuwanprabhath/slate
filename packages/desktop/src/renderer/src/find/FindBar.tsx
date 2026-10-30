@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
-import { compileQuery, findMatches, findStore, type FindMatch, type FindOptions, type PageSession } from '@slate/editor'
+import { compileQuery, findMatches, findStore, unfoldAt, type FindMatch, type FindOptions, type PageSession } from '@slate/editor'
 import { currentToReplace } from './currentMatch'
 import './find.css'
 
@@ -154,6 +154,9 @@ export function FindBar({ session }: { session: PageSession }) {
   useEffect(() => {
     findStore.setMatches(matches, index)
     if (index < 0) return
+    // A match inside a folded section would be highlighted but hidden: open the fold first.
+    const match = matches[index]!
+    unfoldAt(match.boxId, match.from)
     // Two frames: a static box with a match turns into a live editor before its decorations exist.
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => document.querySelector('.slate-find-current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
