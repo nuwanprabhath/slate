@@ -260,4 +260,16 @@ describe('previewInNotes', () => {
     await preview(req('x', [pick(p1!, 0, 'Cat')]))
     expect(loads).toHaveBeenCalledTimes(2)
   })
+
+  it('does not keep a failed load: the next preview reads the page again', async () => {
+    const persistence = store()
+    const P = newPageId('P')
+    const [p1] = seed(persistence, P, 'a cat')
+    const load = persistence.load.bind(persistence)
+    vi.spyOn(persistence, 'load').mockRejectedValueOnce(new Error('busy')).mockImplementation(load)
+    const loaded = new Map()
+    const req = request([{ pageId: P, picks: [pick(p1!, 0)] }])
+    await expect(previewInNotes(req, persistence, loaded)).rejects.toThrow('busy')
+    expect((await previewInNotes(req, persistence, loaded)).get(`${P}\n${p1!}\n0`)).toBe('dog')
+  })
 })

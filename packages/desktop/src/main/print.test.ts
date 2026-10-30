@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 vi.mock('electron', () => ({ app: {}, BrowserWindow: {}, dialog: {} }))
-const { electronPrintHost, isPrintRequest, paperFor, pdfFileName, registerPrintIpc } = await import('./print')
+const { electronPrintHost, isPrintRequest, paperFor, pdfFileName, registerPrintIpc, writeOwnerOnly } = await import('./print')
 type Host = Parameters<typeof registerPrintIpc>[1]
 
 const TITLE = 'Meeting with Dr Smith re biopsy'
@@ -177,6 +177,19 @@ describe('registerPrintIpc', () => {
 })
 
 describe('electronPrintHost', () => {
+  it('still writes the PDF where the disk has no owner permissions (FAT and exFAT refuse chmod)', async () => {
+    const written: Uint8Array[] = []
+    const handle = {
+      chmod: () => Promise.reject(Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' })),
+      writeFile: (bytes: Uint8Array) => (written.push(bytes), Promise.resolve()),
+      close: () => Promise.resolve(),
+    }
+    await writeOwnerOnly('/media/usb/page.pdf', Uint8Array.from([7]), () => Promise.resolve(handle))
+    expect(written).toEqual([Uint8Array.from([7])])
+    const other = { ...handle, chmod: () => Promise.reject(Object.assign(new Error('EIO'), { code: 'EIO' })) }
+    await expect(writeOwnerOnly('/x.pdf', Uint8Array.from([7]), () => Promise.resolve(other))).rejects.toThrow('EIO')
+  })
+
   it('writes the PDF readable by its owner only, and refuses a path inside the data folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'slate-print-'))
     try {

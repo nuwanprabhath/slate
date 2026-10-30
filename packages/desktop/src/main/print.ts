@@ -50,6 +50,33 @@ export interface PrintHost {
   showError(sender: WebContents, message: string): void
 }
 
+interface WritableFile {
+  chmod(mode: number): Promise<void>
+  writeFile(bytes: Uint8Array): Promise<void>
+  close(): Promise<void>
+}
+
+/**
+ * Straight to the chosen file, owner-only: an encrypted vault's page never passes through a temp file.
+ * The mode at open only applies to a new file, so a replaced one is narrowed before the page lands
+ * in it. A disk without owner permissions (FAT, exFAT: a USB stick on Linux) refuses the chmod; the
+ * person chose that disk, so the PDF is still written there.
+ */
+export async function writeOwnerOnly(path: string, bytes: Uint8Array, openFile: (path: string) => Promise<WritableFile> = (p) => open(p, 'w', 0o600)): Promise<void> {
+  const file = await openFile(path)
+  try {
+    try {
+      await file.chmod(0o600)
+    } catch (err) {
+      const code = (err as { code?: unknown }).code
+      if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'ENOSYS') throw err
+    }
+    await file.writeFile(bytes)
+  } finally {
+    await file.close()
+  }
+}
+
 export function electronPrintHost(dataDir: string, isOpen: () => boolean): PrintHost {
   return {
     async choosePdfPath(sender, defaultName) {
@@ -58,17 +85,7 @@ export function electronPrintHost(dataDir: string, isOpen: () => boolean): Print
       const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
       return picked.canceled || !picked.filePath ? null : picked.filePath
     },
-    // Straight to the chosen file, owner-only: an encrypted vault's page never passes through a temp file.
-    // The mode at open only applies to a new file, so a replaced one is narrowed before the page lands in it.
-    async writePdf(path, bytes) {
-      const file = await open(path, 'w', 0o600)
-      try {
-        await file.chmod(0o600)
-        await file.writeFile(bytes)
-      } finally {
-        await file.close()
-      }
-    },
+    writePdf: (path, bytes) => writeOwnerOnly(path, bytes),
     paper: () => paperFor(app.getLocaleCountryCode()),
     isOpen,
     // A sync clone in the data folder would commit the decrypted page.

@@ -187,6 +187,8 @@ export async function previewInNotes(request: NotesReplace, persistence: DocPers
     if (!doc) {
       doc = persistence.load(pageDocId(pageId)).then((updates) => PageDoc.fromUpdates(updates))
       loaded.set(pageId, doc)
+      // A failed load is not kept: the next preview reads the page again.
+      void doc.catch(() => loaded.delete(pageId))
     }
     const page = await doc
     const edits = planReplace(page, request.query, request.opts, request.replacement, {
