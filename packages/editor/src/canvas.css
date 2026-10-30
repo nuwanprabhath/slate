@@ -77,6 +77,8 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-fold-toggle { position: absolute; left: -30px; top: 0; width: 16px; font-size: 0.75em; line-height: 1.667; text-align: center; color: var(--muted); cursor: pointer; user-select: none; opacity: 0; }
 .slate-box-content > :hover > .slate-fold-toggle, .slate-folded > .slate-fold-toggle { opacity: 1; }
 .slate-fold-toggle:hover { color: var(--text); }
+.slate-fold-toggle::before { content: '▾'; }
+.slate-fold-toggle[aria-expanded='false']::before { content: '▸'; }
 .slate-folded::after { content: ' …'; color: var(--muted); }
 .slate-box-content .slate-fold-hidden { display: none; }
 /* The format painter (formatPainter.ts) is on: a brush over every box's text. */

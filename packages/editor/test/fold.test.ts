@@ -22,7 +22,7 @@ const PAGE = '<h1>One</h1><p>a</p><h2>Sub</h2><p>b</p><h1>Two</h1><p>c</p>'
 /** Each top-level block's text, with the ones folded away in brackets. */
 function shown(ed: Editor): string[] {
   return Array.from(ed.view.dom.children).map((el) => {
-    const text = el.textContent?.replace(/[▸▾]/g, '') ?? ''
+    const text = el.textContent ?? ''
     return el.classList.contains('slate-fold-hidden') ? `[${text}]` : el.classList.contains('slate-folded') ? `${text}…` : text
   })
 }
@@ -55,6 +55,7 @@ describe('fold headings', () => {
     const ed = open(PAGE)
     const toggles = ed.view.dom.querySelectorAll('.slate-fold-toggle')
     expect(toggles).toHaveLength(3)
+    expect(ed.view.dom.querySelector('h1')?.textContent).toBe('One') // the glyph is CSS, not text
     const first = toggles[0]!
     expect(first.getAttribute('aria-label')).toBe('Fold heading')
     first.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))

@@ -54,7 +54,7 @@ function toggleDom(folded: boolean): () => HTMLElement {
     el.setAttribute('aria-label', folded ? 'Unfold heading' : 'Fold heading')
     el.setAttribute('aria-expanded', String(!folded))
     el.title = folded ? 'Unfold' : 'Fold'
-    el.textContent = folded ? '▸' : '▾'
+    // The ▸/▾ glyph is drawn by canvas.css, so the heading's text stays its own.
     return el
   }
 }
