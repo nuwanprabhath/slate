@@ -35,6 +35,7 @@ import { createIpc } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
 import { registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
 import { registerCopyIpc } from './copyHtml'
+import { electronPrintHost, registerPrintIpc } from './print'
 import { configureLogging, configureSecurityLog, registerDiagnosticsIpc } from './log/configure'
 import { log } from './log/logger'
 import { buildMenu, syncMenuChecks } from './menu'
@@ -246,6 +247,7 @@ void app.whenReady().then(async () => {
     return { vaultHeaderVersion, transports: servicesOpen() ? services().store.transportObservations() : [] }
   })
   registerPqIpc(ipc)
+  registerPrintIpc(ipc, electronPrintHost(dataDir, notes))
   handleNoteProtocol(BLOB_SCHEME, notes, async (request) => {
     const name = blobNameFromUrl(request.url)
     if (!name) return new Response('Not found', { status: 404 })
