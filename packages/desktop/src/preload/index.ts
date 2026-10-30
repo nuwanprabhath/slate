@@ -25,6 +25,7 @@ const api: SlateApi = {
   blobs: {
     put: (bytes, mime) => ipcRenderer.invoke(CH.blobsPut, bytes, mime),
     copyImage: (url) => ipcRenderer.invoke(CH.blobsCopyImage, url),
+    copyRich: (text, html) => ipcRenderer.invoke(CH.blobsCopyRich, text, html),
   },
   settings: {
     get: () => ipcRenderer.invoke(CH.settingsGet),

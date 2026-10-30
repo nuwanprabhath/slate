@@ -452,6 +452,8 @@ export interface SlateApi {
   blobs: {
     put(bytes: Uint8Array, mime: string): Promise<string>
     copyImage(url: string): Promise<boolean>
+    /** A selection with pictures: its text, and its HTML with each note image embedded by main. */
+    copyRich(text: string, html: string): Promise<void>
   }
   settings: {
     get(): Promise<Settings>

@@ -4,6 +4,8 @@ import { createContext, useContext } from 'react'
 export interface EditorServices {
   putBlob(bytes: Uint8Array, mime: string): Promise<string>
   copyImage(url: string): Promise<boolean>
+  /** Puts a selection with pictures on the clipboard; main embeds the image bytes. */
+  copyRich(text: string, html: string): Promise<void>
   readClipboardText(): Promise<string>
   markdownShortcuts: boolean
   autoBullets: boolean

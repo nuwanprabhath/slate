@@ -85,6 +85,11 @@ export function useServices(settings: Settings): EditorServices {
     () => ({
       putBlob: (bytes, mime) => window.slate.blobs.put(bytes, mime),
       copyImage: (url) => window.slate.blobs.copyImage(url),
+      copyRich: async (text, html) => {
+        await window.slate.blobs.copyRich(text, html)
+        // The copy event's report ran before main wrote this; a lock must find it to clear it.
+        window.slate.vault.copied()
+      },
       readClipboardText: () => window.slate.clipboardText(),
       markdownShortcuts: settings.markdownShortcuts,
       autoBullets: settings.autoBullets,

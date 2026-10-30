@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, powerMonitor, protocol, session, systemPreferences } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, powerMonitor, protocol, session, systemPreferences } from 'electron'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { arch, homedir, release, tmpdir } from 'node:os'
@@ -34,6 +34,7 @@ import { BLOB_SCHEME, blobNameFromUrl } from './blobs'
 import { createIpc } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
 import { registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
+import { registerCopyIpc } from './copyHtml'
 import { configureLogging, configureSecurityLog, registerDiagnosticsIpc } from './log/configure'
 import { log } from './log/logger'
 import { buildMenu, syncMenuChecks } from './menu'
@@ -262,6 +263,11 @@ void app.whenReady().then(async () => {
     (docId) => services().search.docRemoved(docId),
   )
   registerSearchIpc(ipc, () => services().search)
+  registerCopyIpc(
+    ipc,
+    () => services().blobs,
+    (item) => clipboard.write([new ClipboardItem(Object.fromEntries(Object.entries(item).map(([type, value]) => [type, new Blob([value], { type })])))]),
+  )
   // out/main sits four levels under the repo root when running from a checkout.
   ipc.handle(CH.mcpLauncher, () =>
     launcherInfo({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, repoRoot: join(__dirname, '../../../..'), platform: process.platform }),

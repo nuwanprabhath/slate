@@ -5,6 +5,7 @@ export const CH = {
   docsRemove: 'docs:remove',
   blobsPut: 'blobs:put',
   blobsCopyImage: 'blobs:copy-image',
+  blobsCopyRich: 'blobs:copy-rich',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsChanged: 'settings:changed',

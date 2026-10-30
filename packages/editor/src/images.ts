@@ -1,5 +1,6 @@
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import { hasDataImage, makeClipboardSerializer, serializeSliceAsText, storeDataImages } from './clipboard'
 import type { EditorServices } from './services'
 
 /** Image files on the clipboard. Ignored when there is text too (Office apps add a picture of copied text). */
@@ -23,11 +24,38 @@ export function insertImages(view: EditorView, files: File[], putBlob: EditorSer
   })()
 }
 
-/** Copying a selected image puts real image data on the clipboard, not an <img> pointing at slate-blob://. */
-export function copySelectedImage(view: EditorView, event: ClipboardEvent, copyImage: EditorServices['copyImage']): boolean {
+/**
+ * Other apps cannot load slate-blob:// addresses. A clicked image goes onto the clipboard as a
+ * picture; a selection with images in it as text and HTML, main embedding each image's bytes.
+ * A selection without images is left to the editor's own copy.
+ */
+export function copyWithImages(view: EditorView, event: ClipboardEvent, services: Pick<EditorServices, 'copyImage' | 'copyRich'>): boolean {
   const { selection } = view.state
-  if (!(selection instanceof NodeSelection) || selection.node.type.name !== 'image') return false
-  event.preventDefault()
-  void copyImage(String(selection.node.attrs.src))
+  if (selection instanceof NodeSelection && selection.node.type.name === 'image') {
+    event.preventDefault()
+    void services.copyImage(String(selection.node.attrs.src))
+  } else {
+    if (selection.empty) return false
+    const slice = selection.content()
+    let images = false
+    slice.content.descendants((node) => !(images ||= node.type.name === 'image'))
+    if (!images) return false
+    event.preventDefault()
+    const holder = document.createElement('div')
+    holder.appendChild(makeClipboardSerializer(view.state.schema).serializeFragment(slice.content))
+    void services.copyRich(serializeSliceAsText(slice), holder.innerHTML)
+  }
+  if (event.type === 'cut') view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta('uiEvent', 'cut'))
   return true
+}
+
+/** Pastes HTML, first storing any picture embedded in it. */
+export function pasteHtml(view: EditorView, html: string, putBlob: EditorServices['putBlob']): void {
+  if (!hasDataImage(html)) {
+    view.pasteHTML(html)
+    return
+  }
+  void storeDataImages(html, putBlob).then((stored) => {
+    if (!view.isDestroyed) view.pasteHTML(stored)
+  })
 }

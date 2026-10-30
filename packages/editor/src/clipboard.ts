@@ -33,6 +33,37 @@ export function cleanPastedHtml(html: string): string {
   return doc.body.innerHTML
 }
 
+// The formats the blob store keeps; an embedded SVG or anything else is not stored.
+const PICTURE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp'])
+const BASE64_PICTURE = /^data:(image\/[a-z]+);base64,([a-z0-9+/=\s]*)$/i
+
+/** Pasted HTML with a picture inside it as a data URL: Slate's own copy, Word, some web pages. */
+export function hasDataImage(html: string): boolean {
+  return /<img\s[^>]*src\s*=\s*["']?\s*data:/i.test(html)
+}
+
+/**
+ * Stores each embedded picture through `put` and points the HTML at the stored copy, so a page
+ * holds an address and never the bytes (they would stay in its history and every sync for good).
+ * A picture that cannot be stored is left out.
+ */
+export async function storeDataImages(html: string, put: (bytes: Uint8Array, mime: string) => Promise<string>): Promise<string> {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const img of Array.from(doc.querySelectorAll('img'))) {
+    const src = (img.getAttribute('src') ?? '').trim()
+    if (!/^data:/i.test(src)) continue
+    const match = BASE64_PICTURE.exec(src)
+    const mime = match?.[1]?.toLowerCase() ?? ''
+    try {
+      if (!match || !PICTURE_TYPES.has(mime)) throw new Error('not a stored picture format')
+      img.setAttribute('src', await put(Uint8Array.from(atob(match[2]!.replace(/\s/g, '')), (c) => c.charCodeAt(0)), mime))
+    } catch {
+      img.remove()
+    }
+  }
+  return doc.body.innerHTML
+}
+
 /**
  * Copied HTML keeps colour only; fonts and sizes would fight the destination app's styling. The
  * colour is the stored one (data-color), not the one adapted for Slate's dark theme: the

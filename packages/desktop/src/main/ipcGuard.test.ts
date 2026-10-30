@@ -48,7 +48,7 @@ describe('IPC guard (§6.3)', () => {
   })
 
   it('keeps note channels off the allowlist', () => {
-    for (const channel of [CH.docsLoad, CH.docsList, CH.settingsGet, CH.syncConflicts, CH.auditList, CH.searchQuery, CH.onenoteTree, CH.blobsCopyImage]) {
+    for (const channel of [CH.docsLoad, CH.docsList, CH.settingsGet, CH.syncConflicts, CH.auditList, CH.searchQuery, CH.onenoteTree, CH.blobsCopyImage, CH.blobsCopyRich]) {
       expect(PRE_UNLOCK_CHANNELS.has(channel), channel).toBe(false)
     }
     for (const channel of [CH.vaultStatus, CH.vaultUnlock, CH.vaultUnlockRecovery, CH.openExternal, CH.appVersion, CH.updateState]) {

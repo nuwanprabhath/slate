@@ -3,7 +3,7 @@ import type { PMJSON } from '@slate/core'
 import { activeEditor } from './activeEditor'
 import { Box, type GroupDrag } from './Box'
 import { CanvasMenu } from './CanvasMenu'
-import { imageFilesFrom } from './images'
+import { imageFilesFrom, pasteHtml } from './images'
 import { linkedTextBlocks, pastePlain } from './links'
 import type { PageSession } from './PageSession'
 import { useEditorServices } from './services'
@@ -157,7 +157,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
         if ('text' in input) view.dispatch(view.state.tr.insertText(input.text))
         else if ('enter' in input) activeEditor.get()!.commands.splitBlock()
         else if ('html' in input) {
-          if (input.html) view.pasteHTML(input.html)
+          if (input.html) pasteHtml(view, input.html, services.putBlob)
           else view.pasteText(input.plain)
         } else
           void services.readClipboardText().then((text) => {
