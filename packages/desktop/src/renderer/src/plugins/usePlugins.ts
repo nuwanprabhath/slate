@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { NotebookDoc, TreeItem } from '@slate/core'
+import { currentSession } from '../currentSession'
 import { findBar } from '../find/FindBar'
+import { replaceInNotes } from '../find/notesReplace'
 import type { Library } from '../library'
 import type { Selection } from '../selection'
 import { builtinPlugins } from './builtins'
@@ -51,6 +53,7 @@ export function usePlugins(host: HostState, onShowView: (viewId: string) => void
       getLibrary: (): LibraryNotebook[] => latest.current.library.notebooks().map((e) => ({ id: e.id, name: e.doc.name, sections: sectionsOf(e.doc) })),
       currentNotebookId: () => latest.current.notebookId,
       search: (query) => window.slate.search.query(query),
+      replaceInPages: (request) => replaceInNotes(request, { persistence: window.slate.docs, onScreen: currentSession.get }),
       openPage(pageId, options) {
         for (const entry of latest.current.library.notebooks()) {
           const at = locate(entry.doc, pageId)

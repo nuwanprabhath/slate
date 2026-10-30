@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { NotebookDoc, TreeItem } from '@slate/core'
-import { Canvas, PageSession } from '@slate/editor'
+import { Canvas, type PageSession } from '@slate/editor'
 import type { ConflictRecord } from '@slate/sync'
 import { currentSession } from './currentSession'
 import { FindBar } from './find/FindBar'
+import { openPageSession } from './find/notesReplace'
 import { ConflictResolver } from './sync/ConflictResolver'
 
 /** Read by the e2e test hooks; cheap enough to keep in production builds. */
@@ -24,7 +25,7 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
     pageOpenTiming.startedAt = performance.now()
     let opened: PageSession | null = null
     let cancelled = false
-    void PageSession.open(pageId, window.slate.docs).then((s) => {
+    void openPageSession(pageId, window.slate.docs).then((s) => {
       if (cancelled) return s.close()
       opened = s
       currentSession.set(s)
