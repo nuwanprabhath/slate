@@ -6,6 +6,13 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-30
+
+### Fixed
+
+- Copying text together with pictures and pasting it into another app now brings the pictures too. Notes showed a "?" for each one and OneNote dropped them, because the copy pointed at Slate's private image store; the pictures now go onto the clipboard themselves. Cut does the same.
+- Pictures embedded in pasted HTML (from Slate, Word or a web page) are stored like a pasted picture file, instead of inside the page, where they made the page and every sync of it larger.
+
 ## [0.4.2] - 2026-10-30
 
 ### Added
