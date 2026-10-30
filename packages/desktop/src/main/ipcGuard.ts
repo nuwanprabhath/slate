@@ -180,6 +180,7 @@ export const CHANNEL_POLICY: Readonly<Record<keyof typeof CH, ChannelPolicy>> = 
   vaultPqReadiness: 'unlocked',
   syncCheckTransport: 'unlocked',
   pagePrint: 'unlocked',
+  editCommand: 'unlocked',
 }
 
 
@@ -304,6 +305,7 @@ export const SELF_TEST_POLICY: Readonly<Record<keyof typeof CH, SelfTestPolicy>>
   vaultPqReadiness: 'refused',
   syncCheckTransport: 'refused',
   pagePrint: 'refused',
+  editCommand: 'refused',
 }
 
 const channelsWith = (policy: ChannelPolicy): ReadonlySet<string> =>

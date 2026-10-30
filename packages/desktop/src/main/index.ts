@@ -36,6 +36,7 @@ import { openExternalSafe } from './openExternal'
 import { registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
 import { registerCopyIpc } from './copyHtml'
 import { electronPrintHost, registerPrintIpc } from './print'
+import { registerEditIpc, UserInputClock } from './editCommands'
 import { configureLogging, configureSecurityLog, registerDiagnosticsIpc } from './log/configure'
 import { log } from './log/logger'
 import { buildMenu, syncMenuChecks } from './menu'
@@ -269,6 +270,9 @@ void app.whenReady().then(async () => {
     (docId) => services().search.docRemoved(docId),
   )
   registerSearchIpc(ipc, () => services().search)
+  // Real presses per window (trackInput), so the text menu's clipboard commands need a person's click.
+  const userInput = new UserInputClock()
+  registerEditIpc(ipc, userInput)
   // What Slate last put on the clipboard, for the lock to clear (shouldClearClipboard).
   let copied: { at: number; text: string } | null = null
   registerCopyIpc(
@@ -421,6 +425,8 @@ void app.whenReady().then(async () => {
     )
 
   function trackInput(win: BrowserWindow): BrowserWindow {
+    const contents = win.webContents
+    contents.on('input-event', (_e, input) => userInput.note(contents, input.type))
     win.webContents.on('before-input-event', (event, input) => {
       if (vault.state !== 'unlocked') return
       idle.touch()

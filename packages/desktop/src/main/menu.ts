@@ -82,6 +82,7 @@ export function buildMenu({ store: open, onCheckForUpdates, onLock }: MenuOption
         { type: 'separator' },
         { role: 'cut' },
         { role: 'copy' },
+        { id: 'copy-markdown', label: 'Copy as Markdown', accelerator: 'CmdOrCtrl+Alt+Shift+C', registerAccelerator: false, click: () => send({ cmd: 'copy-markdown' }) },
         { role: 'paste' },
         { label: 'Paste as Plain Text', accelerator: 'CmdOrCtrl+Shift+V', registerAccelerator: false, click: () => send({ cmd: 'paste-plain' }) },
         { role: 'selectAll' },

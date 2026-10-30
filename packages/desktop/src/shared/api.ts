@@ -393,6 +393,9 @@ export interface AuditEntryRow {
   outcome: string
 }
 
+/** What the text menu asks main to run on its window (`SlateApi.editCommand`). */
+export type EditCommand = 'cut' | 'copy' | 'paste'
+
 export type MenuCommand =
   | { cmd: 'undo' }
   | { cmd: 'redo' }
@@ -409,6 +412,7 @@ export type MenuCommand =
   | { cmd: 'replace' }
   | { cmd: 'print' }
   | { cmd: 'export-pdf' }
+  | { cmd: 'copy-markdown' }
 
 export type SearchScope = { kind: 'all' } | { kind: 'notebook'; id: string } | { kind: 'section'; id: string }
 
@@ -483,6 +487,8 @@ export interface SlateApi {
   }
   mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }
   clipboardText(): Promise<string>
+  /** Runs Cut, Copy or Paste on this window as the Edit menu does, firing the page's clipboard event. */
+  editCommand(command: EditCommand): Promise<void>
   /** Opens an http(s) or mailto link in the system browser. Anything else is ignored. */
   openExternal(url: string): Promise<void>
   onenote: {

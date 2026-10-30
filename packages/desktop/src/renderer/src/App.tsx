@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { activeEditor, EditorServicesContext, openLinkPopover, pastePlainOrLink, type EditorServices } from '@slate/editor'
+import { activeEditor, copyAsMarkdown, EditorServicesContext, openLinkPopover, pastePlainOrLink, type EditorServices } from '@slate/editor'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
 import { spellcheckAvailable } from '../../shared/settings/spellcheck'
 import { ActivityBar } from './activity/ActivityBar'
@@ -52,6 +52,11 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
           case 'link':
             openLinkPopover(activeEditor.get())
             break
+          case 'copy-markdown': {
+            const editor = activeEditor.get()
+            if (editor && !inField) copyAsMarkdown(editor.view)
+            break
+          }
           case 'settings-changed':
             setSettings(command.settings)
             break
@@ -98,6 +103,7 @@ export function useServices(settings: Settings): EditorServices {
       copyImage: (url) => window.slate.blobs.copyImage(url),
       copyRich: (text, html) => window.slate.blobs.copyRich(text, html),
       readClipboardText: () => window.slate.clipboardText(),
+      editCommand: (command) => window.slate.editCommand(command),
       markdownShortcuts: settings.markdownShortcuts,
       autoBullets: settings.autoBullets,
       linkPastedUrls: settings.linkPastedUrls,

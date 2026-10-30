@@ -1,7 +1,8 @@
 import { Extension } from '@tiptap/core'
-import { openLinkPopover, pastePlainOrLink } from './links'
+import { openLinkPopover } from './links'
 import type { PageSession } from './PageSession'
 import type { EditorServices } from './services'
+import { copyAsMarkdown, pastePlainText } from './textCommands'
 
 /** Page-wide undo/redo (Loro) and plain-text paste. */
 export const SlateKeymap = Extension.create<{ session: PageSession | null; services: EditorServices | null }>({
@@ -23,13 +24,11 @@ export const SlateKeymap = Extension.create<{ session: PageSession | null; servi
       'Mod-Shift-z': redo,
       'Mod-y': redo,
       'Mod-Shift-v': () => {
-        const view = this.editor.view
-        void this.options.services?.readClipboardText().then((text) => {
-          if (!view.isDestroyed) pastePlainOrLink(view, text)
-        })
+        if (this.options.services) pastePlainText(this.editor.view, this.options.services)
         return true
       },
       'Mod-k': () => openLinkPopover(this.editor),
+      'Mod-Alt-Shift-c': () => copyAsMarkdown(this.editor.view),
     }
   },
 })

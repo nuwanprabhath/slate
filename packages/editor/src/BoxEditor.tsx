@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { Extension } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { loroSyncPluginKey } from 'loro-prosemirror'
@@ -21,6 +21,8 @@ import { LoroBinding } from './loroBinding'
 import type { PageSession } from './PageSession'
 import { useEditorServices, type EditorServices } from './services'
 import { editorRuleOptions } from './inputRules'
+import { TextMenu } from './TextMenu'
+import { copyMarkdownInto } from './textCommands'
 
 const clipboardSerializer = makeClipboardSerializer(schema)
 
@@ -46,6 +48,8 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
   const services = useEditorServices()
   // Mark colours are adapted to the theme when rendered, so a theme switch rebuilds the editor.
   const theme = useSyncExternalStore(onThemeChange, currentTheme)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
   const editor = useEditor(
     {
       extensions: [
@@ -100,8 +104,13 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
             if (anchor && !anchor.hasAttribute('title')) anchor.setAttribute('title', 'Mod+click to open')
             return false
           },
-          copy: (view, event) => copyWithImages(view, event, services),
+          copy: (view, event) => copyMarkdownInto(view, event) || copyWithImages(view, event, services),
           cut: (view, event) => copyWithImages(view, event, services),
+          contextmenu: (_view, event) => {
+            event.preventDefault()
+            setMenu({ x: event.clientX, y: event.clientY })
+            return true
+          },
         },
       },
       onUpdate: ({ transaction }) => {
@@ -129,6 +138,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
     <>
       <EditorContent editor={editor} />
       <LinkPopover editor={editor} />
+      {menu && editor && <TextMenu editor={editor} at={menu} services={services} onClose={closeMenu} />}
     </>
   )
 }
