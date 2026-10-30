@@ -1,4 +1,4 @@
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { clickMenu, createBoxAt, expect, MOD, test } from './fixtures'
 import { boxWithText } from './canvasHelpers'
 
@@ -20,10 +20,13 @@ async function selectedBoldText(page: Page) {
   return box.getByTestId('box-editor')
 }
 
+/** Right-clicks on the text itself: past the selection's end, a right-click moves the caret there instead. */
+const rightClickText = (editor: Locator) => editor.locator('p').first().click({ button: 'right', position: { x: 10, y: 8 } })
+
 test('right-click → Copy as Markdown puts the selection on the clipboard as Markdown text', async ({ app, page }) => {
   const editor = await selectedBoldText(page)
   await writeText(app, 'before')
-  await editor.click({ button: 'right' })
+  await rightClickText(editor)
   await expect(page.getByTestId('text-menu')).toBeVisible()
   await page.getByTestId('text-menu-copy-markdown').click()
   await expect(page.getByTestId('text-menu')).toHaveCount(0)
@@ -65,23 +68,23 @@ test('with nothing selected, Cut, Copy and Copy as Markdown are disabled and Pas
 
 test('the menu cuts and copies through the same path as the keys, and pastes as plain text', async ({ app, page }) => {
   const editor = await selectedBoldText(page)
-  await editor.click({ button: 'right' })
+  await rightClickText(editor)
   await page.getByTestId('text-menu-copy').click()
   await expect.poll(() => clipboardText(app)).toBe('ship it')
   expect(await clipboardTypes(app)).toContain('text/html')
 
-  await editor.click({ button: 'right' })
+  await rightClickText(editor)
   await page.getByTestId('text-menu-cut').click()
   await expect(editor).toHaveText('')
 
-  await editor.click({ button: 'right' })
+  await rightClickText(editor)
   await page.getByTestId('text-menu-paste-plain').click()
   await expect(editor).toHaveText('ship it')
   await expect(editor.locator('strong')).toHaveCount(0)
 
-  await editor.click({ button: 'right' })
+  await rightClickText(editor)
   await page.getByTestId('text-menu-select-all').click()
-  await editor.click({ button: 'right' })
+  await rightClickText(editor)
   await expect(page.getByTestId('text-menu-copy')).toBeEnabled()
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('text-menu')).toHaveCount(0)
