@@ -423,6 +423,104 @@ export const Indent = Extension.create({
   },
 })
 
+type ListKind = 'none' | 'bullet' | 'ordered' | 'todo'
+
+/** What the format painter carries: marks (never a link) and the block's type, alignment, indent and list. */
+export interface PaintedFormat {
+  marks: Array<{ type: string; attrs: Record<string, unknown> }>
+  block: { type: string; level: number | null; textAlign: string | null; indent: number | null }
+  list: ListKind
+}
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    slateFormatPainter: { pasteFormat: (format: PaintedFormat) => ReturnType }
+  }
+}
+
+function listKind($pos: ResolvedPos): ListKind {
+  if ((listItemAround($pos)?.node.attrs.checked ?? null) !== null) return 'todo'
+  const list = listAround($pos)?.node.type.name
+  return list === 'bulletList' ? 'bullet' : list === 'orderedList' ? 'ordered' : 'none'
+}
+
+/** The format at the start of the selection (or the caret's pending marks). */
+export function copyFormat(state: EditorState): PaintedFormat {
+  const { $from, from, empty } = state.selection
+  const first = empty ? null : state.doc.nodeAt(from)
+  const marks = first?.isText ? first.marks : (state.storedMarks ?? $from.marks())
+  const block = $from.parent
+  return {
+    marks: marks.filter((m) => m.type.name !== 'link').map((m) => ({ type: m.type.name, attrs: { ...m.attrs } })),
+    block: {
+      type: block.type.name,
+      level: typeof block.attrs.level === 'number' ? block.attrs.level : null,
+      textAlign: (block.attrs.textAlign as string | null | undefined) ?? null,
+      indent: (block.attrs.indent as number | null | undefined) ?? null,
+    },
+    list: listKind($from),
+  }
+}
+
+/** Clears `checked` on the selected items: to-do items become bulleted ones. */
+const clearTodo = ({ tr }: { tr: Transaction }) => {
+  tr.doc.nodesBetween(tr.selection.from, tr.selection.to, (node, pos) => {
+    if (node.type.name === 'listItem' && node.attrs.checked !== null) setChecked(tr, pos, null)
+  })
+  return true
+}
+
+function toList(c: ChainedCommands, from: ListKind, to: ListKind): ChainedCommands {
+  if (from === to) return c
+  switch (to) {
+    case 'none':
+      return from === 'todo' ? c.toggleTodoList() : from === 'bullet' ? c.toggleBulletList() : c.toggleOrderedList()
+    case 'bullet':
+      return from === 'todo' ? c.command(clearTodo) : c.toggleBulletList()
+    case 'ordered':
+      return (from === 'todo' ? c.command(clearTodo) : c).toggleOrderedList()
+    case 'todo':
+      return c.toggleTodoList()
+  }
+}
+
+/**
+ * The format painter's paste: an explicit command (the toolbar's brush), applied to the selection the
+ * person makes next. Marks the source lacks are cleared; links stay.
+ */
+export const FormatPaste = Extension.create({
+  name: 'formatPaste',
+  addCommands() {
+    return {
+      pasteFormat:
+        (format) =>
+        ({ state, chain }) => {
+          if (state.selection.empty) return false
+          let c = toList(chain(), listKind(state.selection.$from), format.list)
+          // A list item's first block is always a paragraph.
+          const { type, level } = format.block
+          if (format.list === 'none') c = type === 'heading' && level ? c.setNode('heading', { level }) : type === 'codeBlock' ? c.setNode('codeBlock') : c.setNode('paragraph')
+          return c
+            .command(({ tr }) => {
+              const { from, to } = tr.selection
+              tr.doc.nodesBetween(from, to, (node, pos) => {
+                if (!INDENTABLE.has(node.type.name)) return !node.isTextblock
+                tr.setNodeMarkup(pos, undefined, { ...node.attrs, textAlign: format.block.textAlign, indent: format.list === 'none' ? format.block.indent : node.attrs.indent })
+                return false
+              })
+              for (const mark of Object.values(tr.doc.type.schema.marks)) if (mark.name !== 'link') tr.removeMark(from, to, mark)
+              for (const m of format.marks) {
+                const mark = tr.doc.type.schema.marks[m.type]
+                if (mark) tr.addMark(from, to, mark.create(m.attrs))
+              }
+              return true
+            })
+            .run()
+        },
+    }
+  },
+})
+
 /**
  * Every box editor uses exactly this extension list, so the static renderer's schema matches.
  * Undo/redo is handled per page by Loro (PageSession), not by TipTap history.
@@ -457,6 +555,7 @@ export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extension
     // --- WP-C2 ---
     Indent,
     MoveBlocks,
+    FormatPaste,
   ]
 }
 
