@@ -34,6 +34,62 @@ describe('toMarkdown', () => {
   it('renders images and rules', () => {
     expect(toMarkdown([{ type: 'image', attrs: { src: 'slate-blob://blob/x.png' } }, { type: 'horizontalRule' }])).toBe('![](slate-blob://blob/x.png)\n\n---')
   })
+
+  it('renders to-do lists as GFM task items', () => {
+    const task = (checked: boolean, s: string): PMJSON => ({ type: 'taskItem', attrs: { checked }, content: [p(t(s))] })
+    const nested: PMJSON = { type: 'taskItem', attrs: { checked: false }, content: [p(t('parent')), { type: 'taskList', content: [task(true, 'child')] }] }
+    expect(toMarkdown([{ type: 'taskList', content: [task(false, 'buy milk'), task(true, 'ship it'), nested] }])).toBe('- [ ] buy milk\n- [x] ship it\n- [ ] parent\n  - [x] child')
+  })
+
+  it('nests bullet lists by 2 spaces and continues a broken line under its item', () => {
+    const doc = [{ type: 'bulletList', content: [li(p(t('a'), { type: 'hardBreak' }, t('more')), { type: 'bulletList', content: [li(p(t('b')), { type: 'bulletList', content: [li(p(t('c')))] })] })] }]
+    expect(toMarkdown(doc)).toBe('- a  \n  more\n  - b\n    - c')
+  })
+
+  it('keeps a second paragraph in a list item apart from the first', () => {
+    expect(toMarkdown([{ type: 'bulletList', content: [li(p(t('one')), p(t('two')))] }])).toBe('- one\n\n  two')
+  })
+
+  it('keeps blockquote paragraphs apart and nests quotes', () => {
+    const quote = { type: 'blockquote', content: [p(t('a')), p(t('b')), { type: 'blockquote', content: [p(t('c'))] }] }
+    expect(toMarkdown([quote])).toBe('> a\n>\n> b\n>\n> > c')
+  })
+
+  it('puts the spaces at a mark edge outside its delimiters', () => {
+    expect(toMarkdown([p(t('say '), t(' hi ', [{ type: 'bold' }]), t('there'))])).toBe('say  **hi** there')
+    expect(toMarkdown([p(t(' ', [{ type: 'italic' }]))])).toBe('')
+  })
+
+  it('fences inline code that holds a backtick with two', () => {
+    expect(toMarkdown([p(t('a`b', [{ type: 'code' }]))])).toBe('`` a`b ``')
+  })
+
+  it('combines marks, the code innermost and the link outermost', () => {
+    const marks = [{ type: 'link', attrs: { href: 'https://x.dev' } }, { type: 'bold' }, { type: 'italic' }, { type: 'strike' }, { type: 'code' }]
+    expect(toMarkdown([p(t('x', marks))])).toBe('[~~_**`x`**_~~](https://x.dev)')
+  })
+
+  it('degrades marks and nodes it does not know to their text', () => {
+    const doc = [
+      p(t('under', [{ type: 'underline' }]), t(' '), t('lit', [{ type: 'highlight', attrs: { color: '#ff0' } }]), t(' H'), t('2', [{ type: 'subscript' }]), t('O')),
+      { type: 'futureBlock', attrs: { align: 'center' }, content: [p(t('inside'))] },
+      p({ type: 'mention', content: [t('@ann')] }),
+    ]
+    expect(toMarkdown(doc)).toBe('under lit H2O\n\ninside\n\n@ann')
+  })
+
+  it('writes an image with its alt text, and table cells on one line', () => {
+    expect(toMarkdown([{ type: 'image', attrs: { src: 'slate-blob://blob/y.png', alt: 'chart' } }])).toBe('![chart](slate-blob://blob/y.png)')
+    const cell = (...c: PMJSON[]): PMJSON => ({ type: 'tableCell', content: c })
+    const table = { type: 'table', content: [{ type: 'tableRow', content: [cell(p(t('a'), { type: 'hardBreak' }, t('b'))), cell(p(t('x')), p(t('y')))] }] }
+    expect(toMarkdown([table])).toBe('| a b | x y |\n| --- | --- |')
+  })
+
+  it('renders a heading level and an empty selection', () => {
+    expect(toMarkdown([{ type: 'heading', attrs: { level: 3 }, content: [t('Three')] }])).toBe('### Three')
+    expect(toMarkdown([])).toBe('')
+    expect(toMarkdown([t('a'), t('b', [{ type: 'bold' }]), { type: 'horizontalRule' }, t('c')])).toBe('a**b**\n\n---\n\nc')
+  })
 })
 
 describe('markdownToBlocks', () => {
