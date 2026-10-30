@@ -179,15 +179,30 @@ describe('registerPrintIpc', () => {
 describe('electronPrintHost', () => {
   it('still writes the PDF where the disk has no owner permissions (FAT and exFAT refuse chmod)', async () => {
     const written: Uint8Array[] = []
-    const handle = {
+    const eperm = () => Promise.reject(Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' }))
+    const handle = (owner: number) => ({
+      chmod: eperm,
+      stat: () => Promise.resolve({ uid: owner }),
+      writeFile: (bytes: Uint8Array) => (written.push(bytes), Promise.resolve()),
+      close: () => Promise.resolve(),
+    })
+    // A FAT stick on Linux is mounted with the person's own uid: chmod fails, the file is theirs.
+    await writeOwnerOnly('/media/usb/page.pdf', Uint8Array.from([7]), () => Promise.resolve(handle(501)), 501)
+    expect(written).toEqual([Uint8Array.from([7])])
+    const other = { ...handle(501), chmod: () => Promise.reject(Object.assign(new Error('EIO'), { code: 'EIO' })) }
+    await expect(writeOwnerOnly('/x.pdf', Uint8Array.from([7]), () => Promise.resolve(other), 501)).rejects.toThrow('EIO')
+  })
+
+  it("refuses to replace another account's file, which chmod cannot narrow (EPERM)", async () => {
+    const written: Uint8Array[] = []
+    const theirs = {
       chmod: () => Promise.reject(Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' })),
+      stat: () => Promise.resolve({ uid: 999 }),
       writeFile: (bytes: Uint8Array) => (written.push(bytes), Promise.resolve()),
       close: () => Promise.resolve(),
     }
-    await writeOwnerOnly('/media/usb/page.pdf', Uint8Array.from([7]), () => Promise.resolve(handle))
-    expect(written).toEqual([Uint8Array.from([7])])
-    const other = { ...handle, chmod: () => Promise.reject(Object.assign(new Error('EIO'), { code: 'EIO' })) }
-    await expect(writeOwnerOnly('/x.pdf', Uint8Array.from([7]), () => Promise.resolve(other))).rejects.toThrow('EIO')
+    await expect(writeOwnerOnly('/Users/Shared/page.pdf', Uint8Array.from([7]), () => Promise.resolve(theirs), 501)).rejects.toThrow('EPERM')
+    expect(written).toEqual([])
   })
 
   it('writes the PDF readable by its owner only, and refuses a path inside the data folder', async () => {
