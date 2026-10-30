@@ -72,9 +72,9 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-box-content li[data-checked='true']::before { background: var(--accent); border-color: var(--accent); }
 .slate-box-content li[data-checked='true']::after { content: ''; position: absolute; left: calc(-1.4em + 0.34em); top: calc(0.3em + 0.14em); width: 0.24em; height: 0.48em; border: solid var(--accent-contrast); border-width: 0 2px 2px 0; transform: rotate(45deg); pointer-events: none; }
 .slate-box-content li[data-checked='true'] > p { color: var(--muted); text-decoration: line-through; }
-/* Folded headings (fold.ts): the toggle sits in the box's left margin, shown on hover and while folded. */
+/* Folded headings (fold.ts): the toggle sits left of the box, clear of its west resize edge; shown on hover and while folded. */
 .slate-box-content > h1, .slate-box-content > h2, .slate-box-content > h3 { position: relative; }
-.slate-fold-toggle { position: absolute; left: -20px; top: 0; width: 16px; height: 1.25em; display: grid; place-items: center; font-size: 11px; line-height: 1; color: var(--muted); cursor: pointer; user-select: none; opacity: 0; }
+.slate-fold-toggle { position: absolute; left: -30px; top: 0; width: 16px; font-size: 0.75em; line-height: 1.667; text-align: center; color: var(--muted); cursor: pointer; user-select: none; opacity: 0; }
 .slate-box-content > :hover > .slate-fold-toggle, .slate-folded > .slate-fold-toggle { opacity: 1; }
 .slate-fold-toggle:hover { color: var(--text); }
 .slate-folded::after { content: ' …'; color: var(--muted); }
