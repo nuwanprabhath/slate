@@ -142,3 +142,34 @@ describe('replaceInPage', () => {
     expect(origins).toEqual(['mine'])
   })
 })
+
+describe('replaceInPage with characters outside the BMP', () => {
+  it('replaces a match that starts with an emoji, keeping its marks', () => {
+    const { page, ids } = pageWith([para(text('hi '), text('😀 there', 'bold'))])
+    expect(replaceInPage(page, '😀', plain, ':)', { preserveCase: false })).toBe(1)
+    expect(boxJSON(page, ids[0]!)!.content).toEqual([para(text('hi '), { type: 'text', text: ':) there', marks: [{ type: 'bold', attrs: {} }] })])
+  })
+
+  it('replaces a regex across boxes when a later match starts with an emoji', () => {
+    const { page, ids } = pageWith([para(text('cat'))], [para(text('hi 😀'))])
+    expect(replaceInPage(page, 'cat|😀', regex, 'X', { preserveCase: false })).toBe(2)
+    expect(boxJSON(page, ids[0]!)!.content).toEqual([para(text('X'))])
+    expect(boxJSON(page, ids[1]!)!.content).toEqual([para(text('hi X'))])
+  })
+
+  it('writes nothing when planning fails part way', () => {
+    const { page, ids } = pageWith([para(text('cat'))], [para(text('cat'))])
+    const only = (boxId: string) => {
+      if (boxId === ids[1]) throw new Error('boom')
+      return true
+    }
+    expect(() => replaceInPage(page, 'cat', plain, 'dog', { preserveCase: false, only })).toThrow('boom')
+    expect(boxJSON(page, ids[0]!)!.content).toEqual([para(text('cat'))])
+  })
+
+  it('passes each match’s text to `only`, so a caller can skip a pick that no longer matches', () => {
+    const { page, ids } = pageWith([para(text('Cat cat'))])
+    expect(replaceInPage(page, 'cat', plain, 'dog', { preserveCase: false, only: (_, __, matched) => matched === 'cat' })).toBe(1)
+    expect(boxJSON(page, ids[0]!)!.content).toEqual([para(text('Cat dog'))])
+  })
+})

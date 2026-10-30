@@ -5,8 +5,8 @@ import type { PageDoc } from './page'
 export interface ReplaceOptions {
   /** Keep the match's case pattern: ALL CAPS, Capitalised or lower. */
   preserveCase: boolean
-  /** Which matches to replace, by box and the match's index within that box. All when absent. */
-  only?: (boxId: string, occurrence: number) => boolean
+  /** Which matches to replace, by box, the match's index within that box and its text. All when absent. */
+  only?: (boxId: string, occurrence: number, matched: string) => boolean
   /**
    * Whether a node is a text block, given its type name. Lets the editor pass its schema so a block
    * holding only inline leaves counts its matches as the find bar does; without it, a block is a
@@ -76,23 +76,35 @@ function blockText(children: LoroList): { value: string; segments: Segment[] } {
   return { value, segments }
 }
 
-/** The marks on the character at `at`, as the delta's attributes. */
-function attributesAt(text: LoroText, at: number): Record<string, Value> | undefined {
-  return text.sliceDelta(at, at + 1)[0]?.attributes as Record<string, Value> | undefined
+/** The marks on the character at `at`: the whole code point, so a match starting with an emoji is read whole. */
+function attributesAt(text: LoroText, at: number, firstCodePoint: number): Record<string, Value> | undefined {
+  const width = firstCodePoint > 0xffff ? 2 : 1
+  return text.sliceDelta(at, at + width)[0]?.attributes as Record<string, Value> | undefined
+}
+
+/** One replacement, worked out before anything is written. */
+export interface PlannedEdit {
+  boxId: string
+  /** The match's index within its box. */
+  occurrence: number
+  /** The text that matched, as the find bar or search result showed it. */
+  matched: string
+  /** What replaces it. */
+  with: string
+  text: LoroText
+  at: number
+  attributes: Record<string, Value> | undefined
 }
 
 /**
- * Replaces the query's matches in every box of the page, in reading order. A match never crosses a
- * text block; one that spans an inline leaf counts as an occurrence but is left alone. The
- * replacement carries exactly the marks of the match's first character. Returns how many were
- * replaced. Does not commit: the caller commits once, with its origin, so the whole change is one
- * undo step.
+ * Works out every replacement in the page's boxes, in reading order, without writing. A match never
+ * crosses a text block; one that spans an inline leaf counts as an occurrence but is left out.
  */
-export function replaceInPage(page: PageDoc, query: string, opts: FindOptions, replacement: string, options: ReplaceOptions): number {
+export function planReplace(page: PageDoc, query: string, opts: FindOptions, replacement: string, options: ReplaceOptions): PlannedEdit[] {
   const re = compileQuery(query, opts)
-  if (!re) return 0
+  if (!re) return []
   const boxes = page.listBoxes().sort((a, b) => a.y - b.y || a.x - b.x)
-  let replaced = 0
+  const edits: PlannedEdit[] = []
   for (const box of boxes) {
     const root = page.contentMap(box.id)
     if (!root || root.size === 0) continue
@@ -108,28 +120,40 @@ export function replaceInPage(page: PageDoc, query: string, opts: FindOptions, r
         return
       }
       const { value, segments } = blockText(children)
-      const edits: Array<{ seg: Segment; from: number; to: number; with: string }> = []
       for (const [from, to] of matchAll(value, re, opts.wholeWord)) {
         const index = occurrence++
-        if (options.only && !options.only(box.id, index)) continue
+        const matched = value.slice(from, to)
+        if (options.only && !options.only(box.id, index, matched)) continue
         const seg = segments.find((s) => from >= s.start && to <= s.start + s.text.length)
         if (!seg) continue
-        edits.push({ seg, from, to, with: expandReplacement(value, from, to, re, replacement, opts, options.preserveCase) })
-      }
-      // Back to front, so earlier offsets still hold.
-      for (const e of edits.reverse()) {
-        const at = e.from - e.seg.start
-        const attributes = attributesAt(e.seg.text, at)
-        const delta: Delta<string>[] = [{ retain: at }, { delete: e.to - e.from }]
-        // applyDelta drops marks the insert would inherit from a neighbour but does not name.
-        if (e.with !== '') delta.push(attributes ? { insert: e.with, attributes } : { insert: e.with })
-        if (at === 0) delta.shift()
-        e.seg.text.applyDelta(delta)
-        replaced++
+        const at = from - seg.start
+        edits.push({ boxId: box.id, occurrence: index, matched, with: expandReplacement(value, from, to, re, replacement, opts, options.preserveCase), text: seg.text, at, attributes: attributesAt(seg.text, at, value.codePointAt(from) ?? 0) })
       }
     }
     visit(root)
   }
-  return replaced
+  return edits
 }
 
+/** Writes planned edits. Back to front, so earlier offsets in the same text still hold. Does not commit. */
+export function applyReplace(edits: PlannedEdit[]): void {
+  for (const e of [...edits].reverse()) {
+    const delta: Delta<string>[] = [{ retain: e.at }, { delete: e.matched.length }]
+    // applyDelta drops marks the insert would inherit from a neighbour but does not name.
+    if (e.with !== '') delta.push(e.attributes ? { insert: e.with, attributes: e.attributes } : { insert: e.with })
+    if (e.at === 0) delta.shift()
+    e.text.applyDelta(delta)
+  }
+}
+
+/**
+ * Replaces the query's matches in every box of the page: plans every edit first, then writes, so a
+ * failure while planning writes nothing. The replacement carries exactly the marks of the match's
+ * first character. Returns how many were replaced. Does not commit: the caller commits once, with
+ * its origin, so the whole change is one undo step.
+ */
+export function replaceInPage(page: PageDoc, query: string, opts: FindOptions, replacement: string, options: ReplaceOptions): number {
+  const edits = planReplace(page, query, opts, replacement, options)
+  applyReplace(edits)
+  return edits.length
+}
