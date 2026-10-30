@@ -31,3 +31,18 @@ test('UI: find in notes replace preview', async ({ app, page }) => {
   await expect(page.getByTestId('search-replace-confirm')).toHaveText('Replace 2 in 2 pages')
   await reviewUi(app, page, 'find in notes replace preview')
 })
+
+test('UI: find in notes replace, notes changed since the search', async ({ app, page }) => {
+  await boxWithText(page, 60, 60, 'keep cat, change cat')
+  await page.keyboard.press(`${MOD}+Shift+f`)
+  await page.getByTestId('search-input').fill('cat')
+  await page.getByTestId('search-replace-toggle').click()
+  await page.getByTestId('search-replace-input').fill('dog')
+  await page.getByTestId('search-replace-all').click()
+  await page.getByTestId('box').click()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowLeft' : 'Home')
+  await page.keyboard.type('cat ')
+  await page.getByTestId('search-replace-confirm').click()
+  await expect(page.getByTestId('search-notice')).toBeVisible()
+  await reviewUi(app, page, 'find in notes replace notice')
+})
