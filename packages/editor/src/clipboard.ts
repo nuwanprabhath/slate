@@ -13,6 +13,10 @@ function wrapContents(el: Element, tag: string): void {
   el.appendChild(wrapper)
 }
 
+// Alignment is structure, not styling: paste and copy keep it (the one inline style besides colour).
+const ALIGNMENTS = new Set(['center', 'right'])
+const ALIGNABLE = /^(P|H[1-6])$/
+
 /** Default paste: keep structure and bold/italic, drop the source's fonts, sizes, colours and classes. */
 export function cleanPastedHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -26,8 +30,12 @@ export function cleanPastedHtml(html: string): string {
     if (/^(bold|bolder|[6-9]00)$/.test(weight) && !/^(B|STRONG|H[1-6]|TH)$/.test(el.tagName)) wrapContents(el, 'strong')
     if (el.style.fontStyle === 'italic' && !/^(I|EM)$/.test(el.tagName)) wrapContents(el, 'em')
   }
-  for (const el of Array.from(doc.body.querySelectorAll('*'))) {
-    for (const attr of Array.from(el.attributes)) if (!KEEP_PASTE_ATTRS.has(attr.name)) el.removeAttribute(attr.name)
+  for (const el of Array.from(doc.body.querySelectorAll<HTMLElement>('*'))) {
+    const align = ALIGNABLE.test(el.tagName) && ALIGNMENTS.has(el.style.textAlign) ? el.style.textAlign : ''
+    // A to-do item's box (Slate's own copy, GitHub task lists) keeps its type and tick.
+    const keep = (name: string) => KEEP_PASTE_ATTRS.has(name) || (el.tagName === 'INPUT' && (name === 'type' || name === 'checked'))
+    for (const attr of Array.from(el.attributes)) if (!keep(attr.name)) el.removeAttribute(attr.name)
+    if (align) el.style.textAlign = align
   }
   doc.body.querySelectorAll('font, span').forEach(unwrap)
   return doc.body.innerHTML
@@ -83,10 +91,27 @@ export function stripCopiedStyles(root: ParentNode): void {
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
     const stored = el.getAttribute('data-color')
     const color = stored && el.style.color && el.style.color !== 'inherit' ? stored : el.style.color
+    const align = ALIGNMENTS.has(el.style.textAlign) ? el.style.textAlign : ''
+    const taskList = el.getAttribute('data-type') === 'taskList'
     el.removeAttribute('style')
     el.removeAttribute('class')
     for (const attr of Array.from(el.attributes)) if (attr.name.startsWith('data-')) el.removeAttribute(attr.name)
+    if (align) el.style.textAlign = align
     if (color) el.style.color = color
+    if (taskList) el.setAttribute('data-type', 'taskList')
+  }
+}
+
+/** To-do items copy as other apps' task lists: `<ul data-type="taskList"><li><input type="checkbox" checked disabled>…`. */
+function copyTodoBoxes(root: ParentNode): void {
+  for (const li of Array.from(root.querySelectorAll('li[data-checked]'))) {
+    const box = li.ownerDocument.createElement('input')
+    box.setAttribute('type', 'checkbox')
+    if (li.getAttribute('data-checked') === 'true') box.setAttribute('checked', '')
+    box.setAttribute('disabled', '')
+    li.prepend(box)
+    li.removeAttribute('data-checked')
+    li.parentElement?.setAttribute('data-type', 'taskList')
   }
 }
 
@@ -97,6 +122,7 @@ class CleanSerializer extends DOMSerializer {
     target?: HTMLElement | DocumentFragment,
   ): HTMLElement | DocumentFragment {
     const out = super.serializeFragment(fragment, options, target)
+    copyTodoBoxes(out)
     stripCopiedStyles(out)
     return out
   }

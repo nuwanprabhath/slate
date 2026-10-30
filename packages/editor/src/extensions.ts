@@ -1,12 +1,13 @@
-import { Extension, getSchema, InputRule, type Extensions } from '@tiptap/core'
+import { Extension, getSchema, InputRule, mergeAttributes, type ChainedCommands, type Editor, type Extensions } from '@tiptap/core'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
 import { TableKit } from '@tiptap/extension-table'
-import { Color, FontFamily, FontSize, TextStyle } from '@tiptap/extension-text-style'
+import { Color, FontFamily, FontSize, TextStyle as BaseTextStyle } from '@tiptap/extension-text-style'
 import StarterKit from '@tiptap/starter-kit'
 import { common, createLowlight } from 'lowlight'
-import { Plugin } from '@tiptap/pm/state'
+import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model'
+import { Plugin, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { currentTheme, readableColor, readableHighlight } from './colorContrast'
 
@@ -131,6 +132,231 @@ export const AutoBullets = Extension.create({
   },
 })
 
+// --- WP-C1: to-do lists, alignment, sub/superscript ---
+// Each is an attribute on a node or mark 0.4.3 already has (test/olderVersions.test.ts): a device
+// still on 0.4.3 shows the text and keeps the attribute unless it edits that very block, where new
+// node types and marks would vanish there and be deleted from the page.
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    slateTodoList: { toggleTodoList: () => ReturnType }
+    slateTextAlign: { setTextAlign: (align: TextAlign) => ReturnType }
+    slateVerticalAlign: { toggleSubscript: () => ReturnType; toggleSuperscript: () => ReturnType }
+  }
+}
+
+/** The innermost list item around a position, with its position. */
+function listItemAround($pos: ResolvedPos): { node: PMNode; pos: number } | null {
+  for (let d = $pos.depth; d > 0; d--) {
+    const node = $pos.node(d)
+    if (node.type.name === 'listItem') return { node, pos: $pos.before(d) }
+  }
+  return null
+}
+
+function listAround($pos: ResolvedPos): { node: PMNode; pos: number } | null {
+  for (let d = $pos.depth; d > 0; d--) {
+    const node = $pos.node(d)
+    if (node.type.name === 'bulletList' || node.type.name === 'orderedList') return { node, pos: $pos.before(d) }
+  }
+  return null
+}
+
+/** Whether the selection is in a to-do item: one whose `checked` is true or false (null is a plain item). */
+export function inTodoItem(state: EditorState): boolean {
+  return (listItemAround(state.selection.$from)?.node.attrs.checked ?? null) !== null
+}
+
+function setChecked(tr: Transaction, pos: number, checked: boolean | null): void {
+  const node = tr.doc.nodeAt(pos)
+  if (node) tr.setNodeMarkup(pos, undefined, { ...node.attrs, checked })
+}
+
+/**
+ * A to-do item is a bulleted list item with `checked` set; the box is drawn by canvas.css and
+ * ticked by a click on it. Never made from typed `[ ]`: only the toolbar and Mod+Shift+9.
+ */
+export const TodoList = Extension.create({
+  name: 'todoList',
+  priority: 110,
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['listItem'],
+        attributes: {
+          checked: {
+            default: null,
+            keepOnSplit: true,
+            parseHTML: (el) => {
+              const data = el.getAttribute('data-checked')
+              if (data === 'true' || data === 'false') return data === 'true'
+              const box = Array.from(el.children).find((c) => c.tagName === 'INPUT' && c.getAttribute('type') === 'checkbox')
+              return box ? box.hasAttribute('checked') : null
+            },
+            renderHTML: (attrs) => (attrs.checked === null || attrs.checked === undefined ? {} : { 'data-checked': String(attrs.checked) }),
+          },
+        },
+      },
+    ]
+  },
+  addCommands() {
+    return {
+      toggleTodoList:
+        () =>
+        ({ state, chain }) => {
+          if (inTodoItem(state)) {
+            return chain()
+              .command(({ tr }) => {
+                const { from, to } = tr.selection
+                tr.doc.nodesBetween(from, to, (node, pos) => {
+                  if (!node.isTextblock) return true
+                  const item = listItemAround(tr.doc.resolve(pos + 1))
+                  if (item && item.node.attrs.checked !== null && item.pos === pos - 1) setChecked(tr, item.pos, null)
+                  return false
+                })
+                return true
+              })
+              .liftListItem('listItem')
+              .run()
+          }
+          const list = listAround(state.selection.$from)
+          const start = list?.node.type.name === 'bulletList' ? chain() : chain().toggleBulletList()
+          return start
+            .command(({ tr }) => {
+              const around = listAround(tr.selection.$from)
+              if (!around || around.node.type.name !== 'bulletList') return false
+              around.node.forEach((child, offset) => {
+                if (child.attrs.checked === null) setChecked(tr, around.pos + 1 + offset, false)
+              })
+              return true
+            })
+            .run()
+        },
+    }
+  },
+  addKeyboardShortcuts() {
+    return {
+      'Mod-Shift-9': () => this.editor.commands.toggleTodoList(),
+      // A new item after a ticked one starts unticked.
+      Enter: () => inTodoItem(this.editor.state) && this.editor.commands.splitListItem('listItem', { checked: false }),
+    }
+  },
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            // The box is the item's ::before, so a click on it lands on the <li> itself; one in the text lands on its <p>.
+            mousedown: (view, event) => {
+              const li = event.target
+              if (event.button !== 0 || !view.editable || !(li instanceof HTMLElement) || li.tagName !== 'LI' || !li.hasAttribute('data-checked')) return false
+              const pos = view.posAtDOM(li, 0) - 1
+              const node = view.state.doc.nodeAt(pos)
+              if (node?.type.name !== 'listItem' || node.attrs.checked === null) return false
+              event.preventDefault()
+              const tr = view.state.tr
+              setChecked(tr, pos, !node.attrs.checked)
+              view.dispatch(tr)
+              return true
+            },
+          },
+        },
+      }),
+    ]
+  },
+})
+
+export type TextAlign = 'left' | 'center' | 'right'
+const ALIGNED = new Set(['center', 'right'])
+
+/** Paragraph and heading alignment; left is the default and stores nothing. */
+export const TextAlignment = Extension.create({
+  name: 'textAlign',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['paragraph', 'heading'],
+        attributes: {
+          textAlign: {
+            default: null,
+            parseHTML: (el) => (ALIGNED.has(el.style.textAlign) ? el.style.textAlign : null),
+            renderHTML: (attrs) => (typeof attrs.textAlign === 'string' && ALIGNED.has(attrs.textAlign) ? { style: `text-align: ${attrs.textAlign}` } : {}),
+          },
+        },
+      },
+    ]
+  },
+  addCommands() {
+    return {
+      setTextAlign:
+        (align) =>
+        ({ commands }) => {
+          const textAlign = align === 'left' ? null : align
+          return ['paragraph', 'heading'].map((type) => commands.updateAttributes(type, { textAlign })).some(Boolean)
+        },
+    }
+  },
+  addKeyboardShortcuts() {
+    return {
+      // Mod+Shift+L is Lock Slate.
+      'Mod-Alt-Shift-l': () => this.editor.commands.setTextAlign('left'),
+      'Mod-Shift-e': () => this.editor.commands.setTextAlign('center'),
+      'Mod-Shift-r': () => this.editor.commands.setTextAlign('right'),
+    }
+  },
+})
+
+type VerticalAlign = 'sub' | 'super'
+const SCRIPT_TAGS: Record<VerticalAlign, string> = { sub: 'sub', super: 'sup' }
+
+/**
+ * Sub- and superscript are a `verticalAlign` attribute of the textStyle mark (so they exclude each
+ * other and sit beside colour and size), drawn as <sub>/<sup>.
+ */
+const TextStyle = BaseTextStyle.extend({
+  parseHTML() {
+    return [...(this.parent?.() ?? []), { tag: 'sub' }, { tag: 'sup' }]
+  },
+  renderHTML({ mark, HTMLAttributes }) {
+    const align = mark.attrs.verticalAlign as VerticalAlign | null
+    const attrs = mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)
+    return [align ? SCRIPT_TAGS[align] : 'span', attrs, 0]
+  },
+})
+
+const VerticalAlignment = Extension.create({
+  name: 'verticalAlign',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['textStyle'],
+        attributes: {
+          verticalAlign: {
+            default: null,
+            parseHTML: (el) => (el.tagName === 'SUB' ? 'sub' : el.tagName === 'SUP' ? 'super' : null),
+            renderHTML: () => ({}),
+          },
+        },
+      },
+    ]
+  },
+  addCommands() {
+    const toggle =
+      (align: VerticalAlign) =>
+      ({ editor, chain }: { editor: Editor; chain: () => ChainedCommands }) =>
+        editor.isActive('textStyle', { verticalAlign: align })
+          ? chain().setMark('textStyle', { verticalAlign: null }).removeEmptyTextStyle().run()
+          : chain().setMark('textStyle', { verticalAlign: align }).run()
+    return { toggleSubscript: () => toggle('sub'), toggleSuperscript: () => toggle('super') }
+  },
+  addKeyboardShortcuts() {
+    return {
+      'Mod-Shift-,': () => this.editor.commands.toggleSubscript(),
+      'Mod-Shift-.': () => this.editor.commands.toggleSuperscript(),
+    }
+  },
+})
+
 /**
  * Every box editor uses exactly this extension list, so the static renderer's schema matches.
  * Undo/redo is handled per page by Loro (PageSession), not by TipTap history.
@@ -158,6 +384,10 @@ export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extension
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'plaintext' }),
     // --- autoBullets (WP-H) ---
     ...(opts.autoBullets === false ? [] : [AutoBullets]),
+    // --- WP-C1 ---
+    TodoList,
+    TextAlignment,
+    VerticalAlignment,
   ]
 }
 
