@@ -1,4 +1,4 @@
-.toolbar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--toolbar-bg); }
+.toolbar { display: flex; align-items: center; gap: 4px 2px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--toolbar-bg); }
 .toolbar button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text); font: inherit; font-size: 14px; line-height: 1; vertical-align: middle; cursor: pointer; }
 .toolbar button:hover:not(:disabled) { background: var(--hover); }
 .toolbar button.active { background: var(--selected); border-color: var(--border); }
@@ -15,3 +15,9 @@
 .toolbar .style-menu .menu-item:hover { background: var(--hover); }
 .toolbar button.toolbar-lock { margin-left: auto; }
 .toolbar-lock + .sync-status-wrap { margin-left: 0; }
+.toolbar .align-button { gap: 2px; padding: 0 4px; }
+.toolbar .align-menu { left: 0; min-width: 190px; }
+.toolbar .align-menu .menu-item { display: flex; align-items: center; gap: 8px; }
+.toolbar .align-menu .menu-item.active { background: var(--selected); }
+.toolbar .align-menu .align-label { flex: 1; }
+.toolbar .align-menu .align-keys { color: var(--muted); font-size: 12px; }

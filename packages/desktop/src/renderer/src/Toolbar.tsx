@@ -1,9 +1,9 @@
-import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
-import { activeEditor } from '@slate/editor'
+import { activeEditor, inTodoItem, type TextAlign } from '@slate/editor'
 import { SyncStatus } from './sync/SyncStatus'
 import { ColorPalette } from './ColorPalette'
-import { BulletListIcon, ChevronIcon, ClearFormattingIcon, HighlightIcon, LockIcon, NumberedListIcon, TableIcon, TextColorIcon } from './toolbarIcons'
+import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, HighlightIcon, LockIcon, NumberedListIcon, ScriptIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
 
 const FONTS = [
   { label: 'Default font', value: '' },
@@ -38,9 +38,8 @@ function useActiveEditor(): Editor | null {
   return editor && !editor.isDestroyed ? editor : null
 }
 
-/** The chevron half of a list split button: a small menu of marker styles. */
-function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STYLES; disabled: boolean; onPick: (style: string) => void }) {
-  const { id, label, styles, disabled, onPick } = props
+/** A toolbar menu's open state, closed by a click outside it or Escape. */
+function useToolbarMenu(): [boolean, (open: boolean) => void, RefObject<HTMLSpanElement | null>] {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLSpanElement>(null)
   useEffect(() => {
@@ -58,6 +57,13 @@ function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STY
       document.removeEventListener('keydown', onKey, true)
     }
   }, [open])
+  return [open, setOpen, root]
+}
+
+/** The chevron half of a list split button: a small menu of marker styles. */
+function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STYLES; disabled: boolean; onPick: (style: string) => void }) {
+  const { id, label, styles, disabled, onPick } = props
+  const [open, setOpen, root] = useToolbarMenu()
   return (
     <span className="split-menu" ref={root}>
       <button
@@ -101,6 +107,60 @@ function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STY
 
 const isMac = navigator.platform.toLowerCase().includes('mac')
 
+const ALIGNMENTS: Array<{ value: TextAlign; label: string; keys: string }> = [
+  { value: 'left', label: 'Align left', keys: isMac ? '⌥⇧⌘L' : 'Ctrl+Alt+Shift+L' },
+  { value: 'center', label: 'Centre', keys: isMac ? '⇧⌘E' : 'Ctrl+Shift+E' },
+  { value: 'right', label: 'Align right', keys: isMac ? '⇧⌘R' : 'Ctrl+Shift+R' },
+]
+
+/** The alignment dropdown: the current alignment's icon, opening left, centre and right. */
+function AlignMenu(props: { current: TextAlign; disabled: boolean; onPick: (align: TextAlign) => void }) {
+  const { current, disabled, onPick } = props
+  const [open, setOpen, root] = useToolbarMenu()
+  return (
+    <span className="split-menu" ref={root}>
+      <button
+        type="button"
+        className="align-button"
+        data-testid="tb-align"
+        title="Alignment"
+        aria-label="Alignment"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen(!open)}
+      >
+        <AlignIcon align={current} />
+        <ChevronIcon />
+      </button>
+      {open && (
+        <div className="style-menu align-menu" role="menu">
+          {ALIGNMENTS.map((a) => (
+            <button
+              key={a.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={a.value === current}
+              className={a.value === current ? 'menu-item active' : 'menu-item'}
+              data-testid={`align-${a.value}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false)
+                onPick(a.value)
+              }}
+            >
+              <AlignIcon align={a.value} />
+              <span className="align-label">{a.label}</span>
+              <span className="align-keys">{a.keys}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
 /** The lock replaces this window, so one answer at mount is enough: only an encrypted, unlocked vault gets the button. */
 function useVaultUnlocked(): boolean {
   const [unlocked, setUnlocked] = useState(false)
@@ -136,6 +196,8 @@ export function Toolbar() {
     </button>
   )
   const is = (name: string, attrs?: Record<string, unknown>) => editor?.isActive(name, attrs) ?? false
+  const todo = editor ? inTodoItem(editor.state) : false
+  const align: TextAlign = editor?.isActive({ textAlign: 'center' }) ? 'center' : editor?.isActive({ textAlign: 'right' }) ? 'right' : 'left'
   const textStyle = (editor?.getAttributes('textStyle') ?? {}) as { fontFamily?: string; fontSize?: string; color?: string }
   // Picking a style turns the list on first when the selection is not in one of that type.
   const setListStyle = (type: 'bulletList' | 'orderedList', style: string) =>
@@ -151,21 +213,25 @@ export function Toolbar() {
       {button('underline', <u>U</u>, 'Underline (Mod+U)', is('underline'), run((c) => c.toggleUnderline()))}
       {button('strike', <s>S</s>, 'Strikethrough', is('strike'), run((c) => c.toggleStrike()))}
       {button('code', '</>', 'Inline code (Mod+E)', is('code'), run((c) => c.toggleCode()))}
+      {button('subscript', <ScriptIcon position="sub" />, 'Subscript (Mod+Shift+,)', is('textStyle', { verticalAlign: 'sub' }), run((c) => c.toggleSubscript()))}
+      {button('superscript', <ScriptIcon position="super" />, 'Superscript (Mod+Shift+.)', is('textStyle', { verticalAlign: 'super' }), run((c) => c.toggleSuperscript()))}
       <span className="sep" />
       {([1, 2, 3] as const).map((level) => (
         <span key={level}>{button(`h${level}`, `H${level}`, `Heading ${level}`, is('heading', { level }), run((c) => c.toggleHeading({ level })))}</span>
       ))}
       <span className="sep" />
       <span className="split">
-        {button('bullet', <BulletListIcon />, 'Bulleted list (Mod+Shift+8)', is('bulletList'), run((c) => c.toggleBulletList()))}
+        {button('bullet', <BulletListIcon />, 'Bulleted list (Mod+Shift+8)', is('bulletList') && !todo, run((c) => c.toggleBulletList()))}
         <StyleMenu id="bullet" label="Bulleted list" styles={BULLET_STYLES} disabled={!editor} onPick={(s) => setListStyle('bulletList', s)} />
       </span>
       <span className="split">
         {button('ordered', <NumberedListIcon />, 'Numbered list (Mod+Shift+7)', is('orderedList'), run((c) => c.toggleOrderedList()))}
         <StyleMenu id="ordered" label="Numbered list" styles={NUMBER_STYLES} disabled={!editor} onPick={(s) => setListStyle('orderedList', s)} />
       </span>
+      {button('todo', <TodoListIcon />, 'To-do list (Mod+Shift+9)', todo, run((c) => c.toggleTodoList()))}
       {button('codeblock', '{ }', 'Code block (Mod+Alt+C)', is('codeBlock'), run((c) => c.toggleCodeBlock()))}
       {button('table', <TableIcon />, 'Insert table', false, run((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: false })))}
+      <AlignMenu current={align} disabled={!editor} onPick={(a) => run((c) => c.setTextAlign(a))()} />
       {is('table') && (
         <>
           {button('row', '+row', 'Add row below', false, run((c) => c.addRowAfter()))}

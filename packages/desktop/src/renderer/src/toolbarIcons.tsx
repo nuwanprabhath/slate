@@ -118,3 +118,41 @@ export function SideChevronIcon({ direction }: { direction: 'left' | 'right' }) 
     </svg>
   )
 }
+
+/** Three ticked and unticked boxes, drawn like BulletListIcon. */
+export function TodoListIcon() {
+  return (
+    <Icon strokeWidth="1.2">
+      {[4, 10, 16].map((y, i) => (
+        <g key={y}>
+          <rect x="2" y={y - 2} width="4" height="4" rx="0.8" stroke={ACCENT} fill={i === 0 ? ACCENT : 'none'} />
+          <path d={`M8.5 ${y}H17.5`} stroke={GREY} strokeWidth="1.5" />
+        </g>
+      ))}
+    </Icon>
+  )
+}
+
+/** Four lines whose shorter ones sit on the left, in the middle or on the right. */
+export function AlignIcon({ align }: { align: 'left' | 'center' | 'right' }) {
+  const short = (y: number) => (align === 'left' ? `M3 ${y}H12` : align === 'center' ? `M5.5 ${y}H14.5` : `M8 ${y}H17`)
+  return (
+    <Icon>
+      <path d={`M3 4H17M3 12H17${short(8)}${short(16)}`} />
+    </Icon>
+  )
+}
+
+/** "x" with a small 2 below (subscript) or above (superscript) it. */
+export function ScriptIcon({ position }: { position: 'sub' | 'super' }) {
+  return (
+    <Icon>
+      <path d="M3 6.5 10 14.5M10 6.5 3 14.5" />
+      <path
+        d={position === 'sub' ? 'M12.6 13.6a1.5 1.5 0 0 1 2.9.5c0 1.1-2.9 2-2.9 3.4h3' : 'M12.6 3.6a1.5 1.5 0 0 1 2.9.5c0 1.1-2.9 2-2.9 3.4h3'}
+        stroke={ACCENT}
+        strokeWidth="1.2"
+      />
+    </Icon>
+  )
+}

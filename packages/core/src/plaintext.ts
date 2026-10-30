@@ -25,9 +25,16 @@ function prefixLines(text: string, indent: string): string[] {
   return text.split('\n').map((line) => indent + line)
 }
 
-function listLines(list: PMJSON, indent: string, marker: (i: number) => string): string[] {
+/** A to-do item's box after its list marker; a plain item has no `checked` attribute. */
+function todoBox(item: PMJSON): string {
+  const checked = item.attrs?.checked
+  return checked === true ? '[x] ' : checked === false ? '[ ] ' : ''
+}
+
+function listLines(list: PMJSON, indent: string, listMarker: (i: number) => string): string[] {
   const out: string[] = []
   ;(list.content ?? []).forEach((item, i) => {
+    const marker = (n: number) => listMarker(n) + todoBox(item)
     const children = item.content ?? []
     const [first, ...rest] = children
     if (first && (first.type === 'paragraph' || first.type === 'heading')) {
