@@ -167,3 +167,13 @@ export function FormatPainterIcon() {
     </Icon>
   )
 }
+
+/** Strikethrough: an S struck through, drawn so it lines up with the other menu icons. */
+export function StrikeIcon() {
+  return (
+    <Icon>
+      <path d="M13.5 6.2c-.5-1.1-1.8-1.9-3.5-1.9-2.1 0-3.5 1.1-3.5 2.6 0 1.2.8 1.9 2.2 2.4M12.3 11.5c.8.5 1.2 1.1 1.2 1.9 0 1.5-1.5 2.6-3.6 2.6-1.8 0-3.2-.8-3.8-2" />
+      <path d="M3.5 10h13" stroke={ACCENT} />
+    </Icon>
+  )
+}
