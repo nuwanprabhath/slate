@@ -1,3 +1,4 @@
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect, MOD, test } from '../fixtures'
 import { boxWithText, moveBoxTo, rect } from '../canvasHelpers'
 import { reviewUi } from './review'
@@ -42,6 +43,61 @@ test('UI: canvas context menu', async ({ app, page }) => {
     close: async (p) => {
       await p.keyboard.press('Escape')
       await expect(p.getByTestId('canvas-menu')).toHaveCount(0)
+    },
+  })
+})
+
+/** A box of text around a pasted picture, for the selected-image states. */
+async function boxWithImage(app: ElectronApplication, page: Page): Promise<Locator> {
+  const box = await boxWithText(page, 60, 60, 'Text above the picture')
+  const png = await page.evaluate(() => {
+    const c = document.createElement('canvas')
+    c.width = 240
+    c.height = 120
+    const g = c.getContext('2d')!
+    g.fillStyle = '#6a8caf'
+    g.fillRect(0, 0, 240, 120)
+    g.fillStyle = '#f2d16b'
+    g.fillRect(150, 20, 60, 60)
+    return c.toDataURL('image/png')
+  })
+  await app.evaluate(({ clipboard, ClipboardItem }, url) => {
+    const bytes = Uint8Array.from(atob(url.split(',')[1]!), (ch) => ch.charCodeAt(0))
+    return clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })])
+  }, png)
+  await page.keyboard.press('End')
+  await page.keyboard.press(`${MOD}+v`)
+  await expect(box.locator('img')).toHaveCount(1)
+  await page.keyboard.type('Text below the picture')
+  return box
+}
+
+const ringWidth = (img: Locator) => img.evaluate((el) => parseFloat(getComputedStyle(el).outlineWidth))
+
+test('UI: an image inside a shift+click selection, and a clicked image', async ({ app, page }) => {
+  const box = await boxWithImage(app, page)
+  const img = box.locator('img')
+  const lines = box.locator('.slate-box-content p')
+  await reviewUi(app, page, 'image in a text selection', {
+    open: async (p) => {
+      // The maintainer's report: caret after the first line, shift+click on the line under the picture.
+      const above = await rect(lines.first())
+      const below = await rect(lines.last())
+      await p.mouse.click(above.x + 20, above.y + above.height / 2)
+      await p.keyboard.press('End')
+      await p.keyboard.down('Shift')
+      await p.mouse.click(below.x + 4, below.y + below.height / 2)
+      await p.keyboard.up('Shift')
+      await expect(img).toHaveClass(/slate-image-selected/)
+      expect(await ringWidth(img)).toBeGreaterThanOrEqual(3)
+    },
+  })
+  await reviewUi(app, page, 'clicked image', {
+    open: async (p) => {
+      await img.click()
+      await expect(img).toHaveClass(/ProseMirror-selectednode/)
+      expect(await ringWidth(img)).toBeGreaterThanOrEqual(3)
+      await p.mouse.move(1, 1)
     },
   })
 })

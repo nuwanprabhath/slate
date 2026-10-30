@@ -10,6 +10,7 @@ import { cleanPastedHtml, makeClipboardSerializer, serializeSliceAsText } from '
 import { buildExtensions, schema } from './extensions'
 import { findHighlightPlugin } from './find'
 import { copySelectedImage, imageFilesFrom, insertImages } from './images'
+import { ImageSelection } from './imageSelection'
 import { SlateKeymap } from './keymap'
 import { LinkPopover } from './LinkPopover'
 import { isSingleUrl, pastePlainOrLink } from './links'
@@ -38,6 +39,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         LoroBinding.configure({ doc: session.doc, containerId: box.contentId }),
         SlateKeymap.configure({ session, services }),
         SlateCaret,
+        ImageSelection,
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
       ],
       ...editorRuleOptions(services),
