@@ -21,6 +21,11 @@ function inlineText(nodes: PMJSON[] = []): string {
     .join('')
 }
 
+/** Adds `lines` to `out` one by one: `out.push(...lines)` passes each line as an argument and overflows the stack on a huge block. */
+function append(out: string[], lines: readonly string[]): void {
+  for (const line of lines) out.push(line)
+}
+
 function prefixLines(text: string, indent: string): string[] {
   return text.split('\n').map((line) => indent + line)
 }
@@ -41,10 +46,10 @@ function listLines(list: PMJSON, indent: string, listMarker: (i: number) => stri
       const [line0, ...more] = inlineText(first.content).split('\n')
       out.push(indent + marker(i) + line0)
       for (const line of more) out.push(indent + INDENT + line)
-      out.push(...blocksToLines(rest, indent + INDENT))
+      append(out, blocksToLines(rest, indent + INDENT))
     } else {
       out.push(indent + marker(i).trimEnd())
-      out.push(...blocksToLines(children, indent + INDENT))
+      append(out, blocksToLines(children, indent + INDENT))
     }
   })
   return out
@@ -125,14 +130,14 @@ function blocksToLines(nodes: PMJSON[], indent: string): string[] {
   const out: string[] = []
   let inline: PMJSON[] = []
   const flush = () => {
-    if (inline.length > 0) out.push(...prefixLines(inlineText(inline), indent))
+    if (inline.length > 0) append(out, prefixLines(inlineText(inline), indent))
     inline = []
   }
   for (const n of nodes) {
     if (n.type === 'text' || n.type === 'hardBreak') inline.push(n)
     else {
       flush()
-      out.push(...blockLines(n, indent))
+      append(out, blockLines(n, indent))
     }
   }
   flush()
