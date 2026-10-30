@@ -25,6 +25,13 @@ export function AutocorrectSection({ settings, patch }: SectionProps) {
         checked={settings.linkPastedUrls}
         onChange={(linkPastedUrls) => patch({ linkPastedUrls })}
       />
+      <CheckboxSetting
+        testId="setting-spellcheck-underline"
+        label="Underline misspelled words"
+        help="Slate never corrects them for you."
+        checked={settings.spellcheckUnderline}
+        onChange={(spellcheckUnderline) => patch({ spellcheckUnderline })}
+      />
     </>
   )
 }

@@ -32,7 +32,8 @@ export function windowOptions({ backgroundColor, chrome = {}, iconPath, preloadP
       preload: preloadPath,
       contextIsolation: true,
       sandbox: true,
-      spellcheck: false,
+      // The session runs the checker only while the setting is on (spellcheck.ts).
+      spellcheck: true,
       backgroundThrottling: !isE2E,
     },
   }

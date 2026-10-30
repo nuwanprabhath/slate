@@ -14,6 +14,12 @@ describe('settings schema', () => {
     expect(mergeSettings({ linkPastedUrls: false }).linkPastedUrls).toBe(false)
   })
 
+  it('starts with misspelled words not underlined, and a stored non-boolean falls back to that', () => {
+    expect(DEFAULT_SETTINGS.spellcheckUnderline).toBe(false)
+    for (const v of ['true', 1, null]) expect(mergeSettings({ spellcheckUnderline: v }).spellcheckUnderline, String(v)).toBe(false)
+    expect(mergeSettings({ spellcheckUnderline: true }).spellcheckUnderline).toBe(true)
+  })
+
   it('fills every key from its default', () => {
     expect(mergeSettings({})).toEqual(DEFAULT_SETTINGS)
     expect(DEFAULT_SETTINGS.autoBullets).toBe(true)

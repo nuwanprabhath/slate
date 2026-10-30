@@ -19,6 +19,10 @@ describe('the window factory', () => {
     expect(prefs.preload).toBe('/p.js')
   })
 
+  it("has Chromium's spell checker, which the session runs only while the setting is on (spellcheck.ts)", () => {
+    expect(windowOptions(base).webPreferences!.spellcheck).toBe(true)
+  })
+
   it('title-bar options cannot replace the preferences (red team 8a)', () => {
     const chrome = { titleBarStyle: 'hidden', webPreferences: { sandbox: false, nodeIntegration: true } } as never
     const prefs = windowOptions({ ...base, chrome }).webPreferences!

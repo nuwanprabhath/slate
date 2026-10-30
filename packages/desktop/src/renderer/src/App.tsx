@@ -90,9 +90,10 @@ export function useServices(settings: Settings): EditorServices {
       markdownShortcuts: settings.markdownShortcuts,
       autoBullets: settings.autoBullets,
       linkPastedUrls: settings.linkPastedUrls,
+      spellcheckUnderline: settings.spellcheckUnderline,
       openExternal: (url) => window.slate.openExternal(url),
     }),
-    [settings.markdownShortcuts, settings.autoBullets, settings.linkPastedUrls],
+    [settings.markdownShortcuts, settings.autoBullets, settings.linkPastedUrls, settings.spellcheckUnderline],
   )
 }
 

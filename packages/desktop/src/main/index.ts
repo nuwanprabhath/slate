@@ -47,6 +47,7 @@ import { createAuthService, type AuthService } from './onenote/auth'
 import { converterPath, defaultConverterDirs } from './onenote/backup'
 import { acquireLock } from './lock'
 import { onSettingsWritten, readSettings, writeSettings } from './settings'
+import { applySpellcheck } from './spellcheck'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { closeServices, openServices, services, servicesOpen } from './services'
 import { activeThemeSpec, registerThemeIpc, windowBackground, type ThemeSource } from './theme/ipc'
@@ -130,6 +131,9 @@ void app.whenReady().then(async () => {
   // The app has one page: a window may show only the entry (any query), not another app:// file (review L-R1).
   const isApp = (url: string) => isAppEntry(url, devServer)
   installBoundaryGuards(isApp)
+  // Off until the notes' settings say otherwise (before any window loads).
+  applySpellcheck(session.defaultSession, DEFAULT_SETTINGS)
+  onSettingsWritten((settings) => applySpellcheck(session.defaultSession, settings))
   if (!app.isPackaged) app.dock?.setIcon(iconPath)
   const dataDir = app.getPath('userData')
   // Tells the headless import CLI that this process has the database open.
@@ -353,6 +357,7 @@ void app.whenReady().then(async () => {
       watchLog: log.scoped('watch'),
     })
     configureLogging(readSettings(svc.store))
+    applySpellcheck(session.defaultSession, readSettings(svc.store))
     if (sync) svc.sync.start()
     // After the window is asked for, not before; a query arriving first waits behind it.
     setTimeout(() => notes() && svc.search.ensureBuilt(), 0)

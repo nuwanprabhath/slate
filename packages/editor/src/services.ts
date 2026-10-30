@@ -11,6 +11,8 @@ export interface EditorServices {
   autoBullets: boolean
   /** Pasted web and mail addresses become links. */
   linkPastedUrls: boolean
+  /** Misspelled words are underlined; nothing is ever corrected. */
+  spellcheckUnderline: boolean
   /** Opens a link in the system browser; the renderer never navigates itself. */
   openExternal(url: string): Promise<void>
 }
