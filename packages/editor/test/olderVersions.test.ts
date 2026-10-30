@@ -106,4 +106,16 @@ describe('0.4.3 opening content added in phase 15', async () => {
     expect(json(same.after)).toContain('O!')
     expect(json(same.after)).not.toContain('verticalAlign')
   })
+
+  it('an indent attribute on a paragraph or heading (WP-C2): shown unindented, kept when the edit is elsewhere, removed from the block it edits', async () => {
+    const heading: PMJSON = { type: 'heading', attrs: { level: 2, indent: 2 }, content: [{ type: 'text', text: 'title' }] }
+    const elsewhere = await editOn043([heading, p('indented', { indent: 3 }), p('after')])
+    expect(elsewhere.shown).toContain('indented')
+    expect(elsewhere.errors).toBe(0)
+    expect(json(elsewhere.after)).toContain('"indent":3')
+    expect(json(elsewhere.after)).toContain('"indent":2')
+    const same = await editOn043([p('indented', { indent: 3 })])
+    expect(json(same.after)).toContain('indented!')
+    expect(json(same.after)).not.toContain('indent"')
+  })
 })

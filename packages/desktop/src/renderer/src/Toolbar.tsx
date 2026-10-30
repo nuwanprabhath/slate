@@ -1,9 +1,9 @@
 import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
-import { activeEditor, inTodoItem, type TextAlign } from '@slate/editor'
+import { activeEditor, formatPainter, inTodoItem, type TextAlign } from '@slate/editor'
 import { SyncStatus } from './sync/SyncStatus'
 import { ColorPalette } from './ColorPalette'
-import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, HighlightIcon, LockIcon, NumberedListIcon, ScriptIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
+import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, FormatPainterIcon, HighlightIcon, LockIcon, NumberedListIcon, ScriptIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
 
 const FONTS = [
   { label: 'Default font', value: '' },
@@ -161,6 +161,28 @@ function AlignMenu(props: { current: TextAlign; disabled: boolean; onPick: (alig
   )
 }
 
+/** The brush: a click carries the selection's format to the next selection; a double-click keeps it on until Esc or another click. */
+function FormatPainterButton(props: { editor: Editor | null }) {
+  const { editor } = props
+  const painter = useSyncExternalStore(formatPainter.subscribe, formatPainter.get)
+  return (
+    <button
+      type="button"
+      data-testid="tb-format-painter"
+      title="Format painter (double-click to keep it on)"
+      aria-label="Format painter"
+      aria-pressed={painter !== null}
+      disabled={!editor}
+      className={painter ? 'active' : undefined}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => (painter ? formatPainter.stop() : editor && formatPainter.start(editor, false))}
+      onDoubleClick={() => editor && formatPainter.start(editor, true)}
+    >
+      <FormatPainterIcon />
+    </button>
+  )
+}
+
 /** The lock replaces this window, so one answer at mount is enough: only an encrypted, unlocked vault gets the button. */
 function useVaultUnlocked(): boolean {
   const [unlocked, setUnlocked] = useState(false)
@@ -284,6 +306,7 @@ export function Toolbar() {
         icon={(last) => <HighlightIcon color={last} />}
         onPick={(color) => run((c) => (color ? c.setHighlight({ color }) : c.unsetHighlight()))()}
       />
+      <FormatPainterButton editor={editor} />
       {button('clear', <ClearFormattingIcon />, 'Clear all formatting', false, run((c) => c.unsetAllMarks().clearNodes()))}
       {vaultUnlocked && (
         <button

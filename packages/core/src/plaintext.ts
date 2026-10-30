@@ -86,11 +86,17 @@ function listLabel(style: string): (n: number) => string {
   }
 }
 
+/** A paragraph's or heading's indent level (WP-C2), as list nesting's two spaces per level. */
+function blockIndent(node: PMJSON): string {
+  const level = node.attrs?.indent
+  return typeof level === 'number' && level > 0 ? INDENT.repeat(Math.min(level, 8)) : ''
+}
+
 function blockLines(node: PMJSON, indent: string): string[] {
   switch (node.type) {
     case 'paragraph':
     case 'heading':
-      return prefixLines(inlineText(node.content), indent)
+      return prefixLines(inlineText(node.content), indent + blockIndent(node))
     case 'codeBlock':
       return prefixLines((node.content ?? []).map((n) => (n.text ?? '').replace(/\r\n?/g, '\n')).join(''), indent)
     case 'bulletList':

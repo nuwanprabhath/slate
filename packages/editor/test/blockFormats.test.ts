@@ -58,7 +58,7 @@ describe('to-do list', () => {
     expect(items(ed)).toEqual([false])
     expect(ed.isActive('listItem', { checked: false })).toBe(true)
     ed.commands.toggleTodoList()
-    expect(json(ed)).toBe(JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', attrs: { textAlign: null }, content: [{ type: 'text', text: 'milk' }] }] }))
+    expect(json(ed)).toBe(JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', attrs: { textAlign: null, indent: null }, content: [{ type: 'text', text: 'milk' }] }] }))
   })
 
   it('inside a bulleted or numbered list, the whole list becomes a to-do list', () => {

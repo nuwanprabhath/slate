@@ -9,6 +9,8 @@ import { currentTheme, onThemeChange } from './colorContrast'
 import { cleanPastedHtml, makeClipboardSerializer, mayHoldImages, serializeSliceAsText } from './clipboard'
 import { buildExtensions, schema } from './extensions'
 import { findHighlightPlugin } from './find'
+import { foldPlugin } from './fold'
+import { FormatPainter } from './formatPainter'
 import { copyWithImages, imageFilesFrom, insertImages, pasteHtml } from './images'
 import { ImageSelection } from './imageSelection'
 import { SlateKeymap } from './keymap'
@@ -42,6 +44,8 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         ImageSelection,
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
+        FormatPainter,
+        Extension.create({ name: 'slateFold', addProseMirrorPlugins: () => [foldPlugin(box.id)] }),
       ],
       ...editorRuleOptions(services),
       autofocus: autoFocus ? 'end' : false,
