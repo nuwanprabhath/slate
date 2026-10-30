@@ -92,6 +92,36 @@ describe('toMarkdown', () => {
     expect(toMarkdown([table])).toBe('| a b | x y |\n| --- | --- |')
   })
 
+  it('stays fast on long runs of spaces, in a paragraph, a heading, a table cell and an image alt', () => {
+    const long = 'a' + ' '.repeat(200_000) + 'b'
+    const cell: PMJSON = { type: 'tableCell', content: [p(t(long, [{ type: 'bold' }]))] }
+    const doc: PMJSON[] = [
+      p(t(long, [{ type: 'bold' }]), t(' '.repeat(200_000), [{ type: 'italic' }])),
+      { type: 'heading', attrs: { level: 1 }, content: [t(long)] },
+      { type: 'table', content: [{ type: 'tableRow', content: [cell] }] },
+      { type: 'image', attrs: { src: 'slate-blob://blob/x.png', alt: long + '\n' + long } },
+    ]
+    const start = performance.now()
+    const md = toMarkdown(doc)
+    expect(performance.now() - start).toBeLessThan(250)
+    expect(md.startsWith('**a')).toBe(true)
+  })
+
+  it('fences 150k backtick runs without running out of stack, in inline code and in a code block', () => {
+    const inline = '`a'.repeat(150_000)
+    expect(toMarkdown([p(t(inline, [{ type: 'code' }]))])).toBe('`` ' + inline + ' ``')
+    const code = '`x\n'.repeat(150_000) + '````'
+    const out = toMarkdown([{ type: 'codeBlock', attrs: { language: 'sh' }, content: [t(code)] }])
+    expect(out.startsWith('`````sh\n')).toBe(true)
+    expect(out.endsWith('\n`````')).toBe(true)
+  })
+
+  it('escapes brackets, backslashes and line breaks in image alt text, so it cannot make a link', () => {
+    const img = (alt: string): PMJSON => ({ type: 'image', attrs: { src: 'slate-blob://blob/x.png', alt } })
+    expect(toMarkdown([img('x](https://evil.example/doc) see [here')])).toBe('![x\\](https://evil.example/doc) see \\[here](slate-blob://blob/x.png)')
+    expect(toMarkdown([img('a\\b\nc')])).toBe('![a\\\\b c](slate-blob://blob/x.png)')
+  })
+
   it('renders a heading level and an empty selection', () => {
     expect(toMarkdown([{ type: 'heading', attrs: { level: 3 }, content: [t('Three')] }])).toBe('### Three')
     expect(toMarkdown([])).toBe('')

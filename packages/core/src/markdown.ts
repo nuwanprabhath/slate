@@ -5,9 +5,27 @@ const clean = (s: string) => s.replace(/\u00A0/g, ' ').replace(/[\u200B-\u200D\u
 const isInline = (n: PMJSON) => n.type === 'text' || n.type === 'hardBreak'
 const isList = (n: PMJSON) => n.type === 'bulletList' || n.type === 'orderedList' || n.type === 'taskList'
 
+/** The longest run of backticks in `s`, or only those starting a line. A loop: spreading every run into Math.max overflows the stack. */
+function longestTicks(s: string, lineStartsOnly = false): number {
+  let longest = 0
+  let run = 0
+  let atLineStart = true
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (c === '`' && (!lineStartsOnly || atLineStart)) {
+      run++
+      if (run > longest) longest = run
+      continue
+    }
+    run = 0
+    atLineStart = c === '\n'
+  }
+  return longest
+}
+
 /** A code span fenced with one more backtick than the longest run inside it. */
 function codeSpan(s: string): string {
-  const fence = '`'.repeat(Math.max(0, ...(s.match(/`+/g) ?? []).map((r) => r.length)) + 1)
+  const fence = '`'.repeat(longestTicks(s) + 1)
   return s.includes('`') ? `${fence} ${s} ${fence}` : `${fence}${s}${fence}`
 }
 
@@ -17,8 +35,13 @@ function markText(node: PMJSON): string {
   const marks = node.marks ?? []
   const has = (type: string) => marks.some((m) => m.type === type)
   // `** a**` is not bold in Markdown, so edge spaces go outside the delimiters (code keeps them: they are code).
-  const [, lead = '', core = '', trail = ''] = has('code') ? ['', '', raw, ''] : (/^(\s*)([\s\S]*?)(\s*)$/.exec(raw) ?? [])
-  if (core === '') return raw
+  // Lengths of trimStart/trimEnd, not a regex: a lazy middle group backtracks quadratically on a long space run.
+  const leadEnd = has('code') ? 0 : raw.length - raw.trimStart().length
+  const coreEnd = has('code') ? raw.length : raw.trimEnd().length
+  if (coreEnd <= leadEnd) return raw
+  const lead = raw.slice(0, leadEnd)
+  const core = raw.slice(leadEnd, coreEnd)
+  const trail = raw.slice(coreEnd)
   let text = has('code') ? codeSpan(core) : core
   if (has('bold')) text = `**${text}**`
   if (has('italic')) text = `_${text}_`
@@ -32,7 +55,19 @@ function inline(nodes: PMJSON[] = []): string {
   return nodes.map((n) => (n.type === 'text' ? markText(n) : n.type === 'hardBreak' ? '  \n' : inline(n.content))).join('')
 }
 
-const oneLine = (s: string) => s.replace(/\s*\n\s*/g, ' ')
+/** Line breaks and the spaces around them become one space, by splitting: a regex over the spaces is quadratic on a long run. */
+const oneLine = (s: string) => {
+  const lines = s.split('\n')
+  return lines.map((l, i) => (i > 0 ? l.trimStart() : l)).map((l, i) => (i < lines.length - 1 ? l.trimEnd() : l)).join(' ')
+}
+
+/** Alt text that cannot close the image or open a link of its own. */
+const altText = (s: string) => oneLine(s).replace(/[\\[\]]/g, (c) => `\\${c}`)
+/** Appends one at a time: `push(...lines)` passes every line as an argument and overflows the stack on a long block. */
+function append(out: string[], lines: string[]): void {
+  for (const line of lines) out.push(line)
+}
+
 const indented = (pad: string) => (line: string) => (line === '' ? '' : pad + line)
 
 /** An item's first paragraph goes on the marker's line; a later paragraph is set apart, a nested list is not. */
@@ -48,13 +83,14 @@ function listLines(list: PMJSON, marker: (i: number, item: PMJSON) => string, pa
     const first = children[0]
     const leads = first !== undefined && (first.type === 'paragraph' || first.type === 'heading')
     const head = leads ? blockLines(first) : ['']
-    out.push(leads ? m + (head[0] ?? '') : m.trimEnd(), ...head.slice(1).map(pad))
+    out.push(leads ? m + (head[0] ?? '') : m.trimEnd())
+    append(out, head.slice(1).map(pad))
     let started = leads
     for (const child of leads ? children.slice(1) : children) {
       const lines = blockLines(child)
       if (lines.length === 0) continue
       if (started && !isList(child)) out.push('')
-      out.push(...lines.map(pad))
+      append(out, lines.map(pad))
       started = true
     }
   })
@@ -79,7 +115,7 @@ function blockLines(node: PMJSON): string[] {
     case 'codeBlock': {
       const lang = typeof node.attrs?.language === 'string' && node.attrs.language !== 'plaintext' ? node.attrs.language : ''
       const code = (node.content ?? []).map((n) => (n.text ?? '').replace(/\r\n?/g, '\n')).join('')
-      const fence = '`'.repeat(Math.max(2, ...(code.match(/^`+/gm) ?? []).map((r) => r.length)) + 1)
+      const fence = '`'.repeat(Math.max(2, longestTicks(code, true)) + 1)
       return [fence + lang, ...code.split('\n'), fence]
     }
     case 'blockquote':
@@ -87,7 +123,7 @@ function blockLines(node: PMJSON): string[] {
     case 'horizontalRule':
       return ['---']
     case 'image':
-      return [`![${oneLine(String(node.attrs?.alt ?? ''))}](${String(node.attrs?.src ?? '')})`]
+      return [`![${altText(String(node.attrs?.alt ?? ''))}](${String(node.attrs?.src ?? '')})`]
     case 'table': {
       const cellText = (cell: PMJSON) => oneLine((cell.content ?? []).map((c) => inline(c.content)).join(' ')).trim().replace(/\|/g, '\\|')
       const rows = (node.content ?? []).map((row) => (row.content ?? []).map(cellText))
@@ -117,7 +153,7 @@ function blocks(nodes: PMJSON[]): string[] {
     const lines = blockLines(g)
     if (lines.every((l) => l.trim() === '')) continue
     if (out.length > 0) out.push('')
-    out.push(...lines)
+    append(out, lines)
   }
   return out
 }
