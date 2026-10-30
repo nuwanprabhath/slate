@@ -6,10 +6,10 @@ import type { BoxState } from '@slate/core'
 import { activeEditor } from './activeEditor'
 import { SlateCaret } from './caret'
 import { currentTheme, onThemeChange } from './colorContrast'
-import { cleanPastedHtml, makeClipboardSerializer, serializeSliceAsText } from './clipboard'
+import { cleanPastedHtml, makeClipboardSerializer, mayHoldImages, serializeSliceAsText } from './clipboard'
 import { buildExtensions, schema } from './extensions'
 import { findHighlightPlugin } from './find'
-import { copySelectedImage, imageFilesFrom, insertImages } from './images'
+import { copyWithImages, imageFilesFrom, insertImages, pasteHtml } from './images'
 import { ImageSelection } from './imageSelection'
 import { SlateKeymap } from './keymap'
 import { LinkPopover } from './LinkPopover'
@@ -63,6 +63,12 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
             pastePlainOrLink(view, url)
             return true
           }
+          const html = event.clipboardData?.getData('text/html') ?? ''
+          if (mayHoldImages(html)) {
+            event.preventDefault()
+            pasteHtml(view, html, services.putBlob)
+            return true
+          }
           const files = imageFilesFrom(event.clipboardData)
           if (files.length === 0) return false
           event.preventDefault()
@@ -83,7 +89,8 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
             if (anchor && !anchor.hasAttribute('title')) anchor.setAttribute('title', 'Mod+click to open')
             return false
           },
-          copy: (view, event) => copySelectedImage(view, event, services.copyImage),
+          copy: (view, event) => copyWithImages(view, event, services),
+          cut: (view, event) => copyWithImages(view, event, services),
         },
       },
       onUpdate: ({ transaction }) => {

@@ -1,5 +1,5 @@
 import { env } from './testHooks'
-import { BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage, type OpenDialogOptions } from 'electron'
+import { BrowserWindow, clipboard, dialog, type OpenDialogOptions } from 'electron'
 import type { IpcRegistrar } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
 import { CH } from '../shared/ipc'
@@ -39,14 +39,6 @@ export function registerIpc(ipc: IpcRegistrar, store: () => DocStore, blobs: () 
       }
       throw err
     }
-  })
-  ipc.handle(CH.blobsCopyImage, async (_e, url: string) => {
-    const found = blobs().readForUrl(url)
-    const image = found ? nativeImage.createFromBuffer(Buffer.from(found.bytes)) : null
-    if (!image || image.isEmpty()) return false
-    // Electron 45's clipboard is the async W3C-style API; there is no writeImage.
-    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }) })])
-    return true
   })
   ipc.handle(CH.settingsGet, () => readSettings(store()))
   ipc.handle(CH.settingsSet, (_e, patch: Partial<Settings>) => writeSettings(store(), patch))

@@ -85,6 +85,7 @@ export function useServices(settings: Settings): EditorServices {
     () => ({
       putBlob: (bytes, mime) => window.slate.blobs.put(bytes, mime),
       copyImage: (url) => window.slate.blobs.copyImage(url),
+      copyRich: (text, html) => window.slate.blobs.copyRich(text, html),
       readClipboardText: () => window.slate.clipboardText(),
       markdownShortcuts: settings.markdownShortcuts,
       autoBullets: settings.autoBullets,

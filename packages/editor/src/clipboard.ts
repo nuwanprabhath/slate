@@ -33,6 +33,47 @@ export function cleanPastedHtml(html: string): string {
   return doc.body.innerHTML
 }
 
+// The formats the blob store keeps; an embedded SVG or anything else is not stored.
+const PICTURE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp'])
+const BASE64_PICTURE = /^data:(image\/[a-z]+);base64,([a-z0-9+/=\s]*)$/i
+
+/**
+ * Whether pasted HTML has any picture, which then goes through `storeDataImages`. A cheap test on
+ * the text: whether a src holds a data URL is decided from the parsed attribute, since entities
+ * (`&#100;ata:`) and `<img/src=…>` hide it from any pattern.
+ */
+export function mayHoldImages(html: string): boolean {
+  return /<img/i.test(html)
+}
+
+/** A src as the URL parser reads it: tabs and newlines removed, surrounding spaces and controls trimmed. */
+function urlOf(src: string): string {
+  // eslint-disable-next-line no-control-regex -- the URL standard strips exactly these
+  return src.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '')
+}
+
+/**
+ * Stores each embedded picture through `put` and points the HTML at the stored copy, so a page
+ * holds an address and never the bytes (they would stay in its history and every sync for good).
+ * A picture that cannot be stored is left out.
+ */
+export async function storeDataImages(html: string, put: (bytes: Uint8Array, mime: string) => Promise<string>): Promise<string> {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const img of Array.from(doc.querySelectorAll('img'))) {
+    const src = urlOf(img.getAttribute('src') ?? '')
+    if (!/^data:/i.test(src)) continue
+    const match = BASE64_PICTURE.exec(src)
+    const mime = match?.[1]?.toLowerCase() ?? ''
+    try {
+      if (!match || !PICTURE_TYPES.has(mime)) throw new Error('not a stored picture format')
+      img.setAttribute('src', await put(Uint8Array.from(atob(match[2]!.replace(/\s/g, '')), (c) => c.charCodeAt(0)), mime))
+    } catch {
+      img.remove()
+    }
+  }
+  return doc.body.innerHTML
+}
+
 /**
  * Copied HTML keeps colour only; fonts and sizes would fight the destination app's styling. The
  * colour is the stored one (data-color), not the one adapted for Slate's dark theme: the

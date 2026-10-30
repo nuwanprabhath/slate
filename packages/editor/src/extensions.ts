@@ -152,7 +152,8 @@ export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extension
     FontFamily,
     FontSize,
     AdaptiveHighlight.configure({ multicolor: true }),
-    Image.configure({ inline: false, allowBase64: true }),
+    // A pasted data-URL picture is stored first (storeDataImages); one that slips past is dropped, never kept in the page.
+    Image.configure({ inline: false, allowBase64: false }),
     TableKit.configure({ table: { resizable: false } }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'plaintext' }),
     // --- autoBullets (WP-H) ---
