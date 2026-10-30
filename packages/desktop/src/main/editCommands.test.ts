@@ -16,7 +16,7 @@ function setup() {
 }
 
 describe('UserInputClock', () => {
-  it('counts a mouse press or key press on that window in the last second as a person acting', () => {
+  it('counts a mouse press on that window in the last second as a person acting', () => {
     let now = 0
     const clock = new UserInputClock(() => now)
     const a = {}
@@ -29,11 +29,18 @@ describe('UserInputClock', () => {
     expect(clock.recent(a)).toBe(true)
     now = 1001
     expect(clock.recent(a)).toBe(false)
-    for (const type of ['mouseDown', 'keyDown', 'rawKeyDown']) {
+    for (const type of ['mouseDown', 'mouseUp']) {
       clock.note(b, type)
       expect(clock.recent(b)).toBe(true)
       now += 2000
     }
+  })
+
+  it('does not count a key press: the text menu is mouse-only, and typing must not open a paste window', () => {
+    const clock = new UserInputClock(() => 0)
+    const a = {}
+    for (const type of ['keyDown', 'rawKeyDown', 'keyUp', 'char']) clock.note(a, type)
+    expect(clock.recent(a)).toBe(false)
   })
 
   it('ignores input that is not a press: moves, wheels, focus', () => {
@@ -58,6 +65,8 @@ describe('registerEditIpc', () => {
     const { run, ran, sender, input, tick } = setup()
     for (const command of ['paste', 'copy', 'cut']) expect(() => run(command)).toThrow(/user input/)
     input.note(sender, 'keyDown')
+    expect(() => run('paste')).toThrow(/user input/)
+    input.note(sender, 'mouseUp')
     tick(1500)
     expect(() => run('paste')).toThrow(/user input/)
     input.note({}, 'mouseUp')
