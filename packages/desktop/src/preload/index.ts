@@ -195,6 +195,7 @@ const api: SlateApi = {
   },
   appVersion: () => ipcRenderer.invoke(CH.appVersion),
   quit: () => ipcRenderer.invoke(CH.appQuit),
+  printPage: (request) => ipcRenderer.invoke(CH.pagePrint, request),
 }
 
 contextBridge.exposeInMainWorld('slate', api)

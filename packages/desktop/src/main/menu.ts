@@ -63,6 +63,9 @@ export function buildMenu({ store: open, onCheckForUpdates, onLock }: MenuOption
         { id: 'import-onenote', label: 'Import from OneNote…', enabled: notes, click: () => send({ cmd: 'show-import' }) },
         { id: 'import-onenote-backup', label: 'Import from OneNote backup…', enabled: notes, click: () => send({ cmd: 'show-import-backup' }) },
         { type: 'separator' },
+        { id: 'print', label: 'Print…', accelerator: 'CmdOrCtrl+P', enabled: notes, click: () => send({ cmd: 'print' }) },
+        { id: 'export-pdf', label: 'Export Page as PDF…', accelerator: 'CmdOrCtrl+Shift+P', enabled: notes, click: () => send({ cmd: 'export-pdf' }) },
+        { type: 'separator' },
         // The key is handled in before-input-event (main/index.ts), which also sees it in a hidden window.
         { id: 'lock', label: 'Lock Slate', accelerator: 'CmdOrCtrl+Shift+L', registerAccelerator: false, enabled: !!onLock, click: () => onLock?.() },
         { type: 'separator' },

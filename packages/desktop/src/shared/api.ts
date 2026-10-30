@@ -404,6 +404,8 @@ export type MenuCommand =
   | { cmd: 'show-settings'; section?: string }
   | { cmd: 'link' }
   | { cmd: 'find-in-notes' }
+  | { cmd: 'print' }
+  | { cmd: 'export-pdf' }
 
 export type SearchScope = { kind: 'all' } | { kind: 'notebook'; id: string } | { kind: 'section'; id: string }
 
@@ -549,6 +551,15 @@ export interface SlateApi {
   appVersion(): Promise<string>
   /** Quits Slate (the self-test error screen's only way out, S-6). */
   quit(): Promise<void>
+  /** Prints this window (the print stylesheet shows only the open page), or saves it as a PDF where the person chooses. */
+  printPage(request: PrintRequest): Promise<PrintResult>
+}
+
+/** `title` names the PDF in the save dialog; main never takes a path from the renderer. */
+export type PrintRequest = { kind: 'print' } | { kind: 'pdf'; title: string }
+/** `done` is false when the person cancelled the print or the save dialog. */
+export interface PrintResult {
+  done: boolean
 }
 
 export interface BackupPick {
