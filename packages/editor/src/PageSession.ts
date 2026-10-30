@@ -3,7 +3,7 @@ import { PageDoc, arrangeBoxes, computePush, hasOverlaps, contentToJSON, settleO
 import { writeContent } from './content'
 import { isEmptyContent } from './emptyBox'
 import { schema } from './extensions'
-import { findInPage, type FindMatch, type FindOptions } from './find'
+import { findInPage, replaceInPageDoc, type FindMatch, type FindOptions, type ReplaceChoice } from './find'
 
 export interface DocPersistence {
   load(docId: string): Promise<Uint8Array[]>
@@ -87,6 +87,16 @@ export class PageSession {
   /** Matches in every box, read from the doc model (static boxes have no editor to search). */
   find(query: string, opts: FindOptions): FindMatch[] {
     return findInPage(this.page, schema, query, opts)
+  }
+
+  /** Find and replace in every box, as one undo step of its own. Returns how many it replaced. */
+  replace(query: string, opts: FindOptions, replacement: string, choice: ReplaceChoice): number {
+    let edits: Array<{ boxId: string }> = []
+    this.ownStep(() => (edits = replaceInPageDoc(this.page, schema, query, opts, replacement, choice)))
+    // The commit's origin makes mounted editors report the change as remote; it is the user's, so
+    // a box it grows pushes the boxes below, as typing does.
+    for (const e of edits) this.noteLocalEdit(e.boxId)
+    return edits.length
   }
 
   /** Any change to the page, text inside boxes included. */

@@ -68,6 +68,9 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
           case 'find':
             findBar.open()
             break
+          case 'replace':
+            findBar.openReplace()
+            break
           case 'show-settings':
             openSettings(command.section)
             break

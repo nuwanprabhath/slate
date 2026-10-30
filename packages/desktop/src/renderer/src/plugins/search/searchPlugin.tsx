@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { compileQuery, type FindOptions } from '@slate/editor'
+import { compileQuery, expandReplacement, type FindOptions } from '@slate/editor'
 import type { SearchMatch, SearchPageResult, SearchResults } from '../../../../shared/api'
-import { TOGGLES } from '../../find/FindBar'
+import { PRESERVE_CASE, ReplaceField, ReplaceToggle, TOGGLES } from '../../find/FindBar'
+import { previewKey } from '../../find/notesReplace'
 import type { PluginContext, SlatePlugin } from '../types'
+import { confirmText, replaceNotice, replaceRequest, sameMatches, tickKey } from './replacePlan'
 import { effectiveScope, resolveScope, summaryText, type StoredScope } from './scope'
 import './search.css'
 
@@ -17,11 +19,38 @@ interface SearchState {
   collapsed: ReadonlySet<string>
   /** Bumped by Cmd/Ctrl+Shift+F; the panel focuses its input when it sees a new value. */
   focusCount: number
+  replaceOpen: boolean
+  replacement: string
+  preserveCase: boolean
+  /** Replace All…'s preview: the matches unticked (`pageId\nindex`); null when not previewing. */
+  preview: { unticked: ReadonlySet<string> } | null
+  replacing: boolean
+  /** Bumped after a replace, so the search runs again on the changed pages. */
+  searchCount: number
+  /** What the last replace left alone, or that the notes changed under a preview. */
+  notice: string | null
+  /** A regex preview's replacements, worked out on whole blocks (`previewKey` keys); null while loading. */
+  previewTexts: ReadonlyMap<string, string> | null
 }
 
 /** Outlives the panel (switching to Notebooks and back keeps the query and results). */
 function createStore() {
-  let state: SearchState = { query: '', opts: { matchCase: false, wholeWord: false, regex: false }, scope: undefined, results: null, collapsed: new Set(), focusCount: 0 }
+  let state: SearchState = {
+    query: '',
+    opts: { matchCase: false, wholeWord: false, regex: false },
+    scope: undefined,
+    results: null,
+    collapsed: new Set(),
+    focusCount: 0,
+    replaceOpen: false,
+    replacement: '',
+    preserveCase: false,
+    preview: null,
+    replacing: false,
+    searchCount: 0,
+    notice: null,
+    previewTexts: null,
+  }
   const listeners = new Set<() => void>()
   return {
     get: () => state,
@@ -72,24 +101,35 @@ export function createSearchPlugin(): SlatePlugin {
 
 type Row = { kind: 'page'; page: SearchPageResult } | { kind: 'match'; page: SearchPageResult; match: SearchMatch; index: number }
 
-function Snippet({ match }: { match: SearchMatch }) {
-  const parts: Array<{ text: string; hit: boolean }> = []
+function Snippet({ match, replaceWith }: { match: SearchMatch; replaceWith?: ((snippet: string, from: number, to: number) => string | undefined) | undefined }) {
+  const parts: Array<{ text: string; hit: boolean; from: number }> = []
   let at = 0
   for (const [from, to] of match.ranges) {
-    if (from > at) parts.push({ text: match.snippet.slice(at, from), hit: false })
-    parts.push({ text: match.snippet.slice(from, to), hit: true })
+    if (from > at) parts.push({ text: match.snippet.slice(at, from), hit: false, from: at })
+    parts.push({ text: match.snippet.slice(from, to), hit: true, from })
     at = to
   }
-  if (at < match.snippet.length) parts.push({ text: match.snippet.slice(at), hit: false })
+  if (at < match.snippet.length) parts.push({ text: match.snippet.slice(at), hit: false, from: at })
   return (
-    <span className="search-snippet">
-      {parts.map((p, i) => (p.hit ? <mark key={i}>{p.text}</mark> : <Fragment key={i}>{p.text}</Fragment>))}
+    <span className="search-snippet" title={match.snippet}>
+      {parts.map((p, i) =>
+        !p.hit ? (
+          <Fragment key={i}>{p.text}</Fragment>
+        ) : replaceWith ? (
+          <Fragment key={i}>
+            <del>{p.text}</del>
+            <ins>{replaceWith(match.snippet, p.from, p.from + p.text.length) ?? '…'}</ins>
+          </Fragment>
+        ) : (
+          <mark key={i}>{p.text}</mark>
+        ),
+      )}
     </span>
   )
 }
 
 function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
-  const { query, opts, scope, results, collapsed, focusCount } = useSyncExternalStore(store.subscribe, store.get)
+  const { query, opts, scope, results, collapsed, focusCount, replaceOpen, replacement, preserveCase, preview, replacing, searchCount, notice, previewTexts } = useSyncExternalStore(store.subscribe, store.get)
   const inputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
   const handledFocus = useRef(-1)
@@ -108,18 +148,19 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
   }, [focusCount])
 
   useEffect(() => {
-    if (query === '' || invalid) return store.update({ results: null })
+    // New results end a preview: its ticks were for the old ones.
+    if (query === '' || invalid) return store.update({ results: null, preview: null })
     let stale = false
     const timer = setTimeout(() => {
       void ctx.app.search({ text: query, ...opts, scope: JSON.parse(scopeKey) }).then((r) => {
-        if (!stale) store.update({ results: r })
+        if (!stale) store.update({ results: r, preview: null })
       })
     }, TYPE_DEBOUNCE_MS)
     return () => {
       stale = true
       clearTimeout(timer)
     }
-  }, [ctx, store, query, opts, scopeKey, invalid])
+  }, [ctx, store, query, opts, scopeKey, invalid, searchCount])
 
   const rows: Row[] = []
   for (const page of results?.pages ?? []) {
@@ -128,7 +169,7 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
   }
   const activeRow = Math.min(active, rows.length - 1)
 
-  const toggle = (key: keyof FindOptions) => store.update({ opts: { ...opts, [key]: !opts[key] } })
+  const toggle = (key: keyof FindOptions) => store.update({ opts: { ...opts, [key]: !opts[key] }, notice: null })
   const setScope = (value: string) => {
     const next: StoredScope = value === 'all' ? { kind: 'all' } : value === 'notebook' ? { kind: 'notebook' } : { kind: 'section', id: value.slice('section:'.length) }
     store.update({ scope: next })
@@ -142,6 +183,61 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
   const open = (row: Row) => {
     if (row.kind === 'page') return toggleGroup(row.page.pageId)
     ctx.app.openPage(row.page.pageId, { highlight: { query, options: opts, boxId: row.match.boxId, occurrence: row.match.occurrence } })
+  }
+
+  const re = invalid ? null : compileQuery(query, opts)
+  const request = preview && results ? replaceRequest(results, preview.unticked, { query, opts, replacement, preserveCase }) : null
+  const startPreview = () => {
+    if (results && results.total > 0 && !invalid) store.update({ preview: { unticked: new Set() }, notice: null })
+  }
+  // A regex's lookbehind, anchors and groups can need more than a snippet: work it out on the blocks.
+  const previewing = preview !== null
+  useEffect(() => {
+    if (!previewing || !opts.regex || !results) return
+    let stale = false
+    store.update({ previewTexts: null })
+    const all = replaceRequest(results, new Set(), { query, opts, replacement, preserveCase })
+    void ctx.app.previewReplacements(all).then((texts) => {
+      if (!stale) store.update({ previewTexts: texts })
+    })
+    return () => {
+      stale = true
+    }
+  }, [ctx, store, previewing, results, query, opts, replacement, preserveCase])
+  const replaceWith = (pageId: string, m: SearchMatch) =>
+    !preview || !re
+      ? undefined
+      : opts.regex
+        ? () => previewTexts?.get(previewKey(pageId, m.boxId, m.occurrence))
+        : (text: string, from: number, to: number) => expandReplacement(text, from, to, re, replacement, opts, preserveCase)
+  const setTicks = (keys: string[], ticked: boolean) => {
+    if (!preview) return
+    const next = new Set(preview.unticked)
+    for (const k of keys) {
+      if (ticked) next.delete(k)
+      else next.add(k)
+    }
+    store.update({ preview: { unticked: next } })
+  }
+  const confirm = async () => {
+    if (!request || !results || request.pages.length === 0 || replacing) return
+    store.update({ replacing: true })
+    try {
+      // Ticks are by position: if the notes changed since the search, they may no longer line up.
+      const fresh = await ctx.app.search({ text: query, ...opts, scope: JSON.parse(scopeKey) })
+      if (!sameMatches(results, fresh)) return store.update({ results: fresh, preview: null, notice: 'The notes changed since the search; review again.' })
+      const done = await ctx.app.replaceInPages(request)
+      store.update({ preview: null, notice: replaceNotice(done), searchCount: store.get().searchCount + 1 })
+    } finally {
+      store.update({ replacing: false })
+    }
+  }
+  const onReplaceKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') startPreview()
+    else if (e.key === 'Escape' && preview) store.update({ preview: null })
+    else if (e.altKey && !(isMac ? e.metaKey : e.ctrlKey) && e.code === PRESERVE_CASE.code) store.update({ preserveCase: !preserveCase })
+    else return
+    e.preventDefault()
   }
 
   const clear = () => {
@@ -177,38 +273,67 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
   return (
     <aside className="sidebar search-panel" data-testid="search-panel">
       <div className="search-header">Search</div>
-      <div className={invalid ? 'find-input search-input has-error' : 'find-input search-input'}>
-        <input
-          ref={inputRef}
-          data-testid="search-input"
-          aria-label="Search notes"
-          aria-invalid={invalid}
-          placeholder="Search"
-          spellCheck={false}
-          value={query}
-          onChange={(e) => store.update({ query: e.target.value })}
-          onKeyDown={onInputKey}
-        />
-        {query !== '' && (
-          <button type="button" className="search-clear" data-testid="search-clear" title="Clear search" aria-label="Clear search" onMouseDown={(e) => e.preventDefault()} onClick={clear}>
-            ✕
-          </button>
-        )}
-        {TOGGLES.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className="find-toggle"
-            data-testid={`search-${t.key}`}
-            title={t.title}
-            aria-label={t.title}
-            aria-pressed={opts[t.key]}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => toggle(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="search-inputs">
+        <ReplaceToggle open={replaceOpen} testId="search-replace-toggle" onToggle={() => store.update({ replaceOpen: !replaceOpen, preview: null })} />
+        <div className="search-input-rows">
+          <div className={invalid ? 'find-input search-input has-error' : 'find-input search-input'}>
+            <input
+              ref={inputRef}
+              data-testid="search-input"
+              aria-label="Search notes"
+              aria-invalid={invalid}
+              placeholder="Search"
+              spellCheck={false}
+              value={query}
+              onChange={(e) => store.update({ query: e.target.value, notice: null })}
+              onKeyDown={onInputKey}
+            />
+            {query !== '' && (
+              <button type="button" className="search-clear" data-testid="search-clear" title="Clear search" aria-label="Clear search" onMouseDown={(e) => e.preventDefault()} onClick={clear}>
+                ✕
+              </button>
+            )}
+            {TOGGLES.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className="find-toggle"
+                data-testid={`search-${t.key}`}
+                title={t.title}
+                aria-label={t.title}
+                aria-pressed={opts[t.key]}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => toggle(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {replaceOpen && (
+            <div className="search-replace-row">
+              <ReplaceField
+                className="search-replace-field"
+                testId="search-replace"
+                value={replacement}
+                preserveCase={preserveCase}
+                onChange={(value) => store.update({ replacement: value })}
+                onTogglePreserveCase={() => store.update({ preserveCase: !preserveCase })}
+                onKeyDown={onReplaceKey}
+              />
+              <button
+                type="button"
+                className="btn find-action"
+                data-testid="search-replace-all"
+                title="Replace All… (Enter): pick the matches, then confirm"
+                disabled={!results || results.total === 0 || invalid || preview !== null}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={startPreview}
+              >
+                Replace All…
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <label className="search-scope">
         <span>Search in</span>
@@ -231,6 +356,21 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
           {summaryText(results)}
         </div>
       )}
+      {notice && (
+        <div className="search-summary search-notice" data-testid="search-notice" role="status">
+          {notice}
+        </div>
+      )}
+      {request && (
+        <div className="search-replace-bar">
+          <button type="button" className="btn primary find-action" data-testid="search-replace-confirm" disabled={request.pages.length === 0 || replacing} onClick={() => void confirm()}>
+            {confirmText(request)}
+          </button>
+          <button type="button" className="btn find-action" data-testid="search-replace-cancel" disabled={replacing} onClick={() => store.update({ preview: null })}>
+            Cancel
+          </button>
+        </div>
+      )}
       <div className="search-results" data-testid="search-results" ref={treeRef} role="tree" aria-label="Search results" tabIndex={rows.length > 0 ? 0 : -1} onKeyDown={onTreeKey}>
         {rows.map((row, i) =>
           row.kind === 'page' ? (
@@ -249,8 +389,20 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
               <span className="search-chevron" aria-hidden="true">
                 {collapsed.has(row.page.pageId) ? '›' : '⌄'}
               </span>
-              <span className="search-page-title">{row.page.pageTitle || 'Untitled page'}</span>
-              <span className="search-section">{row.page.sectionName}</span>
+              {preview && (
+                <TickBox
+                  label={`Replace in ${row.page.pageTitle || 'Untitled page'}`}
+                  ticked={row.page.matches.map((_, m) => !preview.unticked.has(tickKey(row.page.pageId, m)))}
+                  onChange={(on) => setTicks(row.page.matches.map((_, m) => tickKey(row.page.pageId, m)), on)}
+                />
+              )}
+              {/* The inner spans keep an ellipsised name's text inside its own box (UI audit: overlap). */}
+              <span className="search-page-title" title={row.page.pageTitle || 'Untitled page'}>
+                <span>{row.page.pageTitle || 'Untitled page'}</span>
+              </span>
+              <span className="search-section" title={row.page.sectionName}>
+                <span>{row.page.sectionName}</span>
+              </span>
               <span className="search-count" data-testid="search-count">
                 {row.page.matches.length}
               </span>
@@ -267,11 +419,31 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
                 open(row)
               }}
             >
-              <Snippet match={row.match} />
+              {preview && <TickBox label="Replace this match" ticked={[!preview.unticked.has(tickKey(row.page.pageId, row.index))]} onChange={(on) => setTicks([tickKey(row.page.pageId, row.index)], on)} />}
+              <Snippet match={row.match} replaceWith={replaceWith(row.page.pageId, row.match)} />
             </div>
           ),
         )}
       </div>
     </aside>
+  )
+}
+
+/** A preview's tick box: ticked when all of `ticked` are, mixed when some are. Clicking it never opens the row. */
+function TickBox({ label, ticked, onChange }: { label: string; ticked: boolean[]; onChange: (on: boolean) => void }) {
+  const all = ticked.every(Boolean)
+  const some = !all && ticked.some(Boolean)
+  return (
+    <input
+      type="checkbox"
+      className="search-tick"
+      aria-label={label}
+      checked={all}
+      ref={(el) => {
+        if (el) el.indeterminate = some
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.checked)}
+    />
   )
 }
