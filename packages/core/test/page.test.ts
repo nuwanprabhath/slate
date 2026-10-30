@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LoroDoc, LoroMap } from 'loro-crdt'
 import { PageDoc } from '../src/page'
+import { writeContent } from '../src/content'
 
 function recordUpdates(doc: LoroDoc): Uint8Array[] {
   const updates: Uint8Array[] = []
@@ -156,5 +157,53 @@ describe('PageDoc stacking and min height', () => {
     page.deleteBoxes([a, b])
     expect(page.listBoxes()).toHaveLength(0)
     expect(updates).toHaveLength(1)
+  })
+})
+
+describe('PageDoc box copies', () => {
+  const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text, marks: [{ type: 'bold', attrs: {} }] }] })
+
+  it('copies a box: its place, size, privacy and content', () => {
+    const page = new PageDoc()
+    const id = page.addBox({ x: 10, y: 20, width: 300 })
+    page.updateBox(id, { private: true, height: 90 })
+    writeContent(page.contentMap(id)!, [para('hello'), { type: 'image', attrs: { src: 'slate-blob:abc' } }], page.doc)
+    page.doc.commit()
+    expect(page.copyBox(id)).toEqual({
+      x: 10,
+      y: 20,
+      width: 300,
+      height: 90,
+      private: true,
+      content: [para('hello'), { type: 'image', attrs: { src: 'slate-blob:abc' } }],
+    })
+    expect(page.copyBox('missing')).toBeUndefined()
+  })
+
+  it('adds copies in one commit, in front, with fresh ids unless ids are given', () => {
+    const page = new PageDoc()
+    const first = page.addBox({ x: 0, y: 0, width: 100 })
+    const copy = { x: 40, y: 50, width: 200, private: false, content: [para('one')] }
+    const commits: number[] = []
+    page.doc.subscribeLocalUpdates(() => commits.push(1))
+    const ids = page.addBoxCopies([copy, { ...copy, x: 60, height: 30 }])
+    expect(commits).toHaveLength(1)
+    expect(ids).toHaveLength(2)
+    expect(ids).not.toContain(first)
+    expect(new Set(ids).size).toBe(2)
+    expect(page.copyBox(ids[0]!)).toEqual(copy)
+    expect(page.copyBox(ids[1]!)).toEqual({ ...copy, x: 60, height: 30 })
+    expect(page.stackOrder()).toEqual([first, ids[0], ids[1]])
+    const kept = page.addBoxCopies([copy], ['given-id'])
+    expect(kept).toEqual(['given-id'])
+    expect(page.copyBox('given-id')).toEqual(copy)
+  })
+
+  it('copies an empty box as no content', () => {
+    const page = new PageDoc()
+    const id = page.addBox({ x: 0, y: 0, width: 100 })
+    expect(page.copyBox(id)?.content).toEqual([])
+    const [again] = page.addBoxCopies([page.copyBox(id)!])
+    expect(page.copyBox(again!)?.content).toEqual([])
   })
 })
