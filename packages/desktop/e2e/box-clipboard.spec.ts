@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect, MOD, test } from './fixtures'
 import { boxWithText, rect } from './canvasHelpers'
 
@@ -148,4 +148,28 @@ test('Esc cancels the cut mark, and so does editing the box', async ({ page }) =
   await page.keyboard.type('!')
   await expect(a).not.toHaveClass(/is-cut/)
   await expect(page.getByTestId('box')).toHaveCount(1)
+})
+
+/** What Edit → Cut / Copy / Paste chosen with the mouse does: the menu role runs it on the window. */
+const menuEdit = (app: ElectronApplication, command: 'cut' | 'copy' | 'paste') =>
+  app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0]!.webContents[c](), command)
+
+test('Edit → Cut, Copy and Paste from the app menu act on the selected boxes, as the keys do', async ({ app, page }) => {
+  const a = await boxWithText(page, 60, 60, 'menu moves me')
+  await clickTitleBar(a)
+  await menuEdit(app, 'cut')
+  await expect(a).toHaveClass(/is-cut/)
+  await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('menu moves me')
+  await clickCanvas(page, 200, 400)
+  await menuEdit(app, 'paste')
+  await expect.poll(() => boxOffset(page, a)).toEqual({ x: 200, y: 400 })
+  await expect(page.getByTestId('box')).toHaveCount(1)
+  await expect(a).not.toHaveClass(/is-cut/)
+
+  await clickTitleBar(a)
+  await menuEdit(app, 'copy')
+  await expect(a).not.toHaveClass(/is-cut/)
+  await clickCanvas(page, 600, 300)
+  await menuEdit(app, 'paste')
+  await expect(page.getByTestId('box').filter({ hasText: 'menu moves me' })).toHaveCount(2)
 })
