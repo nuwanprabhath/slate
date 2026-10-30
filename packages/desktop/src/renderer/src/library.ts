@@ -1,5 +1,6 @@
 import { NotebookDoc, newId } from '@slate/core'
 import { pageDocId } from '@slate/editor'
+import { dropPageSessions } from './find/notesReplace'
 import type { SlateApi, SyncState } from '../../shared/api'
 
 /**
@@ -85,6 +86,7 @@ export class Library {
   }
 
   async removePageDocs(pageIds: string[]): Promise<void> {
+    dropPageSessions(pageIds)
     await Promise.all(pageIds.map((p) => this.api.docs.remove(pageDocId(p))))
   }
 

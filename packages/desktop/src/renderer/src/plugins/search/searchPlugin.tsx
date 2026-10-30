@@ -2,8 +2,9 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternal
 import { compileQuery, expandReplacement, type FindOptions } from '@slate/editor'
 import type { SearchMatch, SearchPageResult, SearchResults } from '../../../../shared/api'
 import { PRESERVE_CASE, ReplaceField, ReplaceToggle, TOGGLES } from '../../find/FindBar'
+import { previewKey } from '../../find/notesReplace'
 import type { PluginContext, SlatePlugin } from '../types'
-import { confirmText, replaceRequest, tickKey } from './replacePlan'
+import { confirmText, replaceNotice, replaceRequest, sameMatches, tickKey } from './replacePlan'
 import { effectiveScope, resolveScope, summaryText, type StoredScope } from './scope'
 import './search.css'
 
@@ -26,6 +27,10 @@ interface SearchState {
   replacing: boolean
   /** Bumped after a replace, so the search runs again on the changed pages. */
   searchCount: number
+  /** What the last replace left alone, or that the notes changed under a preview. */
+  notice: string | null
+  /** A regex preview's replacements, worked out on whole blocks (`previewKey` keys); null while loading. */
+  previewTexts: ReadonlyMap<string, string> | null
 }
 
 /** Outlives the panel (switching to Notebooks and back keeps the query and results). */
@@ -43,6 +48,8 @@ function createStore() {
     preview: null,
     replacing: false,
     searchCount: 0,
+    notice: null,
+    previewTexts: null,
   }
   const listeners = new Set<() => void>()
   return {
@@ -94,7 +101,7 @@ export function createSearchPlugin(): SlatePlugin {
 
 type Row = { kind: 'page'; page: SearchPageResult } | { kind: 'match'; page: SearchPageResult; match: SearchMatch; index: number }
 
-function Snippet({ match, replaceWith }: { match: SearchMatch; replaceWith?: (snippet: string, from: number, to: number) => string }) {
+function Snippet({ match, replaceWith }: { match: SearchMatch; replaceWith?: ((snippet: string, from: number, to: number) => string | undefined) | undefined }) {
   const parts: Array<{ text: string; hit: boolean; from: number }> = []
   let at = 0
   for (const [from, to] of match.ranges) {
@@ -111,7 +118,7 @@ function Snippet({ match, replaceWith }: { match: SearchMatch; replaceWith?: (sn
         ) : replaceWith ? (
           <Fragment key={i}>
             <del>{p.text}</del>
-            <ins>{replaceWith(match.snippet, p.from, p.from + p.text.length)}</ins>
+            <ins>{replaceWith(match.snippet, p.from, p.from + p.text.length) ?? '…'}</ins>
           </Fragment>
         ) : (
           <mark key={i}>{p.text}</mark>
@@ -122,7 +129,7 @@ function Snippet({ match, replaceWith }: { match: SearchMatch; replaceWith?: (sn
 }
 
 function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
-  const { query, opts, scope, results, collapsed, focusCount, replaceOpen, replacement, preserveCase, preview, replacing, searchCount } = useSyncExternalStore(store.subscribe, store.get)
+  const { query, opts, scope, results, collapsed, focusCount, replaceOpen, replacement, preserveCase, preview, replacing, searchCount, notice, previewTexts } = useSyncExternalStore(store.subscribe, store.get)
   const inputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
   const handledFocus = useRef(-1)
@@ -162,7 +169,7 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
   }
   const activeRow = Math.min(active, rows.length - 1)
 
-  const toggle = (key: keyof FindOptions) => store.update({ opts: { ...opts, [key]: !opts[key] } })
+  const toggle = (key: keyof FindOptions) => store.update({ opts: { ...opts, [key]: !opts[key] }, notice: null })
   const setScope = (value: string) => {
     const next: StoredScope = value === 'all' ? { kind: 'all' } : value === 'notebook' ? { kind: 'notebook' } : { kind: 'section', id: value.slice('section:'.length) }
     store.update({ scope: next })
@@ -179,11 +186,30 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
   }
 
   const re = invalid ? null : compileQuery(query, opts)
-  const replaceWith = preview && re ? (text: string, from: number, to: number) => expandReplacement(text, from, to, re, replacement, opts, preserveCase) : undefined
   const request = preview && results ? replaceRequest(results, preview.unticked, { query, opts, replacement, preserveCase }) : null
   const startPreview = () => {
-    if (results && results.total > 0 && !invalid) store.update({ preview: { unticked: new Set() } })
+    if (results && results.total > 0 && !invalid) store.update({ preview: { unticked: new Set() }, notice: null })
   }
+  // A regex's lookbehind, anchors and groups can need more than a snippet: work it out on the blocks.
+  const previewing = preview !== null
+  useEffect(() => {
+    if (!previewing || !opts.regex || !results) return
+    let stale = false
+    store.update({ previewTexts: null })
+    const all = replaceRequest(results, new Set(), { query, opts, replacement, preserveCase })
+    void ctx.app.previewReplacements(all).then((texts) => {
+      if (!stale) store.update({ previewTexts: texts })
+    })
+    return () => {
+      stale = true
+    }
+  }, [ctx, store, previewing, results, query, opts, replacement, preserveCase])
+  const replaceWith = (pageId: string, m: SearchMatch) =>
+    !preview || !re
+      ? undefined
+      : opts.regex
+        ? () => previewTexts?.get(previewKey(pageId, m.boxId, m.occurrence))
+        : (text: string, from: number, to: number) => expandReplacement(text, from, to, re, replacement, opts, preserveCase)
   const setTicks = (keys: string[], ticked: boolean) => {
     if (!preview) return
     const next = new Set(preview.unticked)
@@ -193,12 +219,18 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
     }
     store.update({ preview: { unticked: next } })
   }
-  const confirm = () => {
-    if (!request || request.pages.length === 0 || replacing) return
+  const confirm = async () => {
+    if (!request || !results || request.pages.length === 0 || replacing) return
     store.update({ replacing: true })
-    void ctx.app
-      .replaceInPages(request)
-      .finally(() => store.update({ replacing: false, preview: null, searchCount: store.get().searchCount + 1 }))
+    try {
+      // Ticks are by position: if the notes changed since the search, they may no longer line up.
+      const fresh = await ctx.app.search({ text: query, ...opts, scope: JSON.parse(scopeKey) })
+      if (!sameMatches(results, fresh)) return store.update({ results: fresh, preview: null, notice: 'The notes changed since the search; review again.' })
+      const done = await ctx.app.replaceInPages(request)
+      store.update({ preview: null, notice: replaceNotice(done), searchCount: store.get().searchCount + 1 })
+    } finally {
+      store.update({ replacing: false })
+    }
   }
   const onReplaceKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') startPreview()
@@ -253,7 +285,7 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
               placeholder="Search"
               spellCheck={false}
               value={query}
-              onChange={(e) => store.update({ query: e.target.value })}
+              onChange={(e) => store.update({ query: e.target.value, notice: null })}
               onKeyDown={onInputKey}
             />
             {query !== '' && (
@@ -324,9 +356,14 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
           {summaryText(results)}
         </div>
       )}
+      {notice && (
+        <div className="search-summary search-notice" data-testid="search-notice" role="status">
+          {notice}
+        </div>
+      )}
       {request && (
         <div className="search-replace-bar">
-          <button type="button" className="btn primary find-action" data-testid="search-replace-confirm" disabled={request.pages.length === 0 || replacing} onClick={confirm}>
+          <button type="button" className="btn primary find-action" data-testid="search-replace-confirm" disabled={request.pages.length === 0 || replacing} onClick={() => void confirm()}>
             {confirmText(request)}
           </button>
           <button type="button" className="btn find-action" data-testid="search-replace-cancel" disabled={replacing} onClick={() => store.update({ preview: null })}>
@@ -383,7 +420,7 @@ function SearchPanel({ ctx, store }: { ctx: PluginContext; store: Store }) {
               }}
             >
               {preview && <TickBox label="Replace this match" ticked={[!preview.unticked.has(tickKey(row.page.pageId, row.index))]} onChange={(on) => setTicks([tickKey(row.page.pageId, row.index)], on)} />}
-              <Snippet match={row.match} {...(replaceWith ? { replaceWith } : {})} />
+              <Snippet match={row.match} replaceWith={replaceWith(row.page.pageId, row.match)} />
             </div>
           ),
         )}

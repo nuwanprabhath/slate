@@ -121,3 +121,40 @@ test('find in notes: Cancel leaves every page as it was', async ({ page }) => {
   await expect(page.getByTestId('search-summary')).toHaveText('1 result in 1 page')
   await expect(page.getByTestId('box')).toHaveText(['cat'])
 })
+
+test('find in notes: a match added after the search makes the preview stale, and the unticked match stays', async ({ page }) => {
+  await boxWith(page, 60, 'keep cat, change cat')
+  await page.keyboard.press(`${MOD}+Shift+f`)
+  await page.getByTestId('search-input').fill('cat')
+  await expect(page.getByTestId('search-summary')).toHaveText('2 results in 1 page')
+  await page.getByTestId('search-replace-toggle').click()
+  await page.getByTestId('search-replace-input').fill('dog')
+  await page.getByTestId('search-replace-all').click()
+  await page.getByTestId('search-match').nth(0).getByRole('checkbox').uncheck()
+  await expect(page.getByTestId('search-replace-confirm')).toHaveText('Replace 1 in 1 page')
+
+  // Another "cat" before the unticked one: occurrence 1 is now the unticked "cat".
+  await page.getByTestId('box').click()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowLeft' : 'Home')
+  await page.keyboard.type('cat ')
+  await expect(page.getByTestId('box')).toHaveText(['cat keep cat, change cat'])
+  await page.getByTestId('search-replace-confirm').click()
+
+  await expect(page.getByTestId('search-notice')).toHaveText('The notes changed since the search; review again.')
+  await expect(page.getByTestId('search-replace-confirm')).toHaveCount(0)
+  await expect(page.getByTestId('search-summary')).toHaveText('3 results in 1 page')
+  await expect(page.getByTestId('box')).toHaveText(['cat keep cat, change cat'])
+})
+
+test('find in notes: a regex preview shows what the whole block gives', async ({ page }) => {
+  await boxWith(page, 60, `start ${'x'.repeat(60)} end`)
+  await page.keyboard.press(`${MOD}+Shift+f`)
+  await page.getByTestId('search-regex').click()
+  // The lookbehind reaches past the snippet's 40 characters of context.
+  await page.getByTestId('search-input').fill('(?<=^start.{62})(end)')
+  await expect(page.getByTestId('search-summary')).toHaveText('1 result in 1 page')
+  await page.getByTestId('search-replace-toggle').click()
+  await page.getByTestId('search-replace-input').fill('<$1>')
+  await page.getByTestId('search-replace-all').click()
+  await expect(page.locator('[data-testid="search-match"] ins')).toHaveText(['<end>'])
+})

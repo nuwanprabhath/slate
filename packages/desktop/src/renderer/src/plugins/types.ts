@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { FindOptions } from '@slate/editor'
 import type { SearchQuery, SearchResults, Settings } from '../../../shared/api'
-import type { NotesReplace } from '../find/notesReplace'
+import type { NotesReplace, NotesReplaceResult } from '../find/notesReplace'
 
 /**
  * A plugin sees only its `PluginContext`, never `window.slate`, so a future sandboxed or
@@ -67,7 +67,9 @@ export interface AppApi {
   currentNotebookId(): string | null
   search(query: SearchQuery): Promise<SearchResults>
   /** Find in Notes' Replace All: the ticked matches, each changed page one undo step. */
-  replaceInPages(request: NotesReplace): Promise<{ replaced: number; pages: number }>
+  replaceInPages(request: NotesReplace): Promise<NotesReplaceResult>
+  /** What each ticked match would become, worked out on its whole block (`previewKey` keys). */
+  previewReplacements(request: NotesReplace): Promise<Map<string, string>>
 }
 
 export interface PluginContext {

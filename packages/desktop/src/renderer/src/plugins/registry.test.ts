@@ -7,7 +7,8 @@ const app: AppApi = {
   getLibrary: () => [],
   currentNotebookId: () => null,
   search: async () => ({ pages: [], total: 0, truncated: false }),
-  replaceInPages: async () => ({ replaced: 0, pages: 0 }),
+  replaceInPages: async () => ({ replaced: 0, pages: 0, skipped: 0, failed: 0 }),
+  previewReplacements: async () => new Map(),
 }
 
 function memorySettings(): SettingsBackend & { data: { plugins?: Record<string, unknown> } } {

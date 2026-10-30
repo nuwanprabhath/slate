@@ -4,7 +4,7 @@ import { Canvas, type PageSession } from '@slate/editor'
 import type { ConflictRecord } from '@slate/sync'
 import { currentSession } from './currentSession'
 import { FindBar } from './find/FindBar'
-import { openPageSession } from './find/notesReplace'
+import { closePageSession, openPageSession } from './find/notesReplace'
 import { ConflictResolver } from './sync/ConflictResolver'
 
 /** Read by the e2e test hooks; cheap enough to keep in production builds. */
@@ -26,7 +26,7 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
     let opened: PageSession | null = null
     let cancelled = false
     void openPageSession(pageId, window.slate.docs).then((s) => {
-      if (cancelled) return s.close()
+      if (cancelled) return closePageSession(s)
       opened = s
       currentSession.set(s)
       setSession(s)
@@ -35,7 +35,7 @@ export function PageView({ nb, item }: { nb: NotebookDoc; item: TreeItem }) {
       cancelled = true
       if (opened) {
         currentSession.clear(opened)
-        opened.close()
+        closePageSession(opened)
       }
     }
   }, [pageId])
