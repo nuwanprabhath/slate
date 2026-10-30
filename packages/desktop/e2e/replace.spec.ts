@@ -9,7 +9,8 @@ async function boxWith(page: Page, y: number, text: string) {
   await page.keyboard.type(text)
 }
 
-const boxTexts = (page: Page) => page.getByTestId('box').allTextContents()
+/** In text order: the DOM order of boxes follows their stacking, which a click changes. */
+const boxTexts = async (page: Page) => (await page.getByTestId('box').allTextContents()).sort()
 
 test('find bar replace: toggle, Replace, Preserve Case, Replace All as one undo step', async ({ page }) => {
   await boxWith(page, 60, 'Cat cat CAT')
@@ -59,4 +60,64 @@ test('the replace shortcut opens the bar with the replace field focused; regex g
   await expect(page.getByTestId('replace-input')).toHaveCount(0)
   await page.getByTestId('find-replace-toggle').click()
   await expect(page.getByTestId('replace-input')).toHaveValue('$2: $1 ($&)')
+})
+
+async function newPage(page: Page, title: string, text: string) {
+  await page.getByTestId('add-page').click()
+  await page.getByTestId('page-title').fill(title)
+  await boxWith(page, 60, text)
+}
+
+test('find in notes: Replace All… previews ticked matches by page and replaces across pages, one closed undone when opened', async ({ page }) => {
+  await page.getByTestId('page-title').fill('One')
+  await boxWith(page, 60, 'cat one')
+  await newPage(page, 'Two', 'cat two cat')
+  await newPage(page, 'Three', 'a Cat')
+
+  await page.keyboard.press(`${MOD}+Shift+f`)
+  await page.getByTestId('search-input').fill('cat')
+  await expect(page.getByTestId('search-summary')).toHaveText('4 results in 3 pages')
+  await page.getByTestId('search-replace-toggle').click()
+  await page.getByTestId('search-replace-input').fill('dog')
+  await page.getByTestId('search-replace-preserveCase').click()
+  await page.getByTestId('search-replace-all').click()
+
+  const confirm = page.getByTestId('search-replace-confirm')
+  await expect(confirm).toHaveText('Replace 4 in 3 pages')
+  await expect(page.locator('[data-testid="search-match"] ins')).toHaveText(['dog', 'dog', 'dog', 'Dog'])
+  // Unticking a page unticks its matches; ticking one match back counts it again.
+  const groupTick = page.getByTestId('search-group').filter({ hasText: 'Two' }).getByRole('checkbox')
+  await groupTick.uncheck()
+  await expect(confirm).toHaveText('Replace 2 in 2 pages')
+  await page.getByTestId('search-match').nth(1).getByRole('checkbox').check()
+  await expect(groupTick).toHaveJSProperty('indeterminate', true)
+  await expect(confirm).toHaveText('Replace 3 in 3 pages')
+  await confirm.click()
+
+  // The search runs again: only the unticked match is left.
+  await expect(page.getByTestId('search-summary')).toHaveText('1 result in 1 page')
+  await expect(confirm).toHaveCount(0)
+  await expect(page.getByTestId('box')).toHaveText(['a Dog'])
+
+  await page.getByTestId('activity-library').click()
+  await page.getByTestId('page-item').filter({ hasText: 'One' }).click()
+  await expect(page.getByTestId('box')).toHaveText(['dog one'])
+  await page.getByTestId('box').click()
+  await page.keyboard.press(`${MOD}+z`)
+  await expect(page.getByTestId('box')).toHaveText(['cat one'])
+  await page.getByTestId('page-item').filter({ hasText: 'Two' }).click()
+  await expect(page.getByTestId('box')).toHaveText(['dog two cat'])
+})
+
+test('find in notes: Cancel leaves every page as it was', async ({ page }) => {
+  await boxWith(page, 60, 'cat')
+  await page.keyboard.press(`${MOD}+Shift+f`)
+  await page.getByTestId('search-input').fill('cat')
+  await page.getByTestId('search-replace-toggle').click()
+  await page.getByTestId('search-replace-input').fill('dog')
+  await page.getByTestId('search-replace-all').click()
+  await page.getByTestId('search-replace-cancel').click()
+  await expect(page.getByTestId('search-replace-confirm')).toHaveCount(0)
+  await expect(page.getByTestId('search-summary')).toHaveText('1 result in 1 page')
+  await expect(page.getByTestId('box')).toHaveText(['cat'])
 })

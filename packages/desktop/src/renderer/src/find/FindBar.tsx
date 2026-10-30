@@ -298,6 +298,7 @@ const isMac = typeof navigator !== 'undefined' && navigator.platform.startsWith(
 
 /** The replace field with its Preserve Case toggle, as the find field holds its option toggles. */
 export function ReplaceField(props: {
+  className?: string
   inputRef?: RefObject<HTMLInputElement | null>
   testId: string
   value: string
@@ -307,7 +308,7 @@ export function ReplaceField(props: {
   onKeyDown: (e: ReactKeyboardEvent<HTMLInputElement>) => void
 }) {
   return (
-    <div className="find-input">
+    <div className={props.className ? `find-input ${props.className}` : 'find-input'}>
       <input
         ref={props.inputRef}
         data-testid={`${props.testId}-input`}
