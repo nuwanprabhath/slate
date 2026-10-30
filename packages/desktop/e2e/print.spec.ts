@@ -32,7 +32,8 @@ test('while printing, only the page shows: title, then the boxes where they are,
   await titled(page, 'Wide page')
   const left = await boxWithText(page, 40, 40, 'Left box')
   const right = await boxWithText(page, 700, 300, 'Right box, far across')
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  // Left focused: its drawn caret must not print.
+  await expect(page.locator('.slate-caret:visible')).not.toHaveCount(0)
   const dialog = await holdSaveDialog(app, null)
   await clickMenu(app, 'export-pdf')
   await expect(page.locator('html.print-page')).toHaveCount(1)
@@ -42,6 +43,8 @@ test('while printing, only the page shows: title, then the boxes where they are,
       for (const el of await page.locator(chrome).all()) await expect(el).toBeHidden()
     }
     await expect(page.locator('.page-print-title')).toHaveText('Wide page')
+    // The drawn caret blinks, so "hidden" could catch it between blinks: it must be out of the layout.
+    expect(new Set(await page.locator('.slate-caret').evaluateAll((els) => els.map((el) => getComputedStyle(el).display)))).toEqual(new Set(['none']))
     await expect(left).toBeVisible()
     await expect(right).toBeVisible()
     const box = (sel: string) => page.locator(sel).evaluate((el) => JSON.parse(JSON.stringify(el.getBoundingClientRect())) as DOMRect)
