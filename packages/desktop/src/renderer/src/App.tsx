@@ -3,6 +3,7 @@ import { activeEditor, copyAsMarkdown, EditorServicesContext, openLinkPopover, p
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
 import { spellcheckAvailable } from '../../shared/settings/spellcheck'
 import { ActivityBar } from './activity/ActivityBar'
+import { editorSettings } from './editorSettings'
 import { toolsFromViews } from './activity/tools'
 import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
@@ -97,7 +98,7 @@ export function useMenuCommands(setSettings: (s: Settings) => void, onShowAiActi
 }
 
 export function useServices(settings: Settings): EditorServices {
-  return useMemo(
+  const services = useMemo<EditorServices>(
     () => ({
       putBlob: (bytes, mime) => window.slate.blobs.put(bytes, mime),
       copyImage: (url) => window.slate.blobs.copyImage(url),
@@ -112,6 +113,8 @@ export function useServices(settings: Settings): EditorServices {
     }),
     [settings.markdownShortcuts, settings.autoBullets, settings.linkPastedUrls, settings.spellcheckUnderline],
   )
+  useEffect(() => editorSettings.set(services), [services])
+  return services
 }
 
 const noSubscribe = () => () => {}

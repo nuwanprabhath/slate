@@ -1,5 +1,6 @@
 import type { PMJSON } from '@slate/core'
 import { currentSession } from './currentSession'
+import { editorSettings } from './editorSettings'
 import { pageOpenTiming } from './PageView'
 
 const p = (text: string): PMJSON => ({ type: 'paragraph', content: [{ type: 'text', text }] })
@@ -31,6 +32,8 @@ export function installTestHooks(): void {
       }
     },
     lastPageOpenMs: (): number | null => pageOpenTiming.lastMs,
+    /** The Markdown Shortcuts and Auto Bullets settings a new box editor gets now. */
+    editorSettings: () => editorSettings.get(),
   }
 }
 

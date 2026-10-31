@@ -69,6 +69,10 @@ test('`* ` is the one exception: it starts a bullet list (autoBullets), and noth
 test('Markdown Shortcuts setting turns on input rules', async ({ app, page }) => {
   await clickMenu(app, 'markdown-shortcuts')
   await expect.poll(() => page.evaluate(() => window.slate.settings.get().then((s) => s.markdownShortcuts))).toBe(true)
+  // Main has it first; the renderer a moment later. A box made before that has no input rules.
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { slateTest: { editorSettings: () => { markdownShortcuts: boolean } | null } }).slateTest.editorSettings()?.markdownShortcuts))
+    .toBe(true)
   await typeInNewBox(page, '1. now a list', 120, 300)
   await expect(focusedEditor(page).locator('ol > li')).toHaveText('now a list')
 })

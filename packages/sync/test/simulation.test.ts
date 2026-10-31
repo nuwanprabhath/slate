@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PageDoc } from '@slate/core'
+import { inheritedEnv } from '../src/childEnv'
 import { SyncEngine } from '../src/engine'
 import { GitDrive } from '../src/gitDrive'
 import { nodeGitRunner } from '../src/gitRunner'
@@ -137,7 +138,8 @@ describe('three-device simulation', () => {
     const root = mkdtempSync(join(tmpdir(), 'slate-sim-'))
     try {
       const bare = join(root, 'remote.git')
-      execFileSync('git', ['init', '--bare', '--initial-branch=main', bare])
+      // Without an inherited GIT_DIR (a git hook's), which would make that repository bare instead.
+      execFileSync('git', ['init', '--bare', '--initial-branch=main', bare], { env: inheritedEnv() })
       const run = nodeGitRunner()
       const drives: Drives = (id) =>
         new GitDrive({ run, dir: join(root, id), remoteUrl: `file://${bare}`, branch: 'main', authEnv: async () => ({}), author: { name: id, email: `${id}@test.local` } })

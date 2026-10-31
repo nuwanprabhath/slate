@@ -177,3 +177,24 @@ export function StrikeIcon() {
     </Icon>
   )
 }
+
+/** "</>" drawn, not typed: as text it is as wide as the system font makes it (39 px on Linux, 31 on macOS). */
+export function InlineCodeIcon() {
+  return (
+    <Icon>
+      <path d="M6.5 6L2.5 10L6.5 14" />
+      <path d="M13.5 6L17.5 10L13.5 14" />
+      <path d="M11.5 4.5L8.5 15.5" />
+    </Icon>
+  )
+}
+
+/** "{ }" drawn, not typed, for the same reason as InlineCodeIcon (33 px as text on Linux). */
+export function CodeBlockIcon() {
+  return (
+    <Icon>
+      <path d="M7.5 3.5C5.5 3.5 5.5 4.5 5.5 6.5V8.5C5.5 9.5 4.5 10 3.5 10C4.5 10 5.5 10.5 5.5 11.5V13.5C5.5 15.5 5.5 16.5 7.5 16.5" />
+      <path d="M12.5 3.5C14.5 3.5 14.5 4.5 14.5 6.5V8.5C14.5 9.5 15.5 10 16.5 10C15.5 10 14.5 10.5 14.5 11.5V13.5C14.5 15.5 14.5 16.5 12.5 16.5" />
+    </Icon>
+  )
+}

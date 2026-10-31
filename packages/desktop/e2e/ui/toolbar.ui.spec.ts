@@ -28,7 +28,17 @@ async function rows(page: Page): Promise<string[][]> {
 async function expectRows(page: Page, atWidth: (width: number) => number) {
   const width = await page.evaluate(() => window.innerWidth)
   const found = await rows(page)
-  expect(found, JSON.stringify(found)).toHaveLength(atWidth(width))
+  // On a failure, what the rows had to fit in: CI's fonts differ from a Mac's.
+  const room = await page.evaluate(() => {
+    const groups = document.querySelector<HTMLElement>('.toolbar-groups')!
+    return {
+      room: groups.clientWidth,
+      toolbarLeft: Math.round(document.querySelector('.toolbar')!.getBoundingClientRect().left),
+      font: getComputedStyle(document.querySelector('.toolbar button')!).fontFamily,
+      groups: Array.from(groups.children).map((g) => Math.round(g.getBoundingClientRect().width)),
+    }
+  })
+  expect(found, `${JSON.stringify(found)} in ${JSON.stringify(room)}`).toHaveLength(atWidth(width))
   for (const row of found) expect(row.length, `a row with one control: ${JSON.stringify(found)}`).toBeGreaterThan(1)
 }
 
@@ -50,4 +60,19 @@ test('UI: toolbar with the table tools', async ({ app, page }) => {
   await page.getByTestId('tb-table').click()
   await expect(page.getByTestId('tb-table-tools')).toBeVisible()
   await reviewUi(app, page, 'toolbar table tools', { open: (p) => expectRows(p, (w) => (w >= 1280 ? 2 : 3)) })
+})
+
+test('UI: toolbar rows hold with a wide system font, as on Linux', async ({ app, page }) => {
+  // Linux's system-ui is wider than macOS's, in the toolbar and in the library columns beside it,
+  // which size to their names: two rows at 800 px broke there by 3 px. The whole window is drawn in
+  // a font as wide (Verdana; DejaVu Sans, Linux's own, where it is missing) from its first frame.
+  await page.addInitScript(() => {
+    const css = '*, button, select, input { font-family: Verdana, "DejaVu Sans", sans-serif !important; }'
+    document.addEventListener('DOMContentLoaded', () => document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css })))
+  })
+  await page.reload()
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await createBoxAt(page, 120, 120)
+  await page.keyboard.type('Toolbar layout')
+  await reviewUi(app, page, 'toolbar rows wide font', { open: (p) => expectRows(p, (w) => (w >= 1280 ? 1 : 2)) })
 })
