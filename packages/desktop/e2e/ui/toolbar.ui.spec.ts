@@ -28,7 +28,17 @@ async function rows(page: Page): Promise<string[][]> {
 async function expectRows(page: Page, atWidth: (width: number) => number) {
   const width = await page.evaluate(() => window.innerWidth)
   const found = await rows(page)
-  expect(found, JSON.stringify(found)).toHaveLength(atWidth(width))
+  // On a failure, what the rows had to fit in: CI's fonts differ from a Mac's.
+  const room = await page.evaluate(() => {
+    const groups = document.querySelector<HTMLElement>('.toolbar-groups')!
+    return {
+      room: groups.clientWidth,
+      toolbarLeft: Math.round(document.querySelector('.toolbar')!.getBoundingClientRect().left),
+      font: getComputedStyle(document.querySelector('.toolbar button')!).fontFamily,
+      groups: Array.from(groups.children).map((g) => Math.round(g.getBoundingClientRect().width)),
+    }
+  })
+  expect(found, `${JSON.stringify(found)} in ${JSON.stringify(room)}`).toHaveLength(atWidth(width))
   for (const row of found) expect(row.length, `a row with one control: ${JSON.stringify(found)}`).toBeGreaterThan(1)
 }
 
