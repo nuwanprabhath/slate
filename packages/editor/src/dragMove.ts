@@ -60,14 +60,25 @@ function removeDragged({ view, boxId }: NonNullable<typeof source>, undo: UndoSt
   if (boxId) undo?.deleteIfEmptied(boxId)
 }
 
+/** `.slate-box`'s border width in canvas.css. */
+const BOX_BORDER = 1
+
 /** Drops the dragged content in a new box at `at` (canvas coordinates), moving it unless the copy modifier is held. */
 export function dropInNewBox(session: PageSession, event: DragEvent, at: { x: number; y: number }): boolean {
   const from = source
   if (!from?.view.dragging || from.view.isDestroyed) return false
   // A floating picture starts the new box in its text: its place belonged to the old box.
   const blocks = (from.view.dragging.slice.content.toJSON() as PMJSON[]).map((b) => (b.type === 'image' ? { ...b, attrs: { ...b.attrs, x: null, y: null } } : b))
+  // A picture lands where it was let go, held where it was grabbed: the box goes up and left of it
+  // by the grab and the box's own edge (border and the content's padding).
+  let { x, y } = at
+  if (from.grab && draggedPicture(from.view)) {
+    const style = getComputedStyle(from.view.dom)
+    x = Math.max(0, Math.round(x - from.grab.x - BOX_BORDER - (parseFloat(style.paddingLeft) || 0)))
+    y = Math.max(0, Math.round(y - from.grab.y - BOX_BORDER - (parseFloat(style.paddingTop) || 0)))
+  }
   session.oneUndoStep(() => {
-    session.createBoxWithContent(at.x, at.y, blocks)
+    session.createBoxWithContent(x, y, blocks)
     if (!copies(event)) removeDragged(from, session)
   })
   return true

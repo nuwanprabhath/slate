@@ -526,6 +526,11 @@ export const FormatPaste = Extension.create({
  * natural size, capped by the box. Tiptap's own attribute would keep "50%" or "auto" as text.
  * 0.4.3 has the same attribute name, so it keeps and draws the width (test/olderVersions.test.ts).
  */
+/** A drag only stores places inside the box; one from elsewhere (an agent, a bad sync) that is not is drawn in the text. */
+const MAX_FLOAT = 100_000
+const isPlaced = (attrs: Record<string, unknown>): attrs is { x: number; y: number } =>
+  [attrs.x, attrs.y].every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_FLOAT)
+
 const floatAttr = (el: HTMLElement, name: string): number | null => {
   const value = el.getAttribute(name) ?? ''
   return /^\d+$/.test(value) ? Number(value) : null
@@ -550,14 +555,12 @@ const SizedImage = Image.extend({
         default: null,
         parseHTML: (el) => floatAttr(el, 'data-x'),
         renderHTML: (attrs) =>
-          typeof attrs.x === 'number' && typeof attrs.y === 'number'
-            ? { 'data-x': String(attrs.x), style: `position: absolute; left: ${attrs.x}px; top: ${attrs.y}px` }
-            : {},
+          isPlaced(attrs) ? { 'data-x': String(attrs.x), style: `position: absolute; left: ${attrs.x}px; top: ${attrs.y}px` } : {},
       },
       y: {
         default: null,
         parseHTML: (el) => floatAttr(el, 'data-y'),
-        renderHTML: (attrs) => (typeof attrs.x === 'number' && typeof attrs.y === 'number' ? { 'data-y': String(attrs.y) } : {}),
+        renderHTML: (attrs) => (isPlaced(attrs) ? { 'data-y': String(attrs.y) } : {}),
       },
     }
   },

@@ -60,9 +60,10 @@ test('a picture dropped on the bare canvas lands in a new box there', async ({ a
   const added = page.locator('.slate-box').filter({ hasNot: page.getByText('Text above the picture') })
   await expect(added.locator('img')).toHaveCount(1)
   await expect(box.locator('img')).toHaveCount(0)
-  const at = (await added.boundingBox())!
-  expect(Math.abs(at.x - (canvas.x + 700))).toBeLessThan(30)
-  expect(Math.abs(at.y - (canvas.y + 420))).toBeLessThan(40)
+  // The picture is where it was let go, held where it was grabbed: it does not jump by the box's edge.
+  const at = (await added.locator('img').boundingBox())!
+  expect(Math.abs(at.x - (canvas.x + 700 - 100))).toBeLessThan(4)
+  expect(Math.abs(at.y - (canvas.y + 420 - 60))).toBeLessThan(4)
 })
 
 test('selected text dragged into another box moves there', async ({ page }) => {

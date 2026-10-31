@@ -26,6 +26,13 @@ describe('a floating picture', () => {
     expect(again.state.doc.lastChild!.attrs).toMatchObject({ x: 120, y: 40 })
   })
 
+  it('a place out of range (from another device or an agent) is drawn in the text, never far off or outside the box', () => {
+    for (const [x, y] of [[-5, 10], [10, 1e9], [Number.NaN, 4], [3, Infinity]]) {
+      const doc = { type: 'doc', content: [{ type: 'image', attrs: { src: IMG, x, y } }] }
+      expect(make(doc).getHTML()).not.toContain('position')
+    }
+  })
+
   it('an unmoved picture stays in the text, with no position', () => {
     const html = make(`<p>text</p><img src="${IMG}">`).getHTML()
     expect(html).not.toContain('position')

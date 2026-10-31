@@ -19,8 +19,14 @@ export function floatPosition(drop: Point, grab: Point, area: { left: number; to
  * hold the lowest one. Measured, not stored: the picture's height depends on its loaded size.
  */
 export function fitFloats(el: HTMLElement): void {
+  const floats = el.querySelectorAll<HTMLImageElement>('img[data-x]')
+  // Runs on every keystroke: with nothing floating it must not make the browser lay out the page.
+  if (floats.length === 0) {
+    if (el.style.minHeight) el.style.minHeight = ''
+    return
+  }
   let bottom = 0
-  for (const img of Array.from(el.querySelectorAll<HTMLImageElement>('img[data-x]'))) bottom = Math.max(bottom, img.offsetTop + img.offsetHeight)
+  for (const img of Array.from(floats)) bottom = Math.max(bottom, img.offsetTop + img.offsetHeight)
   const height = bottom > 0 ? `${bottom + (parseFloat(getComputedStyle(el).paddingBottom) || 0)}px` : ''
   if (el.style.minHeight !== height) el.style.minHeight = height
 }
