@@ -6,53 +6,54 @@ import type { EditorView } from '@tiptap/pm/view'
 import type { PMJSON } from '@slate/core'
 import type { PageSession } from './PageSession'
 
-type UndoSteps = Pick<PageSession, 'oneUndoStep'>
+type UndoSteps = Pick<PageSession, 'oneUndoStep' | 'deleteIfEmptied'>
 
 /**
  * The box editor a drag of its content (a clicked picture, selected text) started in, while it lasts.
  * ProseMirror moves a drop within one editor; dropped in another box or on the canvas it would only
  * copy, or do nothing, where OneNote moves.
  */
-let source: EditorView | null = null
+let source: { view: EditorView; boxId: string | null } | null = null
 
 /** Alt (Option) on macOS, Ctrl elsewhere, held at the drop copies instead, as ProseMirror does within one box. */
 const copies = (e: DragEvent) => (navigator.platform.startsWith('Mac') ? e.altKey : e.ctrlKey)
 
 /** Another box's drag over the canvas: the canvas accepts it, to make a box there. */
 export function boxContentDragged(): boolean {
-  return source !== null && !source.isDestroyed && source.dragging !== null
+  return source !== null && !source.view.isDestroyed && source.view.dragging !== null
 }
 
 /**
  * Removes what `view` drags from it. A picture dragged without being clicked first is not the
  * selection: ProseMirror keeps it as the drag's (untyped) `node`, a node selection.
  */
-function removeDragged(view: EditorView): void {
+function removeDragged({ view, boxId }: NonNullable<typeof source>, undo: UndoSteps | null): void {
   const dragging: object | null = view.dragging
   const tr = view.state.tr
   if (dragging && 'node' in dragging && dragging.node instanceof NodeSelection) dragging.node.replace(tr)
   else tr.deleteSelection()
   view.dispatch(tr.setMeta('uiEvent', 'drop'))
+  if (boxId) undo?.deleteIfEmptied(boxId)
 }
 
 /** Drops the dragged content in a new box at `at` (canvas coordinates), moving it unless the copy modifier is held. */
 export function dropInNewBox(session: PageSession, event: DragEvent, at: { x: number; y: number }): boolean {
   const from = source
-  if (!from?.dragging || from.isDestroyed) return false
-  const blocks = from.dragging.slice.content.toJSON() as PMJSON[]
+  if (!from?.view.dragging || from.view.isDestroyed) return false
+  const blocks = from.view.dragging.slice.content.toJSON() as PMJSON[]
   session.oneUndoStep(() => {
     session.createBoxWithContent(at.x, at.y, blocks)
-    if (!copies(event)) removeDragged(from)
+    if (!copies(event)) removeDragged(from, session)
   })
   return true
 }
 
 /** Inserts what `from` drags at the drop point in `view`, then removes it from `from`: one undo step. */
-function dropFromOtherBox(view: EditorView, from: EditorView, event: DragEvent, undo: UndoSteps | null): boolean {
+function dropFromOtherBox(view: EditorView, from: NonNullable<typeof source>, event: DragEvent, undo: UndoSteps | null): boolean {
   const at = view.posAtCoords({ left: event.clientX, top: event.clientY })
-  if (!at || !from.dragging) return false
+  if (!at || !from.view.dragging) return false
   // Each box editor has its own schema: a node from another box fits nowhere until it is remade in this one.
-  const slice = Slice.fromJSON(view.state.schema, from.dragging.slice.toJSON())
+  const slice = Slice.fromJSON(view.state.schema, from.view.dragging.slice.toJSON())
   const pos = dropPoint(view.state.doc, at.pos, slice) ?? at.pos
   const node = slice.openStart === 0 && slice.openEnd === 0 && slice.content.childCount === 1 ? slice.content.firstChild : null
   const tr = view.state.tr
@@ -64,7 +65,7 @@ function dropFromOtherBox(view: EditorView, from: EditorView, event: DragEvent, 
   else tr.setSelection(TextSelection.between($pos, tr.doc.resolve(tr.mapping.map(pos))))
   const change = () => {
     view.dispatch(tr.setMeta('uiEvent', 'drop'))
-    if (!copies(event)) removeDragged(from)
+    if (!copies(event)) removeDragged(from, undo)
   }
   if (undo) undo.oneUndoStep(change)
   else change()
@@ -73,27 +74,27 @@ function dropFromOtherBox(view: EditorView, from: EditorView, event: DragEvent, 
 }
 
 /** Dragging a picture or text out of one box moves it into another box, or into a new box on the canvas. */
-export const DragMove = Extension.create<{ session: UndoSteps | null }>({
+export const DragMove = Extension.create<{ session: UndoSteps | null; boxId: string | null }>({
   name: 'dragMove',
-  addOptions: () => ({ session: null }),
+  addOptions: () => ({ session: null, boxId: null }),
   addProseMirrorPlugins() {
-    const { session } = this.options
+    const { session, boxId } = this.options
     return [
       new Plugin({
         props: {
           handleDOMEvents: {
             dragstart: (view) => {
-              source = view
+              source = { view, boxId }
               return false
             },
             dragend: (view) => {
-              if (source === view) source = null
+              if (source?.view === view) source = null
               return false
             },
           },
           handleDrop: (view, event) => {
             const from = source
-            if (!from || from === view || !boxContentDragged()) return false
+            if (!from || from.view === view || !boxContentDragged()) return false
             return dropFromOtherBox(view, from, event, session)
           },
         },

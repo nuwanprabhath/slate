@@ -72,7 +72,15 @@ test('selected text dragged into another box moves there', async ({ page }) => {
   await box.locator('p').first().click()
   await page.keyboard.press('End')
   for (let i = 0; i < 'Move me'.length; i++) await page.keyboard.press('Shift+ArrowLeft')
-  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('Move me')
+  // ProseMirror reads a keyboard selection from the DOM a moment later; a real drag's mousedown would make it catch up.
+  await expect
+    .poll(() =>
+      box.getByTestId('box-editor').evaluate((el) => {
+        const { state } = (el as HTMLElement & { editor: { state: import('@tiptap/pm/state').EditorState } }).editor
+        return state.doc.textBetween(state.selection.from, state.selection.to)
+      }),
+    )
+    .toBe('Move me')
   // Playwright's mouse cannot start a text drag (not even in a bare contenteditable): the browser's drag events are sent as Chromium sends them.
   await page.evaluate((ids) => {
     const [fromBox, toBox] = ids.map((id) => document.querySelector(`[data-box-id="${id}"] [data-testid="box-editor"]`)!)
@@ -87,4 +95,35 @@ test('selected text dragged into another box moves there', async ({ page }) => {
   }, [await box.getAttribute('data-box-id'), await other.getAttribute('data-box-id')])
   await expect(other).toContainText('Move me')
   await expect(box.locator('p').first()).toHaveText('Keep this. ')
+})
+
+test('a picture dragged out of a box holding only it takes the box along, and one undo brings both back', async ({ app, page }) => {
+  const png = await page.evaluate(() => {
+    const c = document.createElement('canvas')
+    c.width = 200
+    c.height = 100
+    c.getContext('2d')!.fillRect(0, 0, 200, 100)
+    return c.toDataURL('image/png')
+  })
+  await app.evaluate(({ clipboard, ClipboardItem }, url) => {
+    const bytes = Uint8Array.from(atob(url.split(',')[1]!), (ch) => ch.charCodeAt(0))
+    return clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })])
+  }, png)
+  // A picture pasted on the bare canvas lands in a box of its own.
+  await page.getByTestId('canvas').click({ position: { x: 80, y: 80 } })
+  await page.keyboard.press(`${MOD}+v`)
+  const alone = page.locator('.slate-box').filter({ has: page.locator('img') })
+  await expect(alone.locator('img')).toHaveCount(1)
+  await expect(alone.locator('p')).toHaveCount(0)
+  const other = await boxWithText(page, 60, 400, 'Other box text')
+  const img = (await alone.locator('img').boundingBox())!
+  const text = (await other.locator('p').last().boundingBox())!
+  await drag(page, { x: img.x + 100, y: img.y + 50 }, { x: text.x + 40, y: text.y + text.height / 2 })
+  await expect(other.locator('img')).toHaveCount(1)
+  await expect(page.locator('.slate-box')).toHaveCount(1)
+
+  await page.keyboard.press(`${MOD}+z`)
+  await expect(page.locator('.slate-box')).toHaveCount(2)
+  await expect(other.locator('img')).toHaveCount(0)
+  await expect(page.locator('.slate-box img')).toHaveCount(1)
 })

@@ -153,6 +153,29 @@ describe('PageSession', () => {
     session.close()
   })
 
+  it('a box a drag emptied goes in the same undo step, so one undo brings it back with its picture', async () => {
+    const session = await PageSession.open('p-drag-empty', memoryPersistence())
+    const picture = { type: 'image', attrs: { src: 'slate-blob://a' } }
+    const from = session.createBoxWithContent(0, 0, [picture])
+    const to = session.createBoxWithContent(0, 200, [{ type: 'paragraph', content: [{ type: 'text', text: 'target' }] }])
+    const text = (id: string) => JSON.stringify(contentToJSON(session.page.contentMap(id)!))
+    session.oneUndoStep(() => {
+      writeContent(session.page.contentMap(to)!, [{ type: 'paragraph', content: [{ type: 'text', text: 'target' }] }, picture], session.doc)
+      session.doc.commit()
+      writeContent(session.page.contentMap(from)!, [{ type: 'paragraph' }], session.doc)
+      session.doc.commit()
+      expect(session.deleteIfEmptied(from)).toBe(true)
+    })
+    expect(session.page.getBox(from)).toBeUndefined()
+    // The emptied editor's blur finds nothing left to remove.
+    expect(session.deleteIfEmpty(from)).toBe(false)
+    expect(session.undo()).toBe(true)
+    expect(session.page.getBox(from)).toBeDefined()
+    expect(text(from)).toContain('slate-blob')
+    expect(text(to)).not.toContain('slate-blob')
+    session.close()
+  })
+
   it('never deletes a box with content, an image or the private flag', async () => {
     const session = await PageSession.open('p-keep', memoryPersistence())
     const text = session.createBoxWithContent(0, 0, [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }])

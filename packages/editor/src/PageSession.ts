@@ -172,12 +172,27 @@ export class PageSession {
 
   /** Removes a box left empty (no text, no image, not private). Returns whether it was removed. */
   deleteIfEmpty(boxId: string): boolean {
-    const box = this.page.getBox(boxId)
-    const content = this.page.contentMap(boxId)
-    if (!box || box.private || !content || !isEmptyContent(contentToJSON(content))) return false
+    if (!this.isEmptyBox(boxId)) return false
     // sys:* is ignored by the UndoManager: undo must not bring back an empty box.
     this.page.deleteBox(boxId, 'sys:empty')
     return true
+  }
+
+  /**
+   * Inside a drag's `oneUndoStep`: a box the drag emptied goes as part of that step. Left to its
+   * blur, it would go outside undo, and undoing the drag would write its content back into a box
+   * no longer on the page.
+   */
+  deleteIfEmptied(boxId: string): boolean {
+    if (!this.isEmptyBox(boxId)) return false
+    this.page.deleteBox(boxId)
+    return true
+  }
+
+  private isEmptyBox(boxId: string): boolean {
+    const box = this.page.getBox(boxId)
+    const content = this.page.contentMap(boxId)
+    return !!box && !box.private && !!content && isEmptyContent(contentToJSON(content))
   }
 
   /** A user's delete of a whole box: unlike `deleteIfEmpty` it is an undo step. */

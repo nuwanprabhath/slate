@@ -60,7 +60,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         SlateCaret,
         ImageSelection,
         ImageResize.configure({ session }),
-        DragMove.configure({ session }),
+        DragMove.configure({ session, boxId: box.id }),
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
         FormatPainter,
