@@ -6,6 +6,38 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-31
+
+### Added
+
+- **Move and copy boxes.** Click a box's title bar to select it (Cmd/Ctrl+click adds more). Cmd/Ctrl+X marks it to move (faded, dashed outline), Cmd/Ctrl+C copies it, and after a click anywhere, on this page or another, Cmd/Ctrl+V puts it there. Cmd/Ctrl+D duplicates it in place. Esc cancels a move, undo reverses a paste, and Edit → Cut, Copy and Paste work on selected boxes too.
+- **Find and replace.** The find bar's ▸ (or Edit → Replace…, ⌥⌘F / Ctrl+H) shows a replace row with Replace, Replace All (one undo step), Preserve Case and regular-expression groups (`$1`…`$9`, `$&`). Find in Notes can replace across pages: Replace All… lists every match by page with tick boxes, and replaces only the ticked ones. If the notes changed since the search, it asks you to review again instead.
+- **To-do lists**, from the toolbar or Cmd/Ctrl+Shift+9: click a box to tick it. They copy as `- [ ]` / `- [x]`.
+- **Alignment** of paragraphs and headings, from the toolbar or Cmd/Ctrl+Alt+Shift+L, Cmd/Ctrl+Shift+E and Cmd/Ctrl+Shift+R.
+- **Subscript and superscript**, from "More text styles" on the toolbar (with strikethrough) or Cmd/Ctrl+Shift+, and Cmd/Ctrl+Shift+.
+- **Indent and move lines.** Tab and Shift+Tab indent paragraphs and headings; Alt+Shift+Up/Down moves the current line, or a list item with its sub-items.
+- **Format painter**: the brush on the toolbar copies the selected text's formatting onto the next text you select; double-click it to keep it on until Esc.
+- **Fold headings**: the ▸ beside a heading folds its section. Folds stay on this device and are not saved; Find opens a fold to show a match inside it.
+- **Resize pictures**: click one and drag a corner. Double-click a corner for the original size.
+- **Drag pictures anywhere**, as in OneNote: a picture you drag sits exactly where you let go in its box, beside, below or over the text, and the box grows to hold it. Drag it (or selected text) into another box, or onto an empty part of the page to put it in a new box. Hold Option (Ctrl on Linux) when you let go to copy instead. Undo puts it back in one step.
+- **Underline misspelled words** (Settings → Autocorrect, off by default). Slate never changes your text, and on Linux it is not available, because it would download dictionaries from the internet.
+- **Print and export as PDF**: File → Print… (Cmd/Ctrl+P) and File → Export Page as PDF… (Cmd/Ctrl+Shift+P) lay the page out as on screen, scaled to the paper's width, dark on white in any theme. A PDF is readable by you only (except on disks without permissions, such as a FAT or exFAT USB stick), and Slate will not write into another account's file.
+- **Right-click menu** on text: Cut, Copy, Paste, Paste as Plain Text, Copy as Markdown and Select All. Copy as Markdown is also in the Edit menu (Cmd/Ctrl+Alt+Shift+C).
+
+### Changed
+
+- The toolbar fits on one row in a new window and on two at 800 px; the font picker reads "Font".
+- Copied HTML keeps alignment and indent as well as colour, and pasting inside Slate keeps alignment and to-do ticks.
+
+### Fixed
+
+- Typing no longer records a needless change for every unset paragraph setting on each keystroke, which doubled what a page stores and syncs.
+- In a box made taller than its text, a click or shift+click in the empty space below the text now goes to the end of the text, so shift+clicking there selects everything from the caret down, pictures included. It used to select the text above instead.
+
+### Older versions
+
+A page edited in 0.5.0 opens on a device still running 0.4.3: to-do items show as bullets, aligned or indented text as plain left-aligned text, subscript as normal text and a picture you placed in its box on its own line. 0.4.3 keeps the formatting unless that line is edited there. Update every device to 0.5.0.
+
 ## [0.4.3] - 2026-10-30
 
 ### Fixed
