@@ -6,12 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { PageDoc } from '@slate/core'
 import { SyncEngine } from '../src/engine'
 import { GitDrive } from '../src/gitDrive'
+import { inheritedEnv } from '../src/childEnv'
 import { nodeGitRunner, tokenEnv } from '../src/gitRunner'
 import { chunkPath } from '../src/paths'
 import { addTextBox, appendText, boxText, editPage, memoryLocal } from './memoryLocal'
 
 const PAGE = 'page:44444444-4444-4444-8444-444444444444'
 const run = nodeGitRunner()
+/** git for the test's own setup, never pointed at another repository by an inherited GIT_DIR (a git hook's). */
+const gitSync = (args: string[], opts: { input?: string } = {}) => execFileSync('git', args, { ...opts, env: inheritedEnv() })
 const temps: string[] = []
 
 function temp(): string {
@@ -26,7 +29,7 @@ afterEach(() => {
 
 function bareRepo(): string {
   const dir = temp()
-  execFileSync('git', ['init', '--bare', '--initial-branch=main', dir])
+  gitSync(['init', '--bare', '--initial-branch=main', dir])
   return `file://${dir}`
 }
 
@@ -40,7 +43,7 @@ function device(remoteUrl: string, id: string) {
   return { local, remote, engine: new SyncEngine({ local, remote, deviceId: id, deviceName: id, compactAfter: 2 }) }
 }
 
-const log = (url: string) => execFileSync('git', ['--git-dir', url.slice('file://'.length), 'log', '--format=%s', 'main']).toString()
+const log = (url: string) => gitSync(['--git-dir', url.slice('file://'.length), 'log', '--format=%s', 'main']).toString()
 
 describe('GitDrive', { timeout: 30_000 }, () => {
   it('gives an empty remote a README commit', async () => {
@@ -183,7 +186,7 @@ describe('GitDrive against a hostile clone', { timeout: 30_000 }, () => {
 
   it('sets core.symlinks=false in the clone', async () => {
     const { dir } = await hardened()
-    expect(execFileSync('git', ['-C', dir, 'config', 'core.symlinks']).toString().trim()).toBe('false')
+    expect(gitSync(['-C', dir, 'config', 'core.symlinks']).toString().trim()).toBe('false')
   })
 
   it('refuses to read, write or remove through a symlinked file', async () => {
@@ -210,11 +213,11 @@ describe('GitDrive against a hostile clone', { timeout: 30_000 }, () => {
   it('checks a committed symlink out as a plain file, never following it', async () => {
     const { url, dir, d, outside } = await hardened()
     const attacker = temp()
-    execFileSync('git', ['clone', '-q', url.slice('file://'.length), attacker])
+    gitSync(['clone', '-q', url.slice('file://'.length), attacker])
     symlinkSync(join(outside, 'secret'), join(attacker, 'link'))
-    execFileSync('git', ['-C', attacker, 'add', 'link'])
-    execFileSync('git', ['-C', attacker, '-c', 'user.name=x', '-c', 'user.email=x@x', 'commit', '-qm', 'link'])
-    execFileSync('git', ['-C', attacker, 'push', '-q', 'origin', 'HEAD:main'])
+    gitSync(['-C', attacker, 'add', 'link'])
+    gitSync(['-C', attacker, '-c', 'user.name=x', '-c', 'user.email=x@x', 'commit', '-qm', 'link'])
+    gitSync(['-C', attacker, 'push', '-q', 'origin', 'HEAD:main'])
     await d.flush()
     await d.delta(null)
     expect(lstatSync(join(dir, 'link')).isSymbolicLink()).toBe(false)
@@ -223,7 +226,7 @@ describe('GitDrive against a hostile clone', { timeout: 30_000 }, () => {
 })
 
 const bareGit = (url: string, args: string[], input?: string) =>
-  execFileSync('git', ['--git-dir', url.slice('file://'.length), ...args], input === undefined ? {} : { input }).toString()
+  gitSync(['--git-dir', url.slice('file://'.length), ...args], input === undefined ? {} : { input }).toString()
 
 /** Commits a root tree of `entries` (`<mode> <type> <sha>\t<name>`) straight into the bare repo. */
 function pushTree(url: string, entries: string[], opts: { parent?: boolean; branch?: string } = {}): string {
@@ -301,12 +304,12 @@ describe('GitDrive against a hostile or replaced remote', { timeout: 30_000 }, (
     pushTree(url, [`100644 blob ${blob(url, 'old plaintext')}\tnotes.txt`], { branch: 'old' })
     bareGit(url, ['tag', 'v1', 'old'])
     await d.delta(null)
-    const refs = execFileSync('git', ['-C', d.dir, 'for-each-ref', '--format=%(refname)']).toString()
+    const refs = gitSync(['-C', d.dir, 'for-each-ref', '--format=%(refname)']).toString()
     expect(refs).toContain('refs/remotes/origin/main')
     expect(refs).not.toMatch(/old|v1/)
     // A first clone of a remote that already has other branches fetches only ours too.
     const e = drive(url, 'B')
     await e.delta(null)
-    expect(execFileSync('git', ['-C', e.dir, 'for-each-ref', '--format=%(refname)']).toString()).not.toMatch(/old|v1/)
+    expect(gitSync(['-C', e.dir, 'for-each-ref', '--format=%(refname)']).toString()).not.toMatch(/old|v1/)
   })
 })

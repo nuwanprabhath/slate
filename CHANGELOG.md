@@ -11,6 +11,7 @@ All notable changes to Slate are recorded here. The format follows
 ### Fixed
 
 - At 800 px on Linux the toolbar took three rows instead of two: its system font is wider than macOS's. The inline code and code block buttons are now drawn as icons, and the toolbar's buttons and groups sit a little closer together.
+- Sync's git commands no longer take their repository from git's own environment variables (`GIT_DIR` and others). A Slate started from a terminal inside a git hook or `git rebase --exec` would have synced with that repository instead of the notes'.
 
 ## [0.5.0] - 2026-10-31
 
