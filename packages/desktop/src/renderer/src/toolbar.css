@@ -3,9 +3,9 @@
    it; the one starting a row keeps the space but not the line (useRowStarts), and the groups sit one
    separator to the left so that space falls in the toolbar's padding. */
 .toolbar-flow { flex: 1; min-width: 0; }
-.toolbar-groups { display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; margin-left: -11px; }
+.toolbar-groups { display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; margin-left: -9px; }
 .toolbar .tb-group { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 2px; }
-.toolbar .tb-group::before { content: ''; flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--border); }
+.toolbar .tb-group::before { content: ''; flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
 .toolbar .tb-group.tb-status { margin-left: auto; }
 .toolbar .tb-group.tb-status::before, .toolbar .tb-group.row-start::before { background: none; }
 .toolbar button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 4px; background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text); font: inherit; font-size: 14px; line-height: 1; vertical-align: middle; cursor: pointer; }

@@ -177,3 +177,14 @@ export function StrikeIcon() {
     </Icon>
   )
 }
+
+/** "</>" drawn, not typed: as text it is as wide as the system font makes it (39 px on Linux, 31 on macOS). */
+export function InlineCodeIcon() {
+  return (
+    <Icon>
+      <path d="M6.5 6L2.5 10L6.5 14" />
+      <path d="M13.5 6L17.5 10L13.5 14" />
+      <path d="M11.5 4.5L8.5 15.5" />
+    </Icon>
+  )
+}

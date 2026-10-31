@@ -3,7 +3,7 @@ import type { ChainedCommands, Editor } from '@tiptap/core'
 import { activeEditor, formatPainter, inTodoItem, type TextAlign } from '@slate/editor'
 import { SyncStatus } from './sync/SyncStatus'
 import { ColorPalette } from './ColorPalette'
-import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, FormatPainterIcon, HighlightIcon, LockIcon, NumberedListIcon, ScriptIcon, StrikeIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
+import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, FormatPainterIcon, HighlightIcon, InlineCodeIcon, LockIcon, NumberedListIcon, ScriptIcon, StrikeIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
 
 const FONTS = [
   { label: 'Font', value: '' },
@@ -338,7 +338,7 @@ export function Toolbar() {
             {button('bold', <b>B</b>, 'Bold (Mod+B)', is('bold'), run((c) => c.toggleBold()))}
             {button('italic', <i>I</i>, 'Italic (Mod+I)', is('italic'), run((c) => c.toggleItalic()))}
             {button('underline', <u>U</u>, 'Underline (Mod+U)', is('underline'), run((c) => c.toggleUnderline()))}
-            {button('code', '</>', 'Inline code (Mod+E)', is('code'), run((c) => c.toggleCode()))}
+            {button('code', <InlineCodeIcon />, 'Inline code (Mod+E)', is('code'), run((c) => c.toggleCode()))}
             <TextStyleMenu
               active={(style) => (style === 'strike' ? is('strike') : is('textStyle', { verticalAlign: style === 'subscript' ? 'sub' : 'super' }))}
               disabled={!editor}

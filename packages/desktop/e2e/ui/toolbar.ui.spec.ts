@@ -51,3 +51,11 @@ test('UI: toolbar with the table tools', async ({ app, page }) => {
   await expect(page.getByTestId('tb-table-tools')).toBeVisible()
   await reviewUi(app, page, 'toolbar table tools', { open: (p) => expectRows(p, (w) => (w >= 1280 ? 2 : 3)) })
 })
+
+test('UI: toolbar rows hold with a wide system font, as on Linux', async ({ app, page }) => {
+  // Linux's system-ui is wider than macOS's: two rows at 800 px there broke on a 9 px margin.
+  await page.addStyleTag({ content: '.toolbar, .toolbar button, .toolbar select { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' })
+  await createBoxAt(page, 120, 120)
+  await page.keyboard.type('Toolbar layout')
+  await reviewUi(app, page, 'toolbar rows wide font', { open: (p) => expectRows(p, (w) => (w >= 1280 ? 1 : 2)) })
+})
