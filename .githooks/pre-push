@@ -4,5 +4,8 @@
 # main checkout's copy, never the pushing branch's own (red team final F-4).
 main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 node "$main/scripts/agents/check-push.mjs" || exit 1
+# Tests make git repositories of their own: git's variables for this push (GIT_DIR, set when the
+# push comes from a worktree) would point their git commands at this repository instead.
+unset $(git rev-parse --local-env-vars)
 # Whole-repo checks too slow for every commit. E2E stays out: run `npm run e2e` before a release.
 npm run typecheck && npm test || exit 1
