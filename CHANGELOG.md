@@ -10,7 +10,7 @@ All notable changes to Slate are recorded here. The format follows
 
 ### Fixed
 
-- At 800 px on Linux the toolbar took three rows instead of two: its system font is wider than macOS's. The inline code button is now drawn as an icon, and the gaps between button groups are a little narrower.
+- At 800 px on Linux the toolbar took three rows instead of two: its system font is wider than macOS's. The inline code and code block buttons are now drawn as icons, and the toolbar's buttons and groups sit a little closer together.
 
 ## [0.5.0] - 2026-10-31
 
