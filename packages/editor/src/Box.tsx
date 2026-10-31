@@ -2,6 +2,7 @@ import { memo, useEffect, type CSSProperties, useRef, useState, useSyncExternalS
 import type { BoxPatch, BoxState } from '@slate/core'
 import type { EditorView } from '@tiptap/pm/view'
 import { BoxEditor } from './BoxEditor'
+import { boxContentDragged, dropInEmptySpace } from './dragMove'
 import { selectFromEmptySpace } from './emptySpace'
 import { findStore } from './find'
 import type { PageSession } from './PageSession'
@@ -61,6 +62,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
   }
   const ref = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const editorView = () => bodyRef.current?.querySelector<HTMLElement & { editor?: { view: EditorView } }>('.ProseMirror')?.editor?.view
   const [visible, setVisible] = useState(false)
   const [gesture, setGesture] = useState<Gesture | null>(null)
   // Static boxes have no decorations, so a box with find matches is a live editor while they show.
@@ -231,10 +233,19 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
         onMouseDown={(e) => {
           // Only the body's own empty space: the editor, its image handles and the bar handle their presses.
           if (e.button !== 0 || e.target !== e.currentTarget) return
-          const view = bodyRef.current?.querySelector<HTMLElement & { editor?: { view: EditorView } }>('.ProseMirror')?.editor?.view
+          const view = editorView()
           if (!view) return
           e.preventDefault()
           selectFromEmptySpace(view, e.clientX, e.clientY, e.shiftKey)
+        }}
+        // A picture or text dropped in the body's empty space lands at the nearest text, as a click there does.
+        onDragOver={(e) => {
+          if (e.target === e.currentTarget && boxContentDragged()) e.preventDefault()
+        }}
+        onDrop={(e) => {
+          if (e.target !== e.currentTarget) return
+          const view = editorView()
+          if (view && dropInEmptySpace(view, e.clientX, e.clientY, e.nativeEvent, session)) e.preventDefault()
         }}
       >
         {visible || autoFocus || findHit ? (

@@ -69,18 +69,14 @@ test('a picture dropped on the bare canvas lands in a new box there', async ({ a
 test('selected text dragged into another box moves there', async ({ page }) => {
   const box = await boxWithText(page, 60, 60, 'Keep this. Move me')
   const other = await boxWithText(page, 60, 260, 'Target')
-  await box.locator('p').first().click()
-  await page.keyboard.press('End')
-  for (let i = 0; i < 'Move me'.length; i++) await page.keyboard.press('Shift+ArrowLeft')
-  // ProseMirror reads a keyboard selection from the DOM a moment later; a real drag's mousedown would make it catch up.
-  await expect
-    .poll(() =>
-      box.getByTestId('box-editor').evaluate((el) => {
-        const { state } = (el as HTMLElement & { editor: { state: import('@tiptap/pm/state').EditorState } }).editor
-        return state.doc.textBetween(state.selection.from, state.selection.to)
-      }),
-    )
-    .toBe('Move me')
+  // Selected through the editor: key presses right after the click that focuses the box can be lost.
+  await box.getByTestId('box-editor').evaluate((el) => {
+    type Chain = { focus: () => Chain; setTextSelection: (r: { from: number; to: number }) => Chain; run: () => boolean }
+    const editor = (el as HTMLElement & { editor: { state: import('@tiptap/pm/state').EditorState; chain: () => Chain } }).editor
+    const end = 1 + editor.state.doc.firstChild!.content.size
+    editor.chain().focus().setTextSelection({ from: end - 'Move me'.length, to: end }).run()
+  })
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('Move me')
   // Playwright's mouse cannot start a text drag (not even in a bare contenteditable): the browser's drag events are sent as Chromium sends them.
   await page.evaluate((ids) => {
     const [fromBox, toBox] = ids.map((id) => document.querySelector(`[data-box-id="${id}"] [data-testid="box-editor"]`)!)
@@ -126,4 +122,25 @@ test('a picture dragged out of a box holding only it takes the box along, and on
   await expect(page.locator('.slate-box')).toHaveCount(2)
   await expect(other.locator('img')).toHaveCount(0)
   await expect(page.locator('.slate-box img')).toHaveCount(1)
+})
+
+test('a picture dragged into the empty space below the text of a tall box moves to the end', async ({ app, page }) => {
+  const box = await boxWithImage(app, page)
+  await page.locator('.slate-box').first().evaluate((el: HTMLElement) => {
+    el.style.height = '520px'
+  })
+  const img = (await box.locator('img').boundingBox())!
+  const last = (await box.locator('p').last().boundingBox())!
+  await drag(page, { x: img.x + 100, y: img.y + 60 }, { x: img.x + 60, y: last.y + last.height + 150 })
+  await expect.poll(() => order(box)).toEqual(['Text above the picture', 'Text below the picture', 'IMG'])
+})
+
+test('a picture dragged into the empty space above the text of a box moves to the start', async ({ app, page }) => {
+  const box = await boxWithImage(app, page)
+  const img = (await box.locator('img').boundingBox())!
+  const body = (await box.locator('.slate-box-body').boundingBox())!
+  const editor = (await box.getByTestId('box-editor').boundingBox())!
+  // The body's own strip above the editor, if the layout leaves one; else the editor's top padding.
+  await drag(page, { x: img.x + 100, y: img.y + 60 }, { x: img.x + 60, y: Math.max(body.y + 1, editor.y + 1) })
+  await expect.poll(() => order(box)).toEqual(['IMG', 'Text above the picture', 'Text below the picture'])
 })
