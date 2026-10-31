@@ -7,6 +7,7 @@ import { activeEditor } from './activeEditor'
 import { SlateCaret } from './caret'
 import { currentTheme, onThemeChange } from './colorContrast'
 import { cleanPastedHtml, makeClipboardSerializer, mayHoldImages, serializeSliceAsText } from './clipboard'
+import { DragMove } from './dragMove'
 import { buildExtensions, schema } from './extensions'
 import { findHighlightPlugin } from './find'
 import { foldPlugin } from './fold'
@@ -59,6 +60,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         SlateCaret,
         ImageSelection,
         ImageResize.configure({ session }),
+        DragMove.configure({ session }),
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
         FormatPainter,

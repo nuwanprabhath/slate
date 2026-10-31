@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { PMJSON } from '@slate/core'
 import { activeEditor } from './activeEditor'
 import { Box, type GroupDrag } from './Box'
 import { boxClipboard, clipMatches, copyBoxes, cutBoxes, duplicateBoxes, pasteBoxes } from './boxClipboard'
 import { CanvasMenu } from './CanvasMenu'
+import { boxContentDragged, dropInNewBox } from './dragMove'
 import { imageFilesFrom, pasteHtml } from './images'
 import { linkedTextBlocks, pastePlain } from './links'
 import type { PageSession } from './PageSession'
@@ -283,6 +284,15 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     setMenu({ x: e.clientX, y: e.clientY })
   }
 
+  // A picture or text dragged out of a box onto the bare canvas lands in a new box there, as in OneNote.
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && boxContentDragged()) e.preventDefault()
+  }
+
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && dropInNewBox(session, e.nativeEvent, pointFrom(e))) e.preventDefault()
+  }
+
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget || e.button !== 0) return
     caretRef.current = pointFrom(e)
@@ -351,6 +361,8 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
         style={{ minHeight: bottom + 400, minWidth: right + 200 }}
         onMouseDown={onMouseDown}
         onDoubleClick={onDoubleClick}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
         onKeyDown={onKeyDown}
         onCompositionStart={onCompositionStart}
         onBlur={onBlur}

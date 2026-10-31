@@ -134,11 +134,18 @@ export class PageSession {
   /** Puts cut boxes in place as one undo step: those still on the page move, those gone are made again under their ids. */
   placeBoxes(moves: Map<string, BoxPatch>, remade: Array<{ id: string; copy: BoxCopy }>): void {
     if (moves.size === 0 && remade.length === 0) return
+    this.oneUndoStep(() => {
+      if (moves.size > 0) this.page.updateBoxes(moves)
+      if (remade.length > 0) this.page.addBoxCopies(remade.map((r) => r.copy), remade.map((r) => r.id))
+    })
+  }
+
+  /** Changes to several boxes (content dragged from one box to another) that one undo takes back together. */
+  oneUndoStep(change: () => void): void {
     this.ownStep(() => {
       this.undoManager.groupStart()
       try {
-        if (moves.size > 0) this.page.updateBoxes(moves)
-        if (remade.length > 0) this.page.addBoxCopies(remade.map((r) => r.copy), remade.map((r) => r.id))
+        change()
       } finally {
         this.undoManager.groupEnd()
       }
