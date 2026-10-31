@@ -1,6 +1,8 @@
 import { memo, useEffect, type CSSProperties, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { BoxPatch, BoxState } from '@slate/core'
+import type { EditorView } from '@tiptap/pm/view'
 import { BoxEditor } from './BoxEditor'
+import { selectFromEmptySpace } from './emptySpace'
 import { findStore } from './find'
 import type { PageSession } from './PageSession'
 import { StaticBox } from './StaticBox'
@@ -223,7 +225,18 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
           </svg>
         </button>
       </div>
-      <div className="slate-box-body" ref={bodyRef}>
+      <div
+        className="slate-box-body"
+        ref={bodyRef}
+        onMouseDown={(e) => {
+          // Only the body's own empty space: the editor, its image handles and the bar handle their presses.
+          if (e.button !== 0 || e.target !== e.currentTarget) return
+          const view = bodyRef.current?.querySelector<HTMLElement & { editor?: { view: EditorView } }>('.ProseMirror')?.editor?.view
+          if (!view) return
+          e.preventDefault()
+          selectFromEmptySpace(view, e.clientX, e.clientY, e.shiftKey)
+        }}
+      >
         {visible || autoFocus || findHit ? (
           <BoxEditor box={box} session={session} autoFocus={autoFocus} onFocus={onFocus} />
         ) : (
