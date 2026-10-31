@@ -183,8 +183,11 @@ Checked by `.claude/hooks/definition-of-done.mjs` (Stop hook) on the whole branc
 - **Copy as plain text**: real list numbers, 2-space nesting, `- ` bullets, code verbatim, tabs
   between table cells, LF only, NBSP → space, no zero-width characters, trailing newlines trimmed.
   Lives in `toPlainText` (`packages/core/src/plaintext.ts`); extend it there, never a second copy.
-- **Copy as HTML**: semantic tags, no inline style except colour. **Default paste**: keep
-  structure and bold/italic, drop fonts, sizes, colours, classes. `Mod+Shift+V` pastes plain text.
+- **Copy as HTML**: semantic tags, no inline style except colour, `text-align` and the indent's
+  `margin-left` (0.5.0). **Default paste**: keep structure and bold/italic, centre/right alignment,
+  indent, to-do ticks and an image's width; drop fonts, sizes, colours, classes. `Mod+Shift+V`
+  pastes plain text. Copy as Markdown is `toMarkdown` (`packages/core/src/markdown.ts`), the one
+  Markdown serializer.
 - **Performance budget**: under 16 ms per keystroke, under 100 ms to open a page
   (`packages/desktop/e2e/spec/perf.spec.ts`). Measured after the renderer settles: renderer main-thread
   CPU per key up to its rendered frame p95 < 16 ms, wall-clock key latency median < 16 ms and p95 < 33 ms

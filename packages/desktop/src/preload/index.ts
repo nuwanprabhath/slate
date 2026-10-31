@@ -63,6 +63,7 @@ const api: SlateApi = {
   },
   mcp: { launcherInfo: () => ipcRenderer.invoke(CH.mcpLauncher) },
   clipboardText: () => ipcRenderer.invoke(CH.clipboardText),
+  editCommand: (command) => ipcRenderer.invoke(CH.editCommand, command),
   openExternal: (url) => ipcRenderer.invoke(CH.openExternal, url),
   onenote: {
     status: () => ipcRenderer.invoke(CH.onenoteStatus),
@@ -195,6 +196,7 @@ const api: SlateApi = {
   },
   appVersion: () => ipcRenderer.invoke(CH.appVersion),
   quit: () => ipcRenderer.invoke(CH.appQuit),
+  printPage: (request) => ipcRenderer.invoke(CH.pagePrint, request),
 }
 
 contextBridge.exposeInMainWorld('slate', api)

@@ -1,6 +1,9 @@
 import { memo, useEffect, type CSSProperties, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { BoxPatch, BoxState } from '@slate/core'
+import type { EditorView } from '@tiptap/pm/view'
 import { BoxEditor } from './BoxEditor'
+import { boxContentDragged, dropInEmptySpace } from './dragMove'
+import { selectFromEmptySpace } from './emptySpace'
 import { findStore } from './find'
 import type { PageSession } from './PageSession'
 import { StaticBox } from './StaticBox'
@@ -44,17 +47,22 @@ interface Props {
   onGroupDrag: (drag: GroupDrag | null, commit: boolean) => void
   /** The selection's live offset while one of its handles is dragged. */
   groupDrag: GroupDrag | null
+  /** Marked by Mod+X: the next paste moves it. */
+  cut: boolean
+  /** A press and release on the handle without moving: selects the box. */
+  onHandleClick: (id: string) => void
 }
 
 type Gesture = { x: number; y: number; width: number; height?: number }
 
-function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick, layer, selected, handleShown, onPress, onGroupDrag, groupDrag }: Props) {
+function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, conflict, onConflictClick, layer, selected, handleShown, onPress, onGroupDrag, groupDrag, cut, onHandleClick }: Props) {
   const onFocus = () => {
     session.bringToFront(box.id)
     onFocusBox(box.id)
   }
   const ref = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const editorView = () => bodyRef.current?.querySelector<HTMLElement & { editor?: { view: EditorView } }>('.ProseMirror')?.editor?.view
   const [visible, setVisible] = useState(false)
   const [gesture, setGesture] = useState<Gesture | null>(null)
   // Static boxes have no decorations, so a box with find matches is a live editor while they show.
@@ -124,6 +132,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
       target.removeEventListener('pointerup', up)
       if (group) {
         onGroupDrag(groupDelta, true)
+        if (groupDelta.dx === 0 && groupDelta.dy === 0) onHandleClick(box.id)
         return
       }
       const patch: BoxPatch = { x: Math.round(current.x), y: Math.round(current.y), width: Math.round(current.width) }
@@ -131,6 +140,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
       if (current.height !== undefined) patch.height = current.height <= minHeight + 1 ? null : Math.round(current.height)
       if (patch.x === box.x && patch.y === box.y && patch.width === box.width && (patch.height === undefined || (patch.height ?? undefined) === box.height)) {
         setGesture(null)
+        if (mode === 'move') onHandleClick(box.id)
         return
       }
       if (patch.height !== undefined) session.resizeBox(box.id, patch, startHeight, Math.max(minHeight, current.height ?? 0))
@@ -159,7 +169,7 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
   return (
     <div
       ref={ref}
-      className={['slate-box', box.private && 'is-private', conflict && 'has-conflict', selected && 'is-selected', handleShown && 'handle-shown'].filter(Boolean).join(' ')}
+      className={['slate-box', box.private && 'is-private', conflict && 'has-conflict', selected && 'is-selected', cut && 'is-cut', handleShown && 'handle-shown'].filter(Boolean).join(' ')}
       data-testid="box"
       data-box-id={box.id}
       aria-selected={selected}
@@ -217,7 +227,27 @@ function BoxImpl({ box, session, scrollRoot, autoFocus, onFocus: onFocusBox, con
           </svg>
         </button>
       </div>
-      <div className="slate-box-body" ref={bodyRef}>
+      <div
+        className="slate-box-body"
+        ref={bodyRef}
+        onMouseDown={(e) => {
+          // Only the body's own empty space: the editor, its image handles and the bar handle their presses.
+          if (e.button !== 0 || e.target !== e.currentTarget) return
+          const view = editorView()
+          if (!view) return
+          e.preventDefault()
+          selectFromEmptySpace(view, e.clientX, e.clientY, e.shiftKey)
+        }}
+        // A picture or text dropped in the body's empty space lands at the nearest text, as a click there does.
+        onDragOver={(e) => {
+          if (e.target === e.currentTarget && boxContentDragged()) e.preventDefault()
+        }}
+        onDrop={(e) => {
+          if (e.target !== e.currentTarget) return
+          const view = editorView()
+          if (view && dropInEmptySpace(view, e.clientX, e.clientY, e.nativeEvent, session)) e.preventDefault()
+        }}
+      >
         {visible || autoFocus || findHit ? (
           <BoxEditor box={box} session={session} autoFocus={autoFocus} onFocus={onFocus} />
         ) : (
@@ -251,6 +281,8 @@ export const Box = memo(
     a.layer === b.layer &&
     a.selected === b.selected &&
     a.handleShown === b.handleShown &&
+    a.cut === b.cut &&
+    a.onHandleClick === b.onHandleClick &&
     a.onPress === b.onPress &&
     a.onGroupDrag === b.onGroupDrag &&
     (a.selected ? a.groupDrag === b.groupDrag : true) &&

@@ -34,6 +34,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   markdownShortcuts: { default: false, sanitize: bool },
   autoBullets: { default: true, sanitize: bool },
   linkPastedUrls: { default: true, sanitize: bool },
+  spellcheckUnderline: { default: false, sanitize: bool },
   msClientId: { default: null, sanitize: stringOrNull },
   syncProvider: { default: null, sanitize: (v) => (v === null || PROVIDERS.some((p) => p === v) ? (v as SyncProvider | null) : undefined) },
   git: { default: null, sanitize: gitSettings },

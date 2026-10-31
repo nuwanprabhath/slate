@@ -1,12 +1,12 @@
-import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
-import { activeEditor } from '@slate/editor'
+import { activeEditor, formatPainter, inTodoItem, type TextAlign } from '@slate/editor'
 import { SyncStatus } from './sync/SyncStatus'
 import { ColorPalette } from './ColorPalette'
-import { BulletListIcon, ChevronIcon, ClearFormattingIcon, HighlightIcon, LockIcon, NumberedListIcon, TableIcon, TextColorIcon } from './toolbarIcons'
+import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, FormatPainterIcon, HighlightIcon, LockIcon, NumberedListIcon, ScriptIcon, StrikeIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
 
 const FONTS = [
-  { label: 'Default font', value: '' },
+  { label: 'Font', value: '' },
   { label: 'Sans', value: 'system-ui, sans-serif' },
   { label: 'Serif', value: 'Georgia, serif' },
   { label: 'Mono', value: 'monospace' },
@@ -38,9 +38,8 @@ function useActiveEditor(): Editor | null {
   return editor && !editor.isDestroyed ? editor : null
 }
 
-/** The chevron half of a list split button: a small menu of marker styles. */
-function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STYLES; disabled: boolean; onPick: (style: string) => void }) {
-  const { id, label, styles, disabled, onPick } = props
+/** A toolbar menu's open state, closed by a click outside it or Escape. */
+function useToolbarMenu(): [boolean, (open: boolean) => void, RefObject<HTMLSpanElement | null>] {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLSpanElement>(null)
   useEffect(() => {
@@ -58,6 +57,27 @@ function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STY
       document.removeEventListener('keydown', onKey, true)
     }
   }, [open])
+  return [open, setOpen, root]
+}
+
+/** A toolbar dropdown's menu, opening leftwards when it would run past the window's right edge. */
+function MenuPopup(props: { className: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const menu = ref.current
+    if (menu && menu.getBoundingClientRect().right > document.documentElement.clientWidth - 8) menu.classList.add('open-left')
+  }, [])
+  return (
+    <div ref={ref} className={props.className} role="menu">
+      {props.children}
+    </div>
+  )
+}
+
+/** The chevron half of a list split button: a small menu of marker styles. */
+function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STYLES; disabled: boolean; onPick: (style: string) => void }) {
+  const { id, label, styles, disabled, onPick } = props
+  const [open, setOpen, root] = useToolbarMenu()
   return (
     <span className="split-menu" ref={root}>
       <button
@@ -75,7 +95,7 @@ function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STY
         <ChevronIcon />
       </button>
       {open && (
-        <div className="style-menu" role="menu">
+        <MenuPopup className="style-menu">
           {styles.map((s) => (
             <button
               key={s.value}
@@ -93,13 +113,149 @@ function StyleMenu(props: { id: string; label: string; styles: typeof BULLET_STY
               {s.label}
             </button>
           ))}
-        </div>
+        </MenuPopup>
       )}
     </span>
   )
 }
 
 const isMac = navigator.platform.toLowerCase().includes('mac')
+
+const ALIGNMENTS: Array<{ value: TextAlign; label: string; keys: string }> = [
+  { value: 'left', label: 'Align left', keys: isMac ? '⌥⇧⌘L' : 'Ctrl+Alt+Shift+L' },
+  { value: 'center', label: 'Centre', keys: isMac ? '⇧⌘E' : 'Ctrl+Shift+E' },
+  { value: 'right', label: 'Align right', keys: isMac ? '⇧⌘R' : 'Ctrl+Shift+R' },
+]
+
+/** The alignment dropdown: the current alignment's icon, opening left, centre and right. */
+function AlignMenu(props: { current: TextAlign; disabled: boolean; onPick: (align: TextAlign) => void }) {
+  const { current, disabled, onPick } = props
+  const [open, setOpen, root] = useToolbarMenu()
+  return (
+    <span className="split-menu" ref={root}>
+      <button
+        type="button"
+        className="align-button"
+        data-testid="tb-align"
+        title="Alignment"
+        aria-label="Alignment"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen(!open)}
+      >
+        <AlignIcon align={current} />
+        <ChevronIcon />
+      </button>
+      {open && (
+        <MenuPopup className="style-menu align-menu">
+          {ALIGNMENTS.map((a) => (
+            <button
+              key={a.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={a.value === current}
+              className={a.value === current ? 'menu-item active' : 'menu-item'}
+              data-testid={`align-${a.value}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false)
+                onPick(a.value)
+              }}
+            >
+              <AlignIcon align={a.value} />
+              <span className="align-label">{a.label}</span>
+              <span className="align-keys">{a.keys}</span>
+            </button>
+          ))}
+        </MenuPopup>
+      )}
+    </span>
+  )
+}
+
+type TextStyle = 'strike' | 'subscript' | 'superscript'
+
+const TEXT_STYLES: Array<{ value: TextStyle; label: string; keys: string; icon: ReactNode }> = [
+  { value: 'strike', label: 'Strikethrough', keys: '', icon: <StrikeIcon /> },
+  { value: 'subscript', label: 'Subscript', keys: isMac ? '⇧⌘,' : 'Ctrl+Shift+,', icon: <ScriptIcon position="sub" /> },
+  { value: 'superscript', label: 'Superscript', keys: isMac ? '⇧⌘.' : 'Ctrl+Shift+.', icon: <ScriptIcon position="super" /> },
+]
+
+/**
+ * Strikethrough, subscript and superscript, less used than B/I/U, in one dropdown so the toolbar
+ * keeps to one row in a new window. The button shows the style the selection has, else strikethrough.
+ */
+function TextStyleMenu(props: { active: (style: TextStyle) => boolean; disabled: boolean; onPick: (style: TextStyle) => void }) {
+  const { active, disabled, onPick } = props
+  const [open, setOpen, root] = useToolbarMenu()
+  const current = TEXT_STYLES.find((t) => active(t.value))
+  return (
+    <span className="split-menu" ref={root}>
+      <button
+        type="button"
+        className={current ? 'align-button active' : 'align-button'}
+        data-testid="tb-text-styles"
+        title="More text styles"
+        aria-label="More text styles"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen(!open)}
+      >
+        {(current ?? TEXT_STYLES[0]!).icon}
+        <ChevronIcon />
+      </button>
+      {open && (
+        <MenuPopup className="style-menu align-menu">
+          {TEXT_STYLES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={active(t.value)}
+              className={active(t.value) ? 'menu-item active' : 'menu-item'}
+              data-testid={`tb-${t.value}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false)
+                onPick(t.value)
+              }}
+            >
+              <span className="menu-icon">{t.icon}</span>
+              <span className="align-label">{t.label}</span>
+              <span className="align-keys">{t.keys}</span>
+            </button>
+          ))}
+        </MenuPopup>
+      )}
+    </span>
+  )
+}
+
+/** The brush: a click carries the selection's format to the next selection; a double-click keeps it on until Esc or another click. */
+function FormatPainterButton(props: { editor: Editor | null }) {
+  const { editor } = props
+  const painter = useSyncExternalStore(formatPainter.subscribe, formatPainter.get)
+  return (
+    <button
+      type="button"
+      data-testid="tb-format-painter"
+      title="Format painter (double-click to keep it on)"
+      aria-label="Format painter"
+      aria-pressed={painter !== null}
+      disabled={!editor}
+      className={painter ? 'active' : undefined}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => (painter ? formatPainter.stop() : editor && formatPainter.start(editor, false))}
+      onDoubleClick={() => editor && formatPainter.start(editor, true)}
+    >
+      <FormatPainterIcon />
+    </button>
+  )
+}
 
 /** The lock replaces this window, so one answer at mount is enough: only an encrypted, unlocked vault gets the button. */
 function useVaultUnlocked(): boolean {
@@ -112,6 +268,32 @@ function useVaultUnlocked(): boolean {
     }
   }, [])
   return unlocked
+}
+
+/**
+ * Marks each toolbar group that starts a row, so the separator it draws before itself is not shown at
+ * the row's left edge. Only on a resize or a group coming or going, never per keystroke. The separator
+ * keeps its space either way, so marking never changes where the groups wrap.
+ */
+function useRowStarts(groupCount: number): RefObject<HTMLDivElement | null> {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const flow = ref.current
+    if (!flow) return
+    const mark = () => {
+      let rowTop = -Infinity
+      for (const group of flow.children) {
+        const top = (group as HTMLElement).offsetTop
+        group.classList.toggle('row-start', top > rowTop)
+        rowTop = Math.max(rowTop, top)
+      }
+    }
+    mark()
+    const observer = new ResizeObserver(mark)
+    observer.observe(flow)
+    return () => observer.disconnect()
+  }, [groupCount])
+  return ref
 }
 
 export function Toolbar() {
@@ -136,8 +318,11 @@ export function Toolbar() {
     </button>
   )
   const is = (name: string, attrs?: Record<string, unknown>) => editor?.isActive(name, attrs) ?? false
+  const todo = editor ? inTodoItem(editor.state) : false
+  const align: TextAlign = editor?.isActive({ textAlign: 'center' }) ? 'center' : editor?.isActive({ textAlign: 'right' }) ? 'right' : 'left'
   const textStyle = (editor?.getAttributes('textStyle') ?? {}) as { fontFamily?: string; fontSize?: string; color?: string }
   // Picking a style turns the list on first when the selection is not in one of that type.
+  const groups = useRowStarts(is('table') ? 7 : 6)
   const setListStyle = (type: 'bulletList' | 'orderedList', style: string) =>
     run((c) => {
       const on = is(type) ? c : type === 'bulletList' ? c.toggleBulletList() : c.toggleOrderedList()
@@ -146,93 +331,114 @@ export function Toolbar() {
 
   return (
     <div className="toolbar" role="toolbar" aria-label="Formatting">
-      {button('bold', <b>B</b>, 'Bold (Mod+B)', is('bold'), run((c) => c.toggleBold()))}
-      {button('italic', <i>I</i>, 'Italic (Mod+I)', is('italic'), run((c) => c.toggleItalic()))}
-      {button('underline', <u>U</u>, 'Underline (Mod+U)', is('underline'), run((c) => c.toggleUnderline()))}
-      {button('strike', <s>S</s>, 'Strikethrough', is('strike'), run((c) => c.toggleStrike()))}
-      {button('code', '</>', 'Inline code (Mod+E)', is('code'), run((c) => c.toggleCode()))}
-      <span className="sep" />
-      {([1, 2, 3] as const).map((level) => (
-        <span key={level}>{button(`h${level}`, `H${level}`, `Heading ${level}`, is('heading', { level }), run((c) => c.toggleHeading({ level })))}</span>
-      ))}
-      <span className="sep" />
-      <span className="split">
-        {button('bullet', <BulletListIcon />, 'Bulleted list (Mod+Shift+8)', is('bulletList'), run((c) => c.toggleBulletList()))}
-        <StyleMenu id="bullet" label="Bulleted list" styles={BULLET_STYLES} disabled={!editor} onPick={(s) => setListStyle('bulletList', s)} />
-      </span>
-      <span className="split">
-        {button('ordered', <NumberedListIcon />, 'Numbered list (Mod+Shift+7)', is('orderedList'), run((c) => c.toggleOrderedList()))}
-        <StyleMenu id="ordered" label="Numbered list" styles={NUMBER_STYLES} disabled={!editor} onPick={(s) => setListStyle('orderedList', s)} />
-      </span>
-      {button('codeblock', '{ }', 'Code block (Mod+Alt+C)', is('codeBlock'), run((c) => c.toggleCodeBlock()))}
-      {button('table', <TableIcon />, 'Insert table', false, run((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: false })))}
-      {is('table') && (
-        <>
-          {button('row', '+row', 'Add row below', false, run((c) => c.addRowAfter()))}
-          {button('col', '+col', 'Add column right', false, run((c) => c.addColumnAfter()))}
-          {button('delrow', '−row', 'Delete row', false, run((c) => c.deleteRow()))}
-          {button('delcol', '−col', 'Delete column', false, run((c) => c.deleteColumn()))}
-          {button('deltable', '✕▦', 'Delete table', false, run((c) => c.deleteTable()))}
-        </>
-      )}
-      <span className="sep" />
-      <select
-        data-testid="tb-font"
-        disabled={!editor}
-        value={FONTS.find((f) => f.value === textStyle.fontFamily)?.value ?? ''}
-        onChange={(e) => run((c) => (e.target.value ? c.setFontFamily(e.target.value) : c.unsetFontFamily()))()}
-      >
-        {FONTS.map((f) => (
-          <option key={f.label} value={f.value}>
-            {f.label}
-          </option>
-        ))}
-      </select>
-      <select
-        data-testid="tb-size"
-        disabled={!editor}
-        value={textStyle.fontSize ?? ''}
-        onChange={(e) => run((c) => (e.target.value ? c.setFontSize(e.target.value) : c.unsetFontSize()))()}
-      >
-        {SIZES.map((s) => (
-          <option key={s} value={s}>
-            {s || 'Size'}
-          </option>
-        ))}
-      </select>
-      <ColorPalette
-        id="color"
-        label="Text colour"
-        autoLabel="Automatic"
-        defaultColor="#ff0000"
-        disabled={!editor}
-        icon={(last) => <TextColorIcon color={textStyle.color ?? last} />}
-        onPick={(color) => run((c) => (color ? c.setColor(color) : c.unsetColor()))()}
-      />
-      <ColorPalette
-        id="highlight"
-        label="Highlight"
-        autoLabel="No highlight"
-        defaultColor="#ffff00"
-        disabled={!editor}
-        icon={(last) => <HighlightIcon color={last} />}
-        onPick={(color) => run((c) => (color ? c.setHighlight({ color }) : c.unsetHighlight()))()}
-      />
-      {button('clear', <ClearFormattingIcon />, 'Clear all formatting', false, run((c) => c.unsetAllMarks().clearNodes()))}
-      {vaultUnlocked && (
-        <button
-          type="button"
-          className="toolbar-lock"
-          data-testid="toolbar-lock"
-          aria-label="Lock Slate"
-          title={`Lock Slate (${isMac ? '⌘⇧L' : 'Ctrl+Shift+L'})`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => window.slate.vault.lock()}
-        >
-          <LockIcon />
-        </button>
-      )}
-      <SyncStatus />
+      {/* Groups wrap whole, so no control is left alone on a row; each draws its separator before it. */}
+      <div className="toolbar-flow">
+        <div className="toolbar-groups" ref={groups}>
+          <span className="tb-group">
+            {button('bold', <b>B</b>, 'Bold (Mod+B)', is('bold'), run((c) => c.toggleBold()))}
+            {button('italic', <i>I</i>, 'Italic (Mod+I)', is('italic'), run((c) => c.toggleItalic()))}
+            {button('underline', <u>U</u>, 'Underline (Mod+U)', is('underline'), run((c) => c.toggleUnderline()))}
+            {button('code', '</>', 'Inline code (Mod+E)', is('code'), run((c) => c.toggleCode()))}
+            <TextStyleMenu
+              active={(style) => (style === 'strike' ? is('strike') : is('textStyle', { verticalAlign: style === 'subscript' ? 'sub' : 'super' }))}
+              disabled={!editor}
+              onPick={(style) => run((c) => (style === 'strike' ? c.toggleStrike() : style === 'subscript' ? c.toggleSubscript() : c.toggleSuperscript()))()}
+            />
+          </span>
+          <span className="tb-group">
+            {([1, 2, 3] as const).map((level) => (
+              <span key={level}>{button(`h${level}`, `H${level}`, `Heading ${level}`, is('heading', { level }), run((c) => c.toggleHeading({ level })))}</span>
+            ))}
+          </span>
+          <span className="tb-group">
+            <span className="split">
+              {button('bullet', <BulletListIcon />, 'Bulleted list (Mod+Shift+8)', is('bulletList') && !todo, run((c) => c.toggleBulletList()))}
+              <StyleMenu id="bullet" label="Bulleted list" styles={BULLET_STYLES} disabled={!editor} onPick={(s) => setListStyle('bulletList', s)} />
+            </span>
+            <span className="split">
+              {button('ordered', <NumberedListIcon />, 'Numbered list (Mod+Shift+7)', is('orderedList'), run((c) => c.toggleOrderedList()))}
+              <StyleMenu id="ordered" label="Numbered list" styles={NUMBER_STYLES} disabled={!editor} onPick={(s) => setListStyle('orderedList', s)} />
+            </span>
+            {button('todo', <TodoListIcon />, 'To-do list (Mod+Shift+9)', todo, run((c) => c.toggleTodoList()))}
+            {button('codeblock', '{ }', 'Code block (Mod+Alt+C)', is('codeBlock'), run((c) => c.toggleCodeBlock()))}
+            {button('table', <TableIcon />, 'Insert table', false, run((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: false })))}
+            <AlignMenu current={align} disabled={!editor} onPick={(a) => run((c) => c.setTextAlign(a))()} />
+          </span>
+          <span className="tb-group">
+            <select
+              data-testid="tb-font"
+              disabled={!editor}
+              value={FONTS.find((f) => f.value === textStyle.fontFamily)?.value ?? ''}
+              onChange={(e) => run((c) => (e.target.value ? c.setFontFamily(e.target.value) : c.unsetFontFamily()))()}
+            >
+              {FONTS.map((f) => (
+                <option key={f.label} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+            <select
+              data-testid="tb-size"
+              disabled={!editor}
+              value={textStyle.fontSize ?? ''}
+              onChange={(e) => run((c) => (e.target.value ? c.setFontSize(e.target.value) : c.unsetFontSize()))()}
+            >
+              {SIZES.map((s) => (
+                <option key={s} value={s}>
+                  {s || 'Size'}
+                </option>
+              ))}
+            </select>
+            <ColorPalette
+              id="color"
+              label="Text colour"
+              autoLabel="Automatic"
+              defaultColor="#ff0000"
+              disabled={!editor}
+              icon={(last) => <TextColorIcon color={textStyle.color ?? last} />}
+              onPick={(color) => run((c) => (color ? c.setColor(color) : c.unsetColor()))()}
+            />
+            <ColorPalette
+              id="highlight"
+              label="Highlight"
+              autoLabel="No highlight"
+              defaultColor="#ffff00"
+              disabled={!editor}
+              icon={(last) => <HighlightIcon color={last} />}
+              onPick={(color) => run((c) => (color ? c.setHighlight({ color }) : c.unsetHighlight()))()}
+            />
+          </span>
+          <span className="tb-group">
+            <FormatPainterButton editor={editor} />
+            {button('clear', <ClearFormattingIcon />, 'Clear all formatting', false, run((c) => c.unsetAllMarks().clearNodes()))}
+          </span>
+          {is('table') && (
+            <span className="tb-group" data-testid="tb-table-tools">
+              {button('row', '+row', 'Add row below', false, run((c) => c.addRowAfter()))}
+              {button('col', '+col', 'Add column right', false, run((c) => c.addColumnAfter()))}
+              {button('delrow', '−row', 'Delete row', false, run((c) => c.deleteRow()))}
+              {button('delcol', '−col', 'Delete column', false, run((c) => c.deleteColumn()))}
+              {button('deltable', '✕▦', 'Delete table', false, run((c) => c.deleteTable()))}
+            </span>
+          )}
+          <span className="tb-group tb-status">
+            {vaultUnlocked && (
+              <button
+                type="button"
+                className="toolbar-lock"
+                data-testid="toolbar-lock"
+                aria-label="Lock Slate"
+                title={`Lock Slate (${isMac ? '⌘⇧L' : 'Ctrl+Shift+L'})`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => window.slate.vault.lock()}
+              >
+                <LockIcon />
+              </button>
+            )}
+            <SyncStatus />
+          </span>
+        </div>
+      </div>
     </div>
   )
 }

@@ -110,4 +110,6 @@ export const CH = {
   vaultReplaceHistory: 'vault:replace-history',
   vaultPqReadiness: 'vault:pq-readiness',
   syncCheckTransport: 'sync:check-transport',
+  pagePrint: 'page:print',
+  editCommand: 'edit:command',
 } as const

@@ -118,3 +118,62 @@ export function SideChevronIcon({ direction }: { direction: 'left' | 'right' }) 
     </svg>
   )
 }
+
+/** Three ticked and unticked boxes, drawn like BulletListIcon. */
+export function TodoListIcon() {
+  return (
+    <Icon strokeWidth="1.2">
+      {[4, 10, 16].map((y, i) => (
+        <g key={y}>
+          <rect x="2" y={y - 2} width="4" height="4" rx="0.8" stroke={ACCENT} fill={i === 0 ? ACCENT : 'none'} />
+          <path d={`M8.5 ${y}H17.5`} stroke={GREY} strokeWidth="1.5" />
+        </g>
+      ))}
+    </Icon>
+  )
+}
+
+/** Four lines whose shorter ones sit on the left, in the middle or on the right. */
+export function AlignIcon({ align }: { align: 'left' | 'center' | 'right' }) {
+  const short = (y: number) => (align === 'left' ? `M3 ${y}H12` : align === 'center' ? `M5.5 ${y}H14.5` : `M8 ${y}H17`)
+  return (
+    <Icon>
+      <path d={`M3 4H17M3 12H17${short(8)}${short(16)}`} />
+    </Icon>
+  )
+}
+
+/** "x" with a small 2 below (subscript) or above (superscript) it. */
+export function ScriptIcon({ position }: { position: 'sub' | 'super' }) {
+  return (
+    <Icon>
+      <path d="M3 6.5 10 14.5M10 6.5 3 14.5" />
+      <path
+        d={position === 'sub' ? 'M12.6 13.6a1.5 1.5 0 0 1 2.9.5c0 1.1-2.9 2-2.9 3.4h3' : 'M12.6 3.6a1.5 1.5 0 0 1 2.9.5c0 1.1-2.9 2-2.9 3.4h3'}
+        stroke={ACCENT}
+        strokeWidth="1.2"
+      />
+    </Icon>
+  )
+}
+
+/** A paint brush: the format painter. */
+export function FormatPainterIcon() {
+  return (
+    <Icon>
+      <rect x="3" y="2.5" width="12" height="5" rx="1" />
+      <path d="M15 5h2v4.5h-7V12" />
+      <path d="M8.8 12h2.4v5.5a1.2 1.2 0 0 1-2.4 0Z" fill={ACCENT} stroke={ACCENT} />
+    </Icon>
+  )
+}
+
+/** Strikethrough: an S struck through, drawn so it lines up with the other menu icons. */
+export function StrikeIcon() {
+  return (
+    <Icon>
+      <path d="M13.5 6.2c-.5-1.1-1.8-1.9-3.5-1.9-2.1 0-3.5 1.1-3.5 2.6 0 1.2.8 1.9 2.2 2.4M12.3 11.5c.8.5 1.2 1.1 1.2 1.9 0 1.5-1.5 2.6-3.6 2.6-1.8 0-3.2-.8-3.8-2" />
+      <path d="M3.5 10h13" stroke={ACCENT} />
+    </Icon>
+  )
+}

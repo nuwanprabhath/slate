@@ -35,6 +35,8 @@ export interface Settings {
   autoBullets: boolean
   /** Pasted http, https, mailto and www. addresses become links. On by default. */
   linkPastedUrls: boolean
+  /** The spell checker underlines misspelled words in notes; it never changes them. Off by default. */
+  spellcheckUnderline: boolean
   /** Application (client) id of the user's Azure app registration, for OneNote import. */
   msClientId: string | null
   /** Where notebooks sync to; null (the default) is off, and sync then never touches the network. */
@@ -391,6 +393,9 @@ export interface AuditEntryRow {
   outcome: string
 }
 
+/** What the text menu asks main to run on its window (`SlateApi.editCommand`). */
+export type EditCommand = 'cut' | 'copy' | 'paste'
+
 export type MenuCommand =
   | { cmd: 'undo' }
   | { cmd: 'redo' }
@@ -404,6 +409,10 @@ export type MenuCommand =
   | { cmd: 'show-settings'; section?: string }
   | { cmd: 'link' }
   | { cmd: 'find-in-notes' }
+  | { cmd: 'replace' }
+  | { cmd: 'print' }
+  | { cmd: 'export-pdf' }
+  | { cmd: 'copy-markdown' }
 
 export type SearchScope = { kind: 'all' } | { kind: 'notebook'; id: string } | { kind: 'section'; id: string }
 
@@ -478,6 +487,8 @@ export interface SlateApi {
   }
   mcp: { launcherInfo(): Promise<{ command: string; claudeCommand: string; packaged: boolean }> }
   clipboardText(): Promise<string>
+  /** Runs Cut, Copy or Paste on this window as the Edit menu does, firing the page's clipboard event. */
+  editCommand(command: EditCommand): Promise<void>
   /** Opens an http(s) or mailto link in the system browser. Anything else is ignored. */
   openExternal(url: string): Promise<void>
   onenote: {
@@ -549,6 +560,16 @@ export interface SlateApi {
   appVersion(): Promise<string>
   /** Quits Slate (the self-test error screen's only way out, S-6). */
   quit(): Promise<void>
+  /** Prints this window (the print stylesheet shows only the open page), or saves it as a PDF where the person chooses. */
+  printPage(request: PrintRequest): Promise<PrintResult>
+}
+
+/** `title` names the PDF in the save dialog; main never takes a path from the renderer. */
+export type PrintRequest = { kind: 'print' } | { kind: 'pdf'; title: string }
+/** `done` is false when the person cancelled, or the save failed (`error`: the error code only, never its message). */
+export interface PrintResult {
+  done: boolean
+  error?: string
 }
 
 export interface BackupPick {

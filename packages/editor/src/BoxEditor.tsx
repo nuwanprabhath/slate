@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { Extension } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { loroSyncPluginKey } from 'loro-prosemirror'
@@ -7,19 +7,37 @@ import { activeEditor } from './activeEditor'
 import { SlateCaret } from './caret'
 import { currentTheme, onThemeChange } from './colorContrast'
 import { cleanPastedHtml, makeClipboardSerializer, mayHoldImages, serializeSliceAsText } from './clipboard'
+import { DragMove } from './dragMove'
 import { buildExtensions, schema } from './extensions'
+import { FloatFit } from './floatImages'
 import { findHighlightPlugin } from './find'
+import { foldPlugin } from './fold'
+import { FormatPainter } from './formatPainter'
 import { copyWithImages, imageFilesFrom, insertImages, pasteHtml } from './images'
+import { ImageResize } from './imageResize'
 import { ImageSelection } from './imageSelection'
 import { SlateKeymap } from './keymap'
 import { LinkPopover } from './LinkPopover'
 import { isSingleUrl, PastedLinks, pastePlainOrLink } from './links'
 import { LoroBinding } from './loroBinding'
 import type { PageSession } from './PageSession'
-import { useEditorServices } from './services'
+import { useEditorServices, type EditorServices } from './services'
 import { editorRuleOptions } from './inputRules'
+import { TextMenu } from './TextMenu'
+import { copyMarkdownInto } from './textCommands'
 
 const clipboardSerializer = makeClipboardSerializer(schema)
+
+/** Slate never changes text on its own: the browser may underline misspellings (a setting), never correct them. */
+export function boxEditorAttributes({ spellcheckUnderline }: Pick<EditorServices, 'spellcheckUnderline'>): Record<string, string> {
+  return {
+    class: 'slate-box-content',
+    spellcheck: spellcheckUnderline ? 'true' : 'false',
+    autocorrect: 'off',
+    autocapitalize: 'off',
+    'data-testid': 'box-editor',
+  }
+}
 
 interface Props {
   box: BoxState
@@ -32,6 +50,8 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
   const services = useEditorServices()
   // Mark colours are adapted to the theme when rendered, so a theme switch rebuilds the editor.
   const theme = useSyncExternalStore(onThemeChange, currentTheme)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
   const editor = useEditor(
     {
       extensions: [
@@ -40,19 +60,18 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         SlateKeymap.configure({ session, services }),
         SlateCaret,
         ImageSelection,
+        ImageResize.configure({ session }),
+        DragMove.configure({ session, boxId: box.id }),
+        FloatFit,
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
+        FormatPainter,
+        Extension.create({ name: 'slateFold', addProseMirrorPlugins: () => [foldPlugin(box.id)] }),
       ],
       ...editorRuleOptions(services),
       autofocus: autoFocus ? 'end' : false,
       editorProps: {
-        attributes: {
-          class: 'slate-box-content',
-          spellcheck: 'false',
-          autocorrect: 'off',
-          autocapitalize: 'off',
-          'data-testid': 'box-editor',
-        },
+        attributes: boxEditorAttributes(services),
         clipboardTextSerializer: serializeSliceAsText,
         clipboardSerializer,
         transformPastedHTML: cleanPastedHtml,
@@ -89,8 +108,13 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
             if (anchor && !anchor.hasAttribute('title')) anchor.setAttribute('title', 'Mod+click to open')
             return false
           },
-          copy: (view, event) => copyWithImages(view, event, services),
+          copy: (view, event) => copyMarkdownInto(view, event) || copyWithImages(view, event, services),
           cut: (view, event) => copyWithImages(view, event, services),
+          contextmenu: (_view, event) => {
+            event.preventDefault()
+            setMenu({ x: event.clientX, y: event.clientY })
+            return true
+          },
         },
       },
       onUpdate: ({ transaction }) => {
@@ -106,7 +130,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         session.deleteIfEmpty(box.id)
       },
     },
-    [box.contentId, services.markdownShortcuts, services.autoBullets, services.linkPastedUrls, theme],
+    [box.contentId, services.markdownShortcuts, services.autoBullets, services.linkPastedUrls, services.spellcheckUnderline, theme],
   )
   useEffect(
     () => () => {
@@ -118,6 +142,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
     <>
       <EditorContent editor={editor} />
       <LinkPopover editor={editor} />
+      {menu && editor && <TextMenu editor={editor} at={menu} services={services} onClose={closeMenu} />}
     </>
   )
 }

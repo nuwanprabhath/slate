@@ -35,6 +35,8 @@ import { createIpc } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
 import { registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
 import { registerCopyIpc } from './copyHtml'
+import { electronPrintHost, registerPrintIpc } from './print'
+import { registerEditIpc, UserInputClock } from './editCommands'
 import { configureLogging, configureSecurityLog, registerDiagnosticsIpc } from './log/configure'
 import { log } from './log/logger'
 import { buildMenu, syncMenuChecks } from './menu'
@@ -47,6 +49,7 @@ import { createAuthService, type AuthService } from './onenote/auth'
 import { converterPath, defaultConverterDirs } from './onenote/backup'
 import { acquireLock } from './lock'
 import { onSettingsWritten, readSettings, writeSettings } from './settings'
+import { applySpellcheck } from './spellcheck'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { closeServices, openServices, services, servicesOpen } from './services'
 import { activeThemeSpec, registerThemeIpc, windowBackground, type ThemeSource } from './theme/ipc'
@@ -130,6 +133,9 @@ void app.whenReady().then(async () => {
   // The app has one page: a window may show only the entry (any query), not another app:// file (review L-R1).
   const isApp = (url: string) => isAppEntry(url, devServer)
   installBoundaryGuards(isApp)
+  // Off until the notes' settings say otherwise (before any window loads).
+  applySpellcheck(session.defaultSession, DEFAULT_SETTINGS)
+  onSettingsWritten((settings) => applySpellcheck(session.defaultSession, settings))
   if (!app.isPackaged) app.dock?.setIcon(iconPath)
   const dataDir = app.getPath('userData')
   // Tells the headless import CLI that this process has the database open.
@@ -242,6 +248,7 @@ void app.whenReady().then(async () => {
     return { vaultHeaderVersion, transports: servicesOpen() ? services().store.transportObservations() : [] }
   })
   registerPqIpc(ipc)
+  registerPrintIpc(ipc, electronPrintHost(dataDir, notes))
   handleNoteProtocol(BLOB_SCHEME, notes, async (request) => {
     const name = blobNameFromUrl(request.url)
     if (!name) return new Response('Not found', { status: 404 })
@@ -263,6 +270,9 @@ void app.whenReady().then(async () => {
     (docId) => services().search.docRemoved(docId),
   )
   registerSearchIpc(ipc, () => services().search)
+  // Real presses per window (trackInput), so the text menu's clipboard commands need a person's click.
+  const userInput = new UserInputClock()
+  registerEditIpc(ipc, userInput)
   // What Slate last put on the clipboard, for the lock to clear (shouldClearClipboard).
   let copied: { at: number; text: string } | null = null
   registerCopyIpc(
@@ -353,6 +363,7 @@ void app.whenReady().then(async () => {
       watchLog: log.scoped('watch'),
     })
     configureLogging(readSettings(svc.store))
+    applySpellcheck(session.defaultSession, readSettings(svc.store))
     if (sync) svc.sync.start()
     // After the window is asked for, not before; a query arriving first waits behind it.
     setTimeout(() => notes() && svc.search.ensureBuilt(), 0)
@@ -414,6 +425,8 @@ void app.whenReady().then(async () => {
     )
 
   function trackInput(win: BrowserWindow): BrowserWindow {
+    const contents = win.webContents
+    contents.on('input-event', (_e, input) => userInput.note(contents, input.type))
     win.webContents.on('before-input-event', (event, input) => {
       if (vault.state !== 'unlocked') return
       idle.touch()

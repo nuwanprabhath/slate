@@ -8,7 +8,8 @@
   right: 20px;
   z-index: 20;
   display: flex;
-  align-items: center;
+  /* Stretch, so the replace toggle spans both rows. */
+  align-items: stretch;
   gap: 4px;
   padding: 4px 6px;
   background: var(--panel);
@@ -17,6 +18,48 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   font-size: 13px;
   color: var(--text);
+}
+
+.find-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* VS Code's full-height ▸ / ▾ at the bar's left edge. */
+.find-replace-toggle {
+  flex: none;
+  width: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.find-replace-toggle svg {
+  display: block;
+  margin: auto;
+}
+
+.find-replace-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* A secondary .btn sized to the find field's row. */
+.find-action {
+  min-height: 24px;
+  padding: 1px 8px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .find-input {

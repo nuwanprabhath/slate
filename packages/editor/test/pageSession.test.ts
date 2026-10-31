@@ -133,6 +133,49 @@ describe('PageSession', () => {
     session.close()
   })
 
+  it('takes back a move between two boxes (a drag from one box to another) in one undo', async () => {
+    const session = await PageSession.open('p-drag', memoryPersistence())
+    const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
+    const from = session.createBoxWithContent(0, 0, [para('before'), { type: 'image', attrs: { src: 'slate-blob://a' } }])
+    const to = session.createBoxWithContent(0, 200, [para('target')])
+    const text = (id: string) => JSON.stringify(contentToJSON(session.page.contentMap(id)!))
+    session.oneUndoStep(() => {
+      // Each box's editor commits its own change, as two dispatches do.
+      writeContent(session.page.contentMap(to)!, [para('target'), { type: 'image', attrs: { src: 'slate-blob://a' } }], session.doc)
+      session.doc.commit()
+      writeContent(session.page.contentMap(from)!, [para('before')], session.doc)
+      session.doc.commit()
+    })
+    expect(text(from)).not.toContain('slate-blob')
+    expect(session.undo()).toBe(true)
+    expect(text(from)).toContain('slate-blob')
+    expect(text(to)).not.toContain('slate-blob')
+    session.close()
+  })
+
+  it('a box a drag emptied goes in the same undo step, so one undo brings it back with its picture', async () => {
+    const session = await PageSession.open('p-drag-empty', memoryPersistence())
+    const picture = { type: 'image', attrs: { src: 'slate-blob://a' } }
+    const from = session.createBoxWithContent(0, 0, [picture])
+    const to = session.createBoxWithContent(0, 200, [{ type: 'paragraph', content: [{ type: 'text', text: 'target' }] }])
+    const text = (id: string) => JSON.stringify(contentToJSON(session.page.contentMap(id)!))
+    session.oneUndoStep(() => {
+      writeContent(session.page.contentMap(to)!, [{ type: 'paragraph', content: [{ type: 'text', text: 'target' }] }, picture], session.doc)
+      session.doc.commit()
+      writeContent(session.page.contentMap(from)!, [{ type: 'paragraph' }], session.doc)
+      session.doc.commit()
+      expect(session.deleteIfEmptied(from)).toBe(true)
+    })
+    expect(session.page.getBox(from)).toBeUndefined()
+    // The emptied editor's blur finds nothing left to remove.
+    expect(session.deleteIfEmpty(from)).toBe(false)
+    expect(session.undo()).toBe(true)
+    expect(session.page.getBox(from)).toBeDefined()
+    expect(text(from)).toContain('slate-blob')
+    expect(text(to)).not.toContain('slate-blob')
+    session.close()
+  })
+
   it('never deletes a box with content, an image or the private flag', async () => {
     const session = await PageSession.open('p-keep', memoryPersistence())
     const text = session.createBoxWithContent(0, 0, [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }])

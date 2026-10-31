@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { PMJSON } from '@slate/core'
 import { activeEditor } from './activeEditor'
 import { Box, type GroupDrag } from './Box'
+import { boxClipboard, clipMatches, copyBoxes, cutBoxes, duplicateBoxes, pasteBoxes } from './boxClipboard'
 import { CanvasMenu } from './CanvasMenu'
+import { boxContentDragged, dropInNewBox } from './dragMove'
 import { imageFilesFrom, pasteHtml } from './images'
 import { linkedTextBlocks, pastePlain } from './links'
 import type { PageSession } from './PageSession'
@@ -43,6 +45,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
   const [menu, setMenu] = useState<Point | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
+  const cutIds = useSyncExternalStore(boxClipboard.subscribe, () => boxClipboard.cutIn(session.pageId))
 
   // Back to front: each box's place in the stack (z, then id), so overlapping boxes layer the same everywhere.
   const layers = useMemo(() => {
@@ -91,6 +94,30 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     if (!(onHandle && selectionRef.current.has(id)) && selectionRef.current.size > 0) setSelection(NO_SELECTION)
     return false
   }, [])
+
+  const onHandleClick = useCallback((id: string) => {
+    setSelection(new Set([id]))
+    // Out of the handle, so Mod+X/C/D, Delete and Escape act on the selection.
+    canvasRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  // Editing a box marked for cut takes the mark off: the cut no longer holds what the box does.
+  useEffect(() => {
+    if (cutIds.size === 0) return
+    return session.doc.subscribe((batch) => {
+      if (batch.by !== 'local' || batch.origin?.startsWith('sys:')) return
+      for (const e of batch.events) if (e.path.length > 2 && e.path[0] === 'boxes') boxClipboard.noteEdited(session.pageId, String(e.path[1]))
+    })
+  }, [cutIds, session])
+
+  useEffect(() => {
+    if (cutIds.size === 0) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') boxClipboard.cancelCut()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cutIds])
 
   const onGroupDrag = useCallback(
     (drag: GroupDrag | null, commit: boolean) => {
@@ -168,6 +195,33 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     [services],
   )
 
+  // Mod+X and Mod+C on the focused canvas, and Edit → Cut and Copy chosen with the mouse.
+  const takeSelected = (kind: 'cut' | 'copy') => {
+    const ids = selectionRef.current
+    const clip = kind === 'cut' ? cutBoxes(session, ids) : copyBoxes(session, ids)
+    // The cut mark is what shows now; the selection's ring would draw over it.
+    if (kind === 'cut') setSelection(NO_SELECTION)
+    if (clip) void services.copyRich(clip.text, clip.html)
+  }
+  const takeSelectedRef = useRef(takeSelected)
+  takeSelectedRef.current = takeSelected
+
+  useEffect(() => {
+    // The menu's Cut and Copy roles fire these events, not a keydown. Mod+X/C never get here: their
+    // keydown is handled above, and a handled key does not reach the menu.
+    const onCopyOrCut = (e: ClipboardEvent) => {
+      if (document.activeElement !== canvasRef.current || selectionRef.current.size === 0) return
+      e.preventDefault()
+      takeSelectedRef.current(e.type === 'cut' ? 'cut' : 'copy')
+    }
+    document.addEventListener('copy', onCopyOrCut)
+    document.addEventListener('cut', onCopyOrCut)
+    return () => {
+      document.removeEventListener('copy', onCopyOrCut)
+      document.removeEventListener('cut', onCopyOrCut)
+    }
+  }, [])
+
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null
@@ -176,6 +230,16 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
       const files = imageFilesFrom(e.clipboardData)
       const text = e.clipboardData?.getData('text/plain') ?? ''
       const html = e.clipboardData?.getData('text/html') ?? ''
+      const clip = boxClipboard.get()
+      if (clip && clipMatches(clip, text, html)) {
+        e.preventDefault()
+        setCaret(null)
+        void pasteBoxes(session, at ?? { x: (scrollRoot?.scrollLeft ?? 0) + 40, y: (scrollRoot?.scrollTop ?? 0) + 40 }).then((ids) => {
+          setSelection(new Set(ids))
+          canvasRef.current?.focus({ preventScroll: true })
+        })
+        return
+      }
       if (files.length === 0 && text.trim() === '' && html.trim() === '') return
       e.preventDefault()
       if (at && files.length === 0) {
@@ -220,6 +284,15 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     setMenu({ x: e.clientX, y: e.clientY })
   }
 
+  // A picture or text dragged out of a box onto the bare canvas lands in a new box there, as in OneNote.
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && boxContentDragged()) e.preventDefault()
+  }
+
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && dropInNewBox(session, e.nativeEvent, pointFrom(e))) e.preventDefault()
+  }
+
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget || e.button !== 0) return
     caretRef.current = pointFrom(e)
@@ -234,6 +307,16 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
       e.preventDefault()
       if (key === 'z' && !e.shiftKey) session.undo()
       else session.redo()
+      return
+    }
+    if (isMod(e) && !e.shiftKey && !e.altKey && (key === 'x' || key === 'c' || key === 'd') && selectionRef.current.size > 0) {
+      e.preventDefault()
+      const ids = selectionRef.current
+      if (key === 'd') {
+        setSelection(new Set(duplicateBoxes(session, ids)))
+        return
+      }
+      takeSelected(key === 'x' ? 'cut' : 'copy')
       return
     }
     const queue = queueRef.current
@@ -278,6 +361,8 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
         style={{ minHeight: bottom + 400, minWidth: right + 200 }}
         onMouseDown={onMouseDown}
         onDoubleClick={onDoubleClick}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
         onKeyDown={onKeyDown}
         onCompositionStart={onCompositionStart}
         onBlur={onBlur}
@@ -300,6 +385,8 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
               onPress={onBoxPress}
               onGroupDrag={onGroupDrag}
               groupDrag={groupDrag}
+              cut={cutIds.has(b.id)}
+              onHandleClick={onHandleClick}
             />
           ))}
       </div>

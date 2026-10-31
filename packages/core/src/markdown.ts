@@ -1,74 +1,162 @@
 import type { PMJSON } from './plaintext'
 
-const clean = (s: string) => s.replace(/ /g, ' ').replace(/[​-‍⁠﻿]/g, '').replace(/\r\n?/g, '\n')
+const clean = (s: string) => s.replace(/\u00A0/g, ' ').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\r\n?/g, '\n')
 
+const isInline = (n: PMJSON) => n.type === 'text' || n.type === 'hardBreak'
+const isList = (n: PMJSON) => n.type === 'bulletList' || n.type === 'orderedList' || n.type === 'taskList'
+
+/** The longest run of backticks in `s`. A loop: spreading every run into Math.max overflows the stack. */
+function longestTicks(s: string): number {
+  let longest = 0
+  let run = 0
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '`') {
+      run++
+      if (run > longest) longest = run
+    } else run = 0
+  }
+  return longest
+}
+
+/** A code span fenced with one more backtick than the longest run inside it. */
+function codeSpan(s: string): string {
+  const fence = '`'.repeat(longestTicks(s) + 1)
+  return s.includes('`') ? `${fence} ${s} ${fence}` : `${fence}${s}${fence}`
+}
+
+/** One text node with its marks. Marks Markdown has no syntax for (underline, colour, highlight, …) leave the text bare. */
 function markText(node: PMJSON): string {
-  let text = clean(node.text ?? '')
+  const raw = clean(node.text ?? '')
   const marks = node.marks ?? []
   const has = (type: string) => marks.some((m) => m.type === type)
-  if (has('code')) text = `\`${text}\``
+  // `** a**` is not bold in Markdown, so edge spaces go outside the delimiters (code keeps them: they are code).
+  // Lengths of trimStart/trimEnd, not a regex: a lazy middle group backtracks quadratically on a long space run.
+  const leadEnd = has('code') ? 0 : raw.length - raw.trimStart().length
+  const coreEnd = has('code') ? raw.length : raw.trimEnd().length
+  if (coreEnd <= leadEnd) return raw
+  const lead = raw.slice(0, leadEnd)
+  const core = raw.slice(leadEnd, coreEnd)
+  const trail = raw.slice(coreEnd)
+  let text = has('code') ? codeSpan(core) : core
   if (has('bold')) text = `**${text}**`
   if (has('italic')) text = `_${text}_`
   if (has('strike')) text = `~~${text}~~`
   const link = marks.find((m) => m.type === 'link')
   if (link && typeof link.attrs?.href === 'string') text = `[${text}](${link.attrs.href})`
-  return text
+  return lead + text + trail
 }
 
 function inline(nodes: PMJSON[] = []): string {
   return nodes.map((n) => (n.type === 'text' ? markText(n) : n.type === 'hardBreak' ? '  \n' : inline(n.content))).join('')
 }
 
-function listLines(list: PMJSON, indent: string, marker: (i: number) => string): string[] {
+/** Line breaks and the spaces around them become one space, by splitting: a regex over the spaces is quadratic on a long run. */
+const oneLine = (s: string) => {
+  const lines = s.split('\n')
+  return lines.map((l, i) => (i > 0 ? l.trimStart() : l)).map((l, i) => (i < lines.length - 1 ? l.trimEnd() : l)).join(' ')
+}
+
+/** Alt text that cannot close the image or open a link of its own. */
+const altText = (s: string) => oneLine(s).replace(/[\\[\]]/g, (c) => `\\${c}`)
+/** Appends one at a time: `push(...lines)` passes every line as an argument and overflows the stack on a long block. */
+function append(out: string[], lines: string[]): void {
+  for (const line of lines) out.push(line)
+}
+
+const indented = (pad: string) => (line: string) => (line === '' ? '' : pad + line)
+
+/** An item's first paragraph goes on the marker's line; a later paragraph is set apart, a nested list is not. */
+function listLines(list: PMJSON, marker: (i: number, item: PMJSON) => string, padWidth?: number): string[] {
   const out: string[] = []
   ;(list.content ?? []).forEach((item, i) => {
-    const m = marker(i)
-    const pad = indent + ' '.repeat(m.length)
-    const [first, ...rest] = item.content ?? []
-    out.push(indent + m + (first && first.type !== 'bulletList' && first.type !== 'orderedList' ? inline(first.content) : ''))
-    for (const child of rest) out.push(...blockLines(child, pad))
+    const marker0 = marker(i, item)
+    const pad = indented(' '.repeat(padWidth ?? marker0.length))
+    // A to-do item is a list item whose `checked` is true or false (null: a plain item).
+    const checked = item.attrs?.checked
+    const m = typeof checked === 'boolean' && item.type === 'listItem' ? `${marker0}[${checked ? 'x' : ' '}] ` : marker0
+    const children = item.content ?? []
+    const first = children[0]
+    const leads = first !== undefined && (first.type === 'paragraph' || first.type === 'heading')
+    const head = leads ? blockLines(first) : ['']
+    out.push(leads ? m + (head[0] ?? '') : m.trimEnd())
+    append(out, head.slice(1).map(pad))
+    let started = leads
+    for (const child of leads ? children.slice(1) : children) {
+      const lines = blockLines(child)
+      if (lines.length === 0) continue
+      if (started && !isList(child)) out.push('')
+      append(out, lines.map(pad))
+      started = true
+    }
   })
   return out
 }
 
-function blockLines(node: PMJSON, indent: string): string[] {
+/** A node as unindented lines; the caller indents them under a list item or quote. */
+function blockLines(node: PMJSON): string[] {
   switch (node.type) {
     case 'paragraph':
-      return inline(node.content).split('\n').map((l) => indent + l)
+      return inline(node.content).split('\n')
     case 'heading':
-      return [indent + '#'.repeat(Number(node.attrs?.level ?? 1)) + ' ' + inline(node.content)]
+      return ['#'.repeat(Number(node.attrs?.level ?? 1)) + ' ' + oneLine(inline(node.content))]
     case 'bulletList':
-      return listLines(node, indent, () => '- ')
+      return listLines(node, () => '- ')
+    case 'taskList':
+      return listLines(node, (_i, item) => (item.attrs?.checked === true ? '- [x] ' : '- [ ] '), 2)
     case 'orderedList': {
       const start = typeof node.attrs?.start === 'number' ? node.attrs.start : 1
-      return listLines(node, indent, (i) => `${start + i}. `)
+      return listLines(node, (i) => `${start + i}. `)
     }
     case 'codeBlock': {
       const lang = typeof node.attrs?.language === 'string' && node.attrs.language !== 'plaintext' ? node.attrs.language : ''
       const code = (node.content ?? []).map((n) => (n.text ?? '').replace(/\r\n?/g, '\n')).join('')
-      return [indent + '```' + lang, ...code.split('\n').map((l) => indent + l), indent + '```']
+      // Longer than any run anywhere, not just at a line start: CommonMark closes on an indented fence too.
+      const fence = '`'.repeat(Math.max(2, longestTicks(code)) + 1)
+      return [fence + lang, ...code.split('\n'), fence]
     }
     case 'blockquote':
-      return (node.content ?? []).flatMap((c) => blockLines(c, '')).map((l) => `${indent}> ${l}`)
+      return blocks(node.content ?? []).map((l) => (l === '' ? '>' : `> ${l}`))
     case 'horizontalRule':
-      return [indent + '---']
+      return ['---']
     case 'image':
-      return [`${indent}![](${String(node.attrs?.src ?? '')})`]
+      return [`![${altText(String(node.attrs?.alt ?? ''))}](${String(node.attrs?.src ?? '')})`]
     case 'table': {
-      const rows = (node.content ?? []).map((row) => (row.content ?? []).map((cell) => (cell.content ?? []).map((c) => inline(c.content)).join(' ').replace(/\|/g, '\\|')))
+      const cellText = (cell: PMJSON) => oneLine((cell.content ?? []).map((c) => inline(c.content)).join(' ')).trim().replace(/\|/g, '\\|')
+      const rows = (node.content ?? []).map((row) => (row.content ?? []).map(cellText))
       if (rows.length === 0) return []
-      const line = (cells: string[]) => `${indent}| ${cells.join(' | ')} |`
+      const line = (cells: string[]) => `| ${cells.join(' | ')} |`
       return [line(rows[0]!), line(rows[0]!.map(() => '---')), ...rows.slice(1).map(line)]
     }
     default:
-      return (node.content ?? []).flatMap((c) => blockLines(c, indent))
+      // A node this serializer does not know (one a newer Slate added) keeps its text.
+      return blocks(node.content ?? [])
   }
 }
 
-/** Markdown for agents: GFM-flavoured, blocks separated by a blank line, real list numbers. */
+/** Blocks separated by a blank line; inline nodes outside a paragraph count as one. */
+function blocks(nodes: PMJSON[]): string[] {
+  const groups: PMJSON[] = []
+  let loose: PMJSON[] | null = null
+  for (const n of nodes) {
+    if (!isInline(n)) {
+      groups.push(n)
+      loose = null
+    } else if (loose) loose.push(n)
+    else groups.push({ type: 'paragraph', content: (loose = [n]) })
+  }
+  const out: string[] = []
+  for (const g of groups) {
+    const lines = blockLines(g)
+    if (lines.every((l) => l.trim() === '')) continue
+    if (out.length > 0) out.push('')
+    append(out, lines)
+  }
+  return out
+}
+
+/** Markdown (GFM) for agents and Copy as Markdown: blocks separated by a blank line, real list numbers. */
 export function toMarkdown(nodes: PMJSON[]): string {
-  const blocks = nodes.flatMap((n) => (n.type === 'doc' ? n.content ?? [] : [n]))
-  return blocks.map((b) => blockLines(b, '').join('\n')).filter((b) => b !== '').join('\n\n')
+  return blocks(nodes.flatMap((n) => (n.type === 'doc' ? n.content ?? [] : [n]))).join('\n')
 }
 
 const text = (s: string): PMJSON[] => (s === '' ? [] : [{ type: 'text', text: s }])

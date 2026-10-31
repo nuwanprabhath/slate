@@ -21,23 +21,35 @@ function inlineText(nodes: PMJSON[] = []): string {
     .join('')
 }
 
+/** Adds `lines` to `out` one by one: `out.push(...lines)` passes each line as an argument and overflows the stack on a huge block. */
+function append(out: string[], lines: readonly string[]): void {
+  for (const line of lines) out.push(line)
+}
+
 function prefixLines(text: string, indent: string): string[] {
   return text.split('\n').map((line) => indent + line)
 }
 
-function listLines(list: PMJSON, indent: string, marker: (i: number) => string): string[] {
+/** A to-do item's box after its list marker; a plain item has no `checked` attribute. */
+function todoBox(item: PMJSON): string {
+  const checked = item.attrs?.checked
+  return checked === true ? '[x] ' : checked === false ? '[ ] ' : ''
+}
+
+function listLines(list: PMJSON, indent: string, listMarker: (i: number) => string): string[] {
   const out: string[] = []
   ;(list.content ?? []).forEach((item, i) => {
+    const marker = (n: number) => listMarker(n) + todoBox(item)
     const children = item.content ?? []
     const [first, ...rest] = children
     if (first && (first.type === 'paragraph' || first.type === 'heading')) {
       const [line0, ...more] = inlineText(first.content).split('\n')
       out.push(indent + marker(i) + line0)
       for (const line of more) out.push(indent + INDENT + line)
-      out.push(...blocksToLines(rest, indent + INDENT))
+      append(out, blocksToLines(rest, indent + INDENT))
     } else {
       out.push(indent + marker(i).trimEnd())
-      out.push(...blocksToLines(children, indent + INDENT))
+      append(out, blocksToLines(children, indent + INDENT))
     }
   })
   return out
@@ -79,11 +91,17 @@ function listLabel(style: string): (n: number) => string {
   }
 }
 
+/** A paragraph's or heading's indent level (WP-C2), as list nesting's two spaces per level. */
+function blockIndent(node: PMJSON): string {
+  const level = node.attrs?.indent
+  return typeof level === 'number' && level > 0 ? INDENT.repeat(Math.min(level, 8)) : ''
+}
+
 function blockLines(node: PMJSON, indent: string): string[] {
   switch (node.type) {
     case 'paragraph':
     case 'heading':
-      return prefixLines(inlineText(node.content), indent)
+      return prefixLines(inlineText(node.content), indent + blockIndent(node))
     case 'codeBlock':
       return prefixLines((node.content ?? []).map((n) => (n.text ?? '').replace(/\r\n?/g, '\n')).join(''), indent)
     case 'bulletList':
@@ -112,14 +130,14 @@ function blocksToLines(nodes: PMJSON[], indent: string): string[] {
   const out: string[] = []
   let inline: PMJSON[] = []
   const flush = () => {
-    if (inline.length > 0) out.push(...prefixLines(inlineText(inline), indent))
+    if (inline.length > 0) append(out, prefixLines(inlineText(inline), indent))
     inline = []
   }
   for (const n of nodes) {
     if (n.type === 'text' || n.type === 'hardBreak') inline.push(n)
     else {
       flush()
-      out.push(...blockLines(n, indent))
+      append(out, blockLines(n, indent))
     }
   }
   flush()

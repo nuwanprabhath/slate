@@ -2,11 +2,14 @@ import { realpathSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, isAbsolute } from 'node:path'
 import { canonicalRecoveryText } from './recovery'
 
-/** The real path of `path`, resolving symlinks in whatever part of it exists. */
+/**
+ * The real path of `path`, resolving symlinks in whatever part of it exists. `.native` also gives the
+ * case the disk stores, so on a case-insensitive disk `…/SLATE` is the data folder `…/Slate`.
+ */
 function real(path: string): string {
   const abs = resolve(path)
   try {
-    return realpathSync(abs)
+    return realpathSync.native(abs)
   } catch {
     const parent = dirname(abs)
     return parent === abs ? abs : join(real(parent), basename(abs))
@@ -18,9 +21,14 @@ function inside(child: string, parent: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
+/** Whether `path`, symlinks resolved, lies in Slate's data folder (a sync clone there would commit it). */
+export function insideDataDir(path: string, dataDir: string): boolean {
+  return inside(real(path), real(dataDir))
+}
+
 /** §7.1 step 5: a recovery key saved next to the notes it unlocks protects nothing. Null when fine. */
 export function refuseRecoveryPath(path: string, dataDir: string): string | null {
-  if (inside(real(path), real(dataDir))) return 'Save your recovery key outside Slate’s data folder, for example on a USB stick, or print it.'
+  if (insideDataDir(path, dataDir)) return 'Save your recovery key outside Slate’s data folder, for example on a USB stick, or print it.'
   return null
 }
 

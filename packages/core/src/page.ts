@@ -1,5 +1,7 @@
 import { LoroDoc, LoroMap, type ContainerID } from 'loro-crdt'
+import { contentToJSON, writeContent } from './content'
 import { newId } from './ids'
+import type { PMJSON } from './plaintext'
 
 export interface BoxState {
   id: string
@@ -13,6 +15,17 @@ export interface BoxState {
   height?: number
   /** Loro container that loro-prosemirror binds this box's editor to. */
   contentId: ContainerID
+}
+
+/** A box as data, without its id: what a box cut, copy or duplicate carries. */
+export interface BoxCopy {
+  x: number
+  y: number
+  width: number
+  height?: number
+  private: boolean
+  /** The box's top-level blocks (images keep their `slate-blob:` addresses). */
+  content: PMJSON[]
 }
 
 /** `height: null` clears the min height. */
@@ -66,6 +79,40 @@ export class PageDoc {
     box.setContainer('content', new LoroMap())
     this.doc.commit()
     return id
+  }
+
+  copyBox(id: string): BoxCopy | undefined {
+    const box = this.getBox(id)
+    const content = this.contentMap(id)
+    if (!box || !content) return undefined
+    return {
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      ...(box.height !== undefined ? { height: box.height } : {}),
+      private: box.private,
+      content: contentToJSON(content)?.content ?? [],
+    }
+  }
+
+  /** Adds boxes from copies in one commit (one undo step), in front of every box, in the given order. Fresh ids unless `ids` names them. */
+  addBoxCopies(copies: BoxCopy[], ids?: string[], origin?: string): string[] {
+    let z = this.maxZ()
+    const added = copies.map((copy, i) => {
+      const id = ids?.[i] ?? newId()
+      const box = this.boxes.setContainer(id, new LoroMap())
+      box.set('x', copy.x)
+      box.set('y', copy.y)
+      box.set('width', copy.width)
+      if (copy.height !== undefined) box.set('height', copy.height)
+      box.set('private', copy.private)
+      box.set('z', ++z)
+      const content = box.setContainer('content', new LoroMap())
+      if (copy.content.length > 0) writeContent(content, copy.content, this.doc)
+      return id
+    })
+    this.doc.commit(origin === undefined ? undefined : { origin })
+    return added
   }
 
   getBox(id: string): BoxState | undefined {
