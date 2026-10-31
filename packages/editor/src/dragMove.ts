@@ -1,10 +1,11 @@
 import { Extension } from '@tiptap/core'
-import { Slice } from '@tiptap/pm/model'
+import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model'
 import { NodeSelection, Plugin, TextSelection, type Transaction } from '@tiptap/pm/state'
 import { dropPoint } from '@tiptap/pm/transform'
 import type { EditorView } from '@tiptap/pm/view'
 import type { PMJSON } from '@slate/core'
 import { posFromEmptySpace } from './emptySpace'
+import { floatPosition } from './floatImages'
 import type { PageSession } from './PageSession'
 
 type UndoSteps = Pick<PageSession, 'oneUndoStep' | 'deleteIfEmptied'>
@@ -14,7 +15,7 @@ type UndoSteps = Pick<PageSession, 'oneUndoStep' | 'deleteIfEmptied'>
  * ProseMirror moves a drop within one editor; dropped in another box or on the canvas it would only
  * copy, or do nothing, where OneNote moves.
  */
-let source: { view: EditorView; boxId: string | null } | null = null
+let source: { view: EditorView; boxId: string | null; grab: { x: number; y: number } | null } | null = null
 
 /** Alt (Option) on macOS, Ctrl elsewhere, held at the drop copies instead, as ProseMirror does within one box. */
 const copies = (e: DragEvent) => (navigator.platform.startsWith('Mac') ? e.altKey : e.ctrlKey)
@@ -34,6 +35,24 @@ function cutDragged(view: EditorView, tr: Transaction): void {
   else tr.deleteSelection()
 }
 
+/** The one picture `view` drags, if that is what it drags. */
+function draggedPicture(view: EditorView): { pos: number; node: PMNode; dom: HTMLElement } | null {
+  const dragging: object | null = view.dragging
+  const sel = dragging && 'node' in dragging && dragging.node instanceof NodeSelection ? dragging.node : view.state.selection
+  if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'image') return null
+  const dom = view.nodeDOM(sel.from)
+  return dom instanceof HTMLElement ? { pos: sel.from, node: sel.node, dom } : null
+}
+
+/** Where a dragged picture lands in `view`'s box: the spot it was let go at, held where it was grabbed. */
+function placeIn(view: EditorView, from: NonNullable<typeof source>, event: DragEvent): { x: number; y: number } | null {
+  const picture = from.grab ? draggedPicture(from.view) : null
+  if (!picture || !from.grab) return null
+  const rect = view.dom.getBoundingClientRect()
+  const area = { left: rect.left + view.dom.clientLeft, top: rect.top + view.dom.clientTop, width: view.dom.clientWidth }
+  return floatPosition({ x: event.clientX, y: event.clientY }, from.grab, area, picture.dom.offsetWidth)
+}
+
 function removeDragged({ view, boxId }: NonNullable<typeof source>, undo: UndoSteps | null): void {
   const tr = view.state.tr
   cutDragged(view, tr)
@@ -45,7 +64,8 @@ function removeDragged({ view, boxId }: NonNullable<typeof source>, undo: UndoSt
 export function dropInNewBox(session: PageSession, event: DragEvent, at: { x: number; y: number }): boolean {
   const from = source
   if (!from?.view.dragging || from.view.isDestroyed) return false
-  const blocks = from.view.dragging.slice.content.toJSON() as PMJSON[]
+  // A floating picture starts the new box in its text: its place belonged to the old box.
+  const blocks = (from.view.dragging.slice.content.toJSON() as PMJSON[]).map((b) => (b.type === 'image' ? { ...b, attrs: { ...b.attrs, x: null, y: null } } : b))
   session.oneUndoStep(() => {
     session.createBoxWithContent(at.x, at.y, blocks)
     if (!copies(event)) removeDragged(from, session)
@@ -55,15 +75,28 @@ export function dropInNewBox(session: PageSession, event: DragEvent, at: { x: nu
 
 /**
  * Puts what `from` drags at `at` in `view` (moved unless the copy modifier is held): one undo step.
- * Within one box it is the same move ProseMirror makes, for drops it does not see (the box's empty space).
+ * Text goes into the text, as ProseMirror's own drop puts it. A picture floats where it was let go
+ * (floatImages.ts), as in OneNote; moved within its own box, only its place changes.
  */
 function dropAt(view: EditorView, at: number, from: NonNullable<typeof source>, event: DragEvent, undo: UndoSteps | null): boolean {
   if (!from.view.dragging) return false
   const same = from.view === view
   const move = !copies(event)
   // Each box editor has its own schema: a node from another box fits nowhere until it is remade in this one.
-  const slice = same ? from.view.dragging.slice : Slice.fromJSON(view.state.schema, from.view.dragging.slice.toJSON())
+  let slice = same ? from.view.dragging.slice : Slice.fromJSON(view.state.schema, from.view.dragging.slice.toJSON())
+  const place = placeIn(view, from, event)
+  const picture = place ? draggedPicture(from.view) : null
   const tr = view.state.tr
+  if (same && move && picture && place) {
+    tr.setNodeMarkup(picture.pos, undefined, { ...picture.node.attrs, ...place }).setSelection(NodeSelection.create(tr.doc, picture.pos))
+    const change = () => view.dispatch(tr.setMeta('uiEvent', 'drop'))
+    if (undo) undo.oneUndoStep(change)
+    else change()
+    view.focus()
+    return true
+  }
+  const first = slice.content.firstChild
+  if (place && first) slice = new Slice(Fragment.from(first.type.create({ ...first.attrs, ...place }, first.content, first.marks)), 0, 0)
   if (same && move) cutDragged(view, tr)
   const mapped = tr.mapping.map(at)
   const pos = dropPoint(tr.doc, mapped, slice) ?? mapped
@@ -102,8 +135,9 @@ export const DragMove = Extension.create<{ session: UndoSteps | null; boxId: str
       new Plugin({
         props: {
           handleDOMEvents: {
-            dragstart: (view) => {
-              source = { view, boxId }
+            dragstart: (view, event) => {
+              const rect = event.target instanceof HTMLImageElement ? event.target.getBoundingClientRect() : null
+              source = { view, boxId, grab: rect ? { x: event.clientX - rect.left, y: event.clientY - rect.top } : null }
               return false
             },
             dragend: (view) => {
@@ -113,7 +147,9 @@ export const DragMove = Extension.create<{ session: UndoSteps | null; boxId: str
           },
           handleDrop: (view, event) => {
             const from = source
-            if (!from || from.view === view || !boxContentDragged()) return false
+            if (!from || !boxContentDragged()) return false
+            // Text dragged within its box is ProseMirror's own move.
+            if (from.view === view && !placeIn(view, from, event)) return false
             const at = view.posAtCoords({ left: event.clientX, top: event.clientY })
             return at ? dropAt(view, at.pos, from, event, session) : false
           },

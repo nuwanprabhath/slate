@@ -9,6 +9,7 @@ import { currentTheme, onThemeChange } from './colorContrast'
 import { cleanPastedHtml, makeClipboardSerializer, mayHoldImages, serializeSliceAsText } from './clipboard'
 import { DragMove } from './dragMove'
 import { buildExtensions, schema } from './extensions'
+import { FloatFit } from './floatImages'
 import { findHighlightPlugin } from './find'
 import { foldPlugin } from './fold'
 import { FormatPainter } from './formatPainter'
@@ -61,6 +62,7 @@ export function BoxEditor({ box, session, autoFocus, onFocus }: Props) {
         ImageSelection,
         ImageResize.configure({ session }),
         DragMove.configure({ session, boxId: box.id }),
+        FloatFit,
         PastedLinks.configure({ enabled: services.linkPastedUrls }),
         Extension.create({ name: 'slateFind', addProseMirrorPlugins: () => [findHighlightPlugin(box.id)] }),
         FormatPainter,

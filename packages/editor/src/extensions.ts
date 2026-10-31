@@ -526,6 +526,11 @@ export const FormatPaste = Extension.create({
  * natural size, capped by the box. Tiptap's own attribute would keep "50%" or "auto" as text.
  * 0.4.3 has the same attribute name, so it keeps and draws the width (test/olderVersions.test.ts).
  */
+const floatAttr = (el: HTMLElement, name: string): number | null => {
+  const value = el.getAttribute(name) ?? ''
+  return /^\d+$/.test(value) ? Number(value) : null
+}
+
 const SizedImage = Image.extend({
   addAttributes() {
     return {
@@ -537,6 +542,22 @@ const SizedImage = Image.extend({
           return /^\d+$/.test(width) && Number(width) > 0 ? Number(width) : null
         },
         renderHTML: (attrs) => (typeof attrs.width === 'number' ? { width: String(attrs.width) } : {}),
+      },
+      // Where the picture was dragged to in its box (dragMove.ts), in pixels from the content's
+      // top-left; null is in the text. Read back only from Slate's own data-x/data-y: a paste never
+      // places a picture, and a copy (stripCopiedStyles) carries it as a picture in the text.
+      x: {
+        default: null,
+        parseHTML: (el) => floatAttr(el, 'data-x'),
+        renderHTML: (attrs) =>
+          typeof attrs.x === 'number' && typeof attrs.y === 'number'
+            ? { 'data-x': String(attrs.x), style: `position: absolute; left: ${attrs.x}px; top: ${attrs.y}px` }
+            : {},
+      },
+      y: {
+        default: null,
+        parseHTML: (el) => floatAttr(el, 'data-y'),
+        renderHTML: (attrs) => (typeof attrs.x === 'number' && typeof attrs.y === 'number' ? { 'data-y': String(attrs.y) } : {}),
       },
     }
   },

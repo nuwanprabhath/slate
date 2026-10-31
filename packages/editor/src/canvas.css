@@ -29,7 +29,7 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-box-resize-se { right: -6px; cursor: nwse-resize; }
 .slate-box-resize-sw { left: -6px; cursor: nesw-resize; }
 .context-menu button[role='menuitem']:disabled { color: var(--muted); cursor: default; background: none; }
-.slate-box-content { padding: 6px 8px; outline: none; min-height: 1.6em; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.slate-box-content { position: relative; padding: 6px 8px; outline: none; min-height: 1.6em; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .slate-box-content p { margin: 0; }
 .slate-link-popover { position: fixed; z-index: 1000; display: flex; flex-direction: column; gap: 6px; width: 280px; padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); }
 .slate-link-popover input { padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; color: inherit; font: inherit; }
@@ -50,6 +50,8 @@ html[data-motion='reduced'] .slate-pending-caret { animation: none; }
 .slate-box-content td, .slate-box-content th { border: 1px solid var(--border); padding: 4px 6px; min-width: 60px; vertical-align: top; }
 .slate-box-content th { background: var(--panel); text-align: left; }
 .slate-box-content img { max-width: 100%; display: block; }
+/* A picture dragged to a spot in its box (floatImages.ts) sits over the text there, as in OneNote. */
+.slate-box-content img[data-x] { z-index: 1; }
 /* A clicked image, or one inside a selected range (imageSelection.ts): a ring that reads at a glance, drawn just inside the image so it never covers the lines around it. */
 .slate-box-content img.ProseMirror-selectednode, .slate-box-content img.slate-image-selected { outline: 3px solid var(--accent); outline-offset: -3px; }
 /*

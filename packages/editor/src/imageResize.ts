@@ -46,9 +46,12 @@ export function setImageWidth(view: EditorView, pos: number, width: number | nul
   else change()
 }
 
-function contentWidth(view: EditorView): number {
+/** The widest the picture at `pos` may be: the box's content width, less how far right it was dragged if it floats. */
+function contentWidth(view: EditorView, pos: number): number {
   const style = getComputedStyle(view.dom)
-  return view.dom.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0)
+  const x = view.state.doc.nodeAt(pos)?.attrs.x
+  const left = typeof x === 'number' ? x : parseFloat(style.paddingLeft) || 0
+  return view.dom.clientWidth - left - (parseFloat(style.paddingRight) || 0)
 }
 
 /**
@@ -143,7 +146,7 @@ class ResizeHandles {
       handle.setPointerCapture(e.pointerId)
       const startWidth = img.offsetWidth
       const start = { corner, startWidth, aspect: startWidth / Math.max(1, img.offsetHeight), dx: 0, dy: 0 }
-      drag = { start, x: e.clientX, y: e.clientY, max: contentWidth(this.view), width: startWidth }
+      drag = { start, x: e.clientX, y: e.clientY, max: contentWidth(this.view, this.pos), width: startWidth }
     })
     handle.addEventListener('pointermove', (e) => {
       if (!drag || !this.img) return

@@ -118,4 +118,13 @@ describe('0.4.3 opening content added in phase 15', async () => {
     expect(json(same.after)).toContain('indented!')
     expect(json(same.after)).not.toContain('indent"')
   })
+
+  it("a floating picture's x and y (dragged to a spot in its box): 0.4.3 shows the picture on its own line and keeps both", async () => {
+    const image: PMJSON = { type: 'image', attrs: { src: 'slate-blob://blob/a.png', x: 120, y: 40 } }
+    const { after, errors } = await editOn043([p('before'), image, p('after')])
+    expect(errors).toBe(0)
+    expect(json(after)).toContain('"x":120')
+    expect(json(after)).toContain('"y":40')
+    expect(json(after)).toContain('after!')
+  })
 })

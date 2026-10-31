@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { LoroMap, type ContainerID, type LoroDoc } from 'loro-crdt'
 import { onThemeChange } from './colorContrast'
 import { schema } from './extensions'
+import { fitFloats } from './floatImages'
 import { renderStaticHtml } from './staticRender'
 
 interface Props {
@@ -18,12 +19,16 @@ export function StaticBox({ doc, contentId, onActivate }: Props) {
     const render = () => {
       const fragment = renderStaticHtml(schema, doc, contentId, document)
       el.replaceChildren(...(fragment ? [fragment] : []))
+      fitFloats(el)
     }
+    const fit = () => fitFloats(el)
+    el.addEventListener('load', fit, true)
     render()
     const offTheme = onThemeChange(render)
     const container = doc.getContainerById(contentId)
     const offDoc = container instanceof LoroMap ? container.subscribe(render) : undefined
     return () => {
+      el.removeEventListener('load', fit, true)
       offTheme()
       offDoc?.()
     }
