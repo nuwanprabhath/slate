@@ -4,7 +4,7 @@
    separator to the left so that space falls in the toolbar's padding. */
 .toolbar-flow { flex: 1; min-width: 0; }
 .toolbar-groups { display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; margin-left: -9px; }
-.toolbar .tb-group { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 2px; }
+.toolbar .tb-group { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 1px; }
 .toolbar .tb-group::before { content: ''; flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
 .toolbar .tb-group.tb-status { margin-left: auto; }
 .toolbar .tb-group.tb-status::before, .toolbar .tb-group.row-start::before { background: none; }

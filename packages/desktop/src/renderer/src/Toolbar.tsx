@@ -3,7 +3,7 @@ import type { ChainedCommands, Editor } from '@tiptap/core'
 import { activeEditor, formatPainter, inTodoItem, type TextAlign } from '@slate/editor'
 import { SyncStatus } from './sync/SyncStatus'
 import { ColorPalette } from './ColorPalette'
-import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, FormatPainterIcon, HighlightIcon, InlineCodeIcon, LockIcon, NumberedListIcon, ScriptIcon, StrikeIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
+import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, CodeBlockIcon, FormatPainterIcon, HighlightIcon, InlineCodeIcon, LockIcon, NumberedListIcon, ScriptIcon, StrikeIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
 
 const FONTS = [
   { label: 'Font', value: '' },
@@ -360,7 +360,7 @@ export function Toolbar() {
               <StyleMenu id="ordered" label="Numbered list" styles={NUMBER_STYLES} disabled={!editor} onPick={(s) => setListStyle('orderedList', s)} />
             </span>
             {button('todo', <TodoListIcon />, 'To-do list (Mod+Shift+9)', todo, run((c) => c.toggleTodoList()))}
-            {button('codeblock', '{ }', 'Code block (Mod+Alt+C)', is('codeBlock'), run((c) => c.toggleCodeBlock()))}
+            {button('codeblock', <CodeBlockIcon />, 'Code block (Mod+Alt+C)', is('codeBlock'), run((c) => c.toggleCodeBlock()))}
             {button('table', <TableIcon />, 'Insert table', false, run((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: false })))}
             <AlignMenu current={align} disabled={!editor} onPick={(a) => run((c) => c.setTextAlign(a))()} />
           </span>

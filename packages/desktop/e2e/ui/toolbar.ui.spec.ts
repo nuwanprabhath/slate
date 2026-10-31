@@ -63,8 +63,15 @@ test('UI: toolbar with the table tools', async ({ app, page }) => {
 })
 
 test('UI: toolbar rows hold with a wide system font, as on Linux', async ({ app, page }) => {
-  // Linux's system-ui is wider than macOS's: two rows at 800 px there broke on a 9 px margin.
-  await page.addStyleTag({ content: '.toolbar, .toolbar button, .toolbar select { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' })
+  // Linux's system-ui is wider than macOS's, in the toolbar and in the library columns beside it,
+  // which size to their names: two rows at 800 px broke there by 3 px. The whole window is drawn in
+  // a font as wide (Verdana; DejaVu Sans, Linux's own, where it is missing) from its first frame.
+  await page.addInitScript(() => {
+    const css = '*, button, select, input { font-family: Verdana, "DejaVu Sans", sans-serif !important; }'
+    document.addEventListener('DOMContentLoaded', () => document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css })))
+  })
+  await page.reload()
+  await expect(page.getByTestId('canvas')).toBeVisible()
   await createBoxAt(page, 120, 120)
   await page.keyboard.type('Toolbar layout')
   await reviewUi(app, page, 'toolbar rows wide font', { open: (p) => expectRows(p, (w) => (w >= 1280 ? 1 : 2)) })
