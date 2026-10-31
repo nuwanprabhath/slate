@@ -28,6 +28,17 @@ async function tallBoxWithPicture(app: ElectronApplication, page: Page) {
   await page.locator('.slate-box').first().evaluate((el: HTMLElement) => {
     el.style.height = '520px'
   })
+  // The paste scrolls the caret into view once the picture has loaded: positions are read after that.
+  await expect(box.locator('img')).toHaveJSProperty('complete', true)
+  let last = -1
+  await expect
+    .poll(async () => {
+      const y = (await box.locator('img').boundingBox())!.y
+      const still = y === last
+      last = y
+      return still
+    })
+    .toBe(true)
   return box
 }
 
@@ -47,8 +58,8 @@ test('shift+click in the empty space below a box text selects through to the end
 
 test('a click in the empty space below a box text puts the caret at its end', async ({ app, page }) => {
   const box = await tallBoxWithPicture(app, page)
-  const img = (await box.locator('img').boundingBox())!
   await page.getByTestId('canvas').click({ position: { x: 900, y: 600 } })
+  const img = (await box.locator('img').boundingBox())!
   await page.mouse.click(img.x + 40, img.y + img.height + 150)
   await page.keyboard.type('Z')
   await expect(box.locator('p').last()).toHaveText('Z')
