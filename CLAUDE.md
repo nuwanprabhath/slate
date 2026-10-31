@@ -154,6 +154,12 @@ same way for that one branch's guard changes.
    against both versions, runs the tests, builds macOS arm64 and Linux x64 and publishes the
    GitHub release with `latest-mac.yml` and `latest-linux.yml`, which the in-app updater reads
    (`packages/desktop/src/main/update/`). Never tag or push yourself.
+3. Once the release workflow has published the release, clear what shipped:
+   `git worktree remove` each worktree whose branch is merged into main, `git worktree prune`
+   (after unlocking an entry whose folder is gone), and `git branch -d` the merged branches. The
+   tag keeps the released code. Keep a worktree that is in use (a running `npm run dev`, an agent),
+   has uncommitted or unmerged work, or that the maintainer asked to keep; `backup/*` branches are
+   the maintainer's to delete.
 
 ## Definition of done
 
