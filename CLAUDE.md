@@ -161,6 +161,26 @@ same way for that one branch's guard changes.
    has uncommitted or unmerged work, or that the maintainer asked to keep; `backup/*` branches are
    the maintainer's to delete.
 
+## Worktrees on macOS
+
+A fresh `npm ci` in a worktree costs about 0.9 GB (`node_modules` 620 MB, of which Electron is 260 MB),
+and `ui-review/` adds about 260 MB once UI scenarios have run. On APFS, clone instead of installing,
+from the main checkout, when the worktree's `package-lock.json` matches main's:
+
+```sh
+cd <worktree>
+for d in node_modules packages/*/node_modules packages/native/build packages/native/fips packages/native/prebuilds; do
+  [ -e "<main>/$d" ] && cp -Rc "<main>/$d" "$d"
+done
+```
+
+`cp -c` is a copy-on-write clone: it takes seconds and shares disk blocks with main until a file
+changes. Measured on 0.5.1: a working worktree for about 26 MB of real disk against about 690 MB, and
+typecheck, unit tests, the native tests and the Electron binary all ran in it. `du` still reports the
+full size, so judge the cost by `df`. `packages/native/{build,fips,prebuilds}` are untracked build
+output, so a new worktree lacks them unless cloned. Run `npm ci` instead when the lockfile differs
+from main's. Delete `ui-review/` when a branch is done; `npm run ui:review` rebuilds it.
+
 ## Definition of done
 
 Checked by `.claude/hooks/definition-of-done.mjs` (Stop hook) on the whole branch since
