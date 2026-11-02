@@ -7,8 +7,8 @@ import { zeroSecret } from '../../shared/secret'
 import type { ScopedLog } from '../log/logger'
 import { runFile, spawnProgram } from '../proc'
 import {
-  RELAUNCH_SCRIPT, SUDO_PROBE, SUDO_VALIDATE, bundleFromExecPath, debInstallCommand, isPasswordRefusal, macInstallScript,
-  relaunchArgs, relaunchCommand, sudoWithStdin, systemdUserService,
+  DEB_INSTALL_SCRIPT, RELAUNCH_SCRIPT, SUDO_PROBE, SUDO_VALIDATE, bundleFromExecPath, isPasswordRefusal, macInstallScript,
+  relaunchArgs, relaunchCommand, sha512Hex, sudoScript, systemdUserService,
 } from './installCommands'
 import type { PreviousInstall, UpdateBackend } from './updateService'
 
@@ -22,6 +22,8 @@ export interface PlatformInstallerOptions {
   /** `app.quit()`: the quit runs Slate's one orderly shutdown, so every handle closes first. */
   quit: () => void
   log: ScopedLog
+  /** Where installers are downloaded: the one place a macOS install result may name a file to offer again. */
+  downloadsDir: string
   /** The running binary; `process.execPath` unless a test places it elsewhere. */
   execPath?: string
   /** The running process's id and arguments, which the new instance copies; a test places them elsewhere. */
@@ -48,23 +50,32 @@ interface RunResult {
 }
 
 /**
- * What sudo reads: the secret and a newline, in a copy zeroed once the pipe has taken it. A plain
- * `Uint8Array`, not `SecretBytes`: a child's stdin is not one of the sinks `slate/secret-bytes-stay-bytes`
- * knows, and the copy is bytes that are zeroed, never text.
+ * What a child reads on stdin: the password and a newline (what `sudo -S` takes), then the script
+ * sudo's command reads, in a copy the writer zeroes once the pipe has taken it. Built in its own
+ * ArrayBuffer (`new Uint8Array(n)` would keep a short password on V8's heap, where the move to the
+ * pipe leaves an unwiped copy: T-ZERO-04, `moduleCopy`). A plain `Uint8Array`, not `SecretBytes`: a
+ * child's stdin is not one of the sinks `slate/secret-bytes-stay-bytes` knows, and these are bytes that
+ * are zeroed, never text. Null when there is nothing to send.
  */
-function withNewline(secret: SecretBytes): Uint8Array {
-  const line = new Uint8Array(secret.length + 1)
-  for (let i = 0; i < secret.length; i++) line[i] = secret[i] ?? 0
-  line[secret.length] = 0x0a
-  return line
+function stdinBytes(password: SecretBytes | null, script: string | null): Uint8Array | null {
+  const body = script === null ? new Uint8Array(0) : new TextEncoder().encode(script)
+  const head = password === null ? 0 : password.length + 1
+  if (head + body.length === 0) return null
+  const out = new Uint8Array(new ArrayBuffer(head + body.length))
+  if (password !== null) {
+    for (let i = 0; i < password.length; i++) out[i] = password[i] ?? 0
+    out[password.length] = 0x0a
+  }
+  out.set(body, head)
+  return out
 }
 
 /**
- * Runs `file` with `args` and writes `input` to its stdin, then closes it: how a password reaches sudo.
- * The copy it writes (the input plus a newline) is zeroed once the pipe has taken it; `input` itself
- * is its caller's to zero. Never a shell, never argv, never a log line.
+ * Runs `file` with `args` and writes `input` to its stdin, then closes it: how a password and the
+ * script reach `sudo -S`. `input` is zeroed once the pipe has taken it. Never a shell command string,
+ * never argv, never a log line.
  */
-export function runWithInput(file: string, args: readonly string[], opts: { input: SecretBytes | null; timeoutMs: number }): Promise<RunResult> {
+export function runWithInput(file: string, args: readonly string[], opts: { input: Uint8Array | null; timeoutMs: number }): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = spawnProgram(file, args, { stdio: ['pipe', 'ignore', 'pipe'] })
     let stderr = ''
@@ -90,25 +101,33 @@ export function runWithInput(file: string, args: readonly string[], opts: { inpu
     const stdin = child.stdin
     if (stdin === null) return
     stdin.on('error', () => { /* sudo exited before reading: its exit code says why */ })
-    if (opts.input === null) {
-      stdin.end()
-      return
-    }
-    const line = withNewline(opts.input)
-    stdin.end(line, () => zeroSecret(line))
+    const input = opts.input
+    if (input === null) stdin.end()
+    else stdin.end(input, () => input.fill(0))
   })
 }
 
-/** Starts `file` detached, so it outlives this process; with a password, sudo's stdin gets it and nothing else. */
-function launchDetached(file: string, args: readonly string[], input: SecretBytes | null): void {
-  const child = spawnProgram(file, args, { detached: true, stdio: [input === null ? 'ignore' : 'pipe', 'ignore', 'ignore'] })
-  child.on('error', () => { /* a helper that cannot start leaves Slate quitting with the old version in place */ })
-  if (input !== null && child.stdin !== null) {
-    child.stdin.on('error', () => { /* sudo exited first */ })
-    const line = withNewline(input)
-    child.stdin.end(line, () => zeroSecret(line))
-  }
-  child.unref()
+/**
+ * Starts `file` detached, so it outlives this process, and resolves once its stdin has taken `input`
+ * (zeroed after): Slate must not quit before the script is in the pipe.
+ */
+function launchDetached(file: string, args: readonly string[], input: Uint8Array | null): Promise<void> {
+  return new Promise((resolve) => {
+    const child = spawnProgram(file, args, { detached: true, stdio: [input === null ? 'ignore' : 'pipe', 'ignore', 'ignore'] })
+    // A helper that cannot start leaves Slate quitting with the old version in place.
+    child.on('error', () => resolve())
+    child.unref()
+    const stdin = child.stdin
+    if (input === null || stdin === null) {
+      resolve()
+      return
+    }
+    stdin.on('error', () => resolve())
+    stdin.end(input, () => {
+      input.fill(0)
+      resolve()
+    })
+  })
 }
 
 /** The last thing a failed command said, as one line for the banner. */
@@ -116,12 +135,22 @@ function lastLine(text: string): string {
   return text.split('\n').map((l) => l.trim()).filter((l) => l !== '').pop() ?? ''
 }
 
-function parsePrevious(text: string): (Omit<PreviousInstall, 'path'> & { path: unknown }) | null {
+const VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
+const MAX_MESSAGE = 300
+
+/**
+ * The helper's result file is plain JSON in userData, which another process of the account could have
+ * written: only a well-formed version and a short one-line message are taken, and a file to offer again
+ * only when it is a `.dmg` directly in the downloads folder.
+ */
+function parsePrevious(text: string, downloadsDir: string): PreviousInstall | null {
   const value = JSON.parse(text) as Record<string, unknown> | null
   if (typeof value !== 'object' || value === null) return null
   const { version, ok, message, path } = value
-  if (typeof version !== 'string' || typeof ok !== 'boolean' || typeof message !== 'string') return null
-  return { version, ok, message, path }
+  if (typeof version !== 'string' || !VERSION.test(version) || typeof ok !== 'boolean' || typeof message !== 'string') return null
+  const oneLine = message.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE)
+  const named = typeof path === 'string' && dirname(path) === downloadsDir && /\.dmg$/i.test(path) ? path : null
+  return { version, ok, message: oneLine, path: named }
 }
 
 const writable = (path: string): Promise<boolean> => access(path, constants.W_OK).then(() => true, () => false)
@@ -139,17 +168,18 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
 
   const sudoPassword = async (password: SecretBytes | null): Promise<InstallOutcome | null> => {
     if (password === null) return null
-    const result = await runWithInput(SUDO_VALIDATE.file, SUDO_VALIDATE.args, { input: password, timeoutMs: VALIDATE_TIMEOUT_MS })
+    const result = await runWithInput(SUDO_VALIDATE.file, SUDO_VALIDATE.args, { input: stdinBytes(password, null), timeoutMs: VALIDATE_TIMEOUT_MS })
     if (result.code === 0) return null
     return isPasswordRefusal(result.code, result.stderr)
       ? { ok: false, reason: 'password', message: PASSWORD_NOT_ACCEPTED }
       : { ok: false, reason: 'install', message: lastLine(result.stderr) || 'sudo could not be run.' }
   }
 
-  const installDeb = async (path: string, password: SecretBytes | null): Promise<InstallOutcome> => {
-    const cmd = debInstallCommand(path, password !== null)
+  const installDeb = async (path: string, sha512: string, password: SecretBytes | null): Promise<InstallOutcome> => {
+    // Root copies the download into a folder of its own and checks it before apt reads it (DEB_INSTALL_SCRIPT).
+    const cmd = sudoScript(password !== null, [path, sha512Hex(sha512)])
     log.info('installing .deb', { path, withPassword: password !== null })
-    const result = await runWithInput(cmd.file, cmd.args, { input: password, timeoutMs: INSTALL_TIMEOUT_MS })
+    const result = await runWithInput(cmd.file, cmd.args, { input: stdinBytes(password, DEB_INSTALL_SCRIPT), timeoutMs: INSTALL_TIMEOUT_MS })
     if (result.code === 0) {
       await rm(path, { force: true })
       log.info('installed .deb, deleted the download', { path })
@@ -168,18 +198,22 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
     return { ok: false, reason: 'install', message }
   }
 
-  const installDmg = async (path: string, password: SecretBytes | null, version: string): Promise<InstallOutcome> => {
+  const installDmg = async (path: string, sha512: string, password: SecretBytes | null, version: string): Promise<InstallOutcome> => {
     const bundle = bundleFromExecPath(execPath)
     if (bundle === null) return { ok: false, reason: 'install', message: 'Slate is not running from an app bundle.' }
     const refused = await sudoPassword(password)
     if (refused !== null) return refused
-    const dir = await mkdtemp(join(tmpdir(), 'slate-install-'))
-    const script = join(dir, 'install.sh')
-    await writeFile(script, macInstallScript({ pid, dmg: path, bundle, resultFile: opts.resultFile, version, uid: process.getuid?.() ?? 501 }), { mode: 0o700 })
-    if (password === null) launchDetached('/bin/sh', [script], null)
-    else {
-      const cmd = sudoWithStdin(['/bin/sh', script])
-      launchDetached(cmd.file, cmd.args, password)
+    const base = { pid, dmg: path, sha512Hex: sha512Hex(sha512), bundle, resultFile: opts.resultFile, version, uid: process.getuid?.() ?? 501 }
+    if (password === null) {
+      // Not root: a file the user can rewrite gives its writer nothing they did not have.
+      const dir = await mkdtemp(join(tmpdir(), 'slate-install-'))
+      const script = join(dir, 'install.sh')
+      await writeFile(script, macInstallScript({ ...base, helperDir: dir }), { mode: 0o700 })
+      await launchDetached('/bin/sh', [script], null)
+    } else {
+      // Root: the script arrives on sudo's stdin, after the password line, so there is no file to rewrite.
+      const cmd = sudoScript(true, [])
+      await launchDetached(cmd.file, cmd.args, stdinBytes(password, macInstallScript(base)))
     }
     log.info('install helper started; it installs once Slate has quit', { bundle, withPassword: password !== null })
     return { ok: true }
@@ -203,7 +237,7 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
     }
     const command = relaunchCommand({ ...input, unit: null })
     log.info('starting the new version once this one exits', { via: command.file })
-    launchDetached(command.file, command.args, null)
+    await launchDetached(command.file, command.args, null)
   }
 
   return {
@@ -218,10 +252,10 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
       return runFile(SUDO_PROBE.file, SUDO_PROBE.args, { timeout: PROBE_TIMEOUT_MS }).then(() => false, () => true)
     },
 
-    async installDownloaded(path, { password, version }) {
+    async installDownloaded(path, { password, version, sha512 }) {
       try {
-        if (opts.platform === 'linux') return await installDeb(path, password)
-        if (opts.platform === 'darwin') return await installDmg(path, password, version)
+        if (opts.platform === 'linux') return await installDeb(path, sha512, password)
+        if (opts.platform === 'darwin') return await installDmg(path, sha512, password, version)
         return { ok: false, reason: 'install', message: `Slate cannot install updates on ${opts.platform}.` }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
@@ -243,16 +277,16 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
       const text = await readFile(opts.resultFile, 'utf8').catch(() => undefined)
       if (text === undefined) return null
       await rm(opts.resultFile, { force: true })
-      let previous: ReturnType<typeof parsePrevious>
+      let previous: PreviousInstall | null
       try {
-        previous = parsePrevious(text)
+        previous = parsePrevious(text, opts.downloadsDir)
       } catch {
         return null
       }
       if (previous === null) return null
-      const kept = typeof previous.path === 'string' && await stat(previous.path).then((s) => s.isFile(), () => false)
+      const kept = previous.path !== null && await stat(previous.path).then((s) => s.isFile(), () => false)
       log.info('read the last install result', { ok: previous.ok, version: previous.version })
-      return { version: previous.version, ok: previous.ok, message: previous.message, path: kept && typeof previous.path === 'string' ? previous.path : null }
+      return { ...previous, path: kept ? previous.path : null }
     },
   }
 }

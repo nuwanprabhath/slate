@@ -2,6 +2,7 @@ import type { InstallKind, InstallOutcome, PrepareInstallResult, UpdateState } f
 import type { SecretBytes } from '../../shared/secret'
 import type { ScopedLog } from '../log/logger'
 import { capabilityReason } from './capability'
+import { CHANGED_SINCE_VERIFIED } from './installCommands'
 import { installCommand, pickInstaller, type UpdateFile } from './pickInstaller'
 import { UpdateSignatureError } from './signature'
 import type { UpdateVerifier, VerifiedRelease } from './verifier'
@@ -37,7 +38,7 @@ export interface UpdateBackend {
    * Installs the verified file (deb), or hands it to the helper that installs it once Slate has quit
    * (dmg). The password is sudo's, as bytes: it goes to sudo's stdin and nowhere else.
    */
-  installDownloaded(path: string, opts: { password: SecretBytes | null; version: string }): Promise<InstallOutcome>
+  installDownloaded(path: string, opts: { password: SecretBytes | null; version: string; sha512: string }): Promise<InstallOutcome>
   /** Quits (through the orderly shutdown); the installed version starts once this process has exited. */
   restart(): void
   /** What the macOS helper left from the last install, read once and deleted. */
@@ -89,7 +90,6 @@ const FIRST_CHECK_MS = 10_000
 const DEFAULT_SETTINGS: UpdateSettings = { automaticChecks: true, intervalHours: 6 }
 const MIN_INTERVAL_HOURS = 1
 const MAX_INTERVAL_HOURS = 24 * 7
-const CHANGED_SINCE_VERIFIED = 'The downloaded file changed since it was verified, so it was not installed.'
 const NOTHING_WAITING = 'There is no verified installer waiting to be installed.'
 
 /** Never throws and never opens a dialog: failures go to the log and to `lastError`. */
@@ -100,6 +100,8 @@ export class UpdateService {
   /** A manual check shows the update even when it was skipped or dismissed. */
   private forced = false
   /** The installer a verified download left on disk, and the sha512 the signed feed names for it. */
+  /** An Install and restart is already between its first click and its install or its password form. */
+  private preparing = false
   private downloaded: { path: string; sha512: string; version: string } | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private started = false
@@ -244,7 +246,17 @@ export class UpdateService {
    * state waits in `needs-password` for `installAndRestart`; if not, this installs and restarts at once.
    */
   async prepareInstall(): Promise<PrepareInstallResult> {
-    if (!this.installable()) return { needsPassword: false }
+    // A second click while the first still downloads or asks sudo would start a second install.
+    if (this.preparing || !this.installable()) return { needsPassword: false }
+    this.preparing = true
+    try {
+      return await this.prepare()
+    } finally {
+      this.preparing = false
+    }
+  }
+
+  private async prepare(): Promise<PrepareInstallResult> {
     if (this.s.phase === 'available') {
       await this.fetch({ forInstall: true })
     }
@@ -279,7 +291,7 @@ export class UpdateService {
     let outcome: InstallOutcome
     try {
       outcome = await backend.stillVerified(downloaded.path, downloaded.sha512)
-        ? await backend.installDownloaded(downloaded.path, { password, version: downloaded.version })
+        ? await backend.installDownloaded(downloaded.path, { password, version: downloaded.version, sha512: downloaded.sha512 })
         : { ok: false, reason: 'install', message: CHANGED_SINCE_VERIFIED }
     } catch (e) {
       outcome = { ok: false, reason: 'install', message: e instanceof Error ? e.message : String(e) }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UpdateState } from '../../shared/api'
 import { secretBytes } from '../../shared/secret'
 import { FAKE_HYBRID_KEY } from './fakeBackend'
+import { CHANGED_SINCE_VERIFIED } from './installCommands'
 import { artifactMessage, keyIdOf, manifestMessage, UpdateSignatureError, type Ed25519UpdateKey } from './signature'
 import { UpdateService, type FoundUpdate, type UpdateBackend, type UpdatePrefs } from './updateService'
 import { createUpdateVerifier, type UpdateVerifier, type VerifiedRelease } from './verifier'
@@ -447,7 +448,7 @@ describe('UpdateService: Install and restart', () => {
     // A hand-over would open the dmg a second install could start from.
     expect(backend.openPath).not.toHaveBeenCalled()
     expect(backend.stillVerified).toHaveBeenCalledWith('/dl/Slate-0.2.0-mac-arm64.dmg', 'd')
-    expect(backend.installDownloaded).toHaveBeenCalledWith('/dl/Slate-0.2.0-mac-arm64.dmg', { password: null, version: '0.2.0' })
+    expect(backend.installDownloaded).toHaveBeenCalledWith('/dl/Slate-0.2.0-mac-arm64.dmg', { password: null, version: '0.2.0', sha512: 'd' })
     expect(backend.restart).toHaveBeenCalledTimes(1)
     expect(service.state()).toMatchObject({ phase: 'restarting', visible: true })
     expect([...new Set(states.map((s) => s.phase))]).toEqual(['checking', 'available', 'downloading', 'downloaded', 'installing', 'restarting'])
@@ -462,7 +463,7 @@ describe('UpdateService: Install and restart', () => {
     expect(backend.installDownloaded).not.toHaveBeenCalled()
     const password = secretBytes('hunter2')
     expect(await service.installAndRestart(password)).toEqual({ ok: true })
-    expect(backend.installDownloaded).toHaveBeenCalledWith('/dl/Slate-0.2.0-linux-amd64.deb', { password, version: '0.2.0' })
+    expect(backend.installDownloaded).toHaveBeenCalledWith('/dl/Slate-0.2.0-linux-amd64.deb', { password, version: '0.2.0', sha512: 'b' })
     expect(service.state().phase).toBe('restarting')
     expect(backend.restart).toHaveBeenCalledTimes(1)
   })
@@ -522,6 +523,27 @@ describe('UpdateService: Install and restart', () => {
     expect(backend.downloadFile).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores a second click while the first is still downloading or asking sudo, so two installs never start', async () => {
+    const { service, backend } = await available('deb')
+    let release!: () => void
+    backend.downloadFile.mockImplementationOnce(() => new Promise<string>((resolve) => { release = () => resolve('/dl/Slate-0.2.0-linux-amd64.deb') }))
+    const first = service.prepareInstall()
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    release()
+    await first
+    expect(backend.downloadFile).toHaveBeenCalledTimes(1)
+    expect(backend.installDownloaded).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats the root-side re-check refusing the file the same way as the one in main: forgets the download and offers a fresh one', async () => {
+    const { service, backend } = await available('deb')
+    backend.installDownloaded.mockResolvedValueOnce({ ok: false, reason: 'install', message: CHANGED_SINCE_VERIFIED })
+    await service.prepareInstall()
+    expect(service.state()).toMatchObject({ phase: 'available', installError: CHANGED_SINCE_VERIFIED })
+    await service.prepareInstall()
+    expect(backend.downloadFile).toHaveBeenCalledTimes(2)
+  })
+
   it('refuses to install outside needs-password, and with nothing downloaded', async () => {
     const { service, backend } = await available('deb')
     expect(await service.installAndRestart(secretBytes('x'))).toMatchObject({ ok: false, reason: 'install' })
@@ -576,7 +598,7 @@ describe('UpdateService: Install and restart', () => {
     backend.check.mockResolvedValue(found('0.3.0'))
     await service.check({ manual: true })
     await service.prepareInstall()
-    expect(backend.installDownloaded).toHaveBeenLastCalledWith('/dl/Slate-0.3.0-linux-amd64.deb', { password: null, version: '0.3.0' })
+    expect(backend.installDownloaded).toHaveBeenLastCalledWith('/dl/Slate-0.3.0-linux-amd64.deb', { password: null, version: '0.3.0', sha512: 'b' })
     expect(backend.downloadFile).toHaveBeenCalledTimes(2)
   })
 
