@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScopedLog } from '../log/logger'
 import { secretBytes } from '../../shared/secret'
 import { sha512Hex } from './installCommands'
-import { NOT_HERS, PASSWORD_NOT_ACCEPTED, SCRIPT_NOT_ROOTS, createPlatformInstaller, nobodyButRootChanges, runWithInput, stdinBytes, type PathOps } from './platformInstaller'
+import { NOT_HERS, PASSWORD_NOT_ACCEPTED, SCRIPT_NOT_ROOTS, createPlatformInstaller, nobodyButRootChanges, onApplicationsVolume, runWithInput, stdinBytes, type PathOps } from './platformInstaller'
 
 const PASSWORD = 'correct horse battery staple 7!'
 /** What the signed feed names for the installers these tests write; only its hex reaches the script. */
@@ -149,6 +149,20 @@ describe('nobodyButRootChanges: what "out of this account\'s reach" has to mean 
 
   it('is false for anything it cannot look at', async () => {
     expect(await nobodyButRootChanges('/Applications/Gone.app', tree(apps))).toBe(false)
+  })
+})
+
+describe('onApplicationsVolume', () => {
+  const devs = (map: Record<string, number>) => (p: string) => (map[p] === undefined ? Promise.reject(new Error('ENOENT')) : Promise.resolve(map[p]))
+
+  it('is true for a folder on the volume /Applications is on, and false for a disk image\'s volume', async () => {
+    expect(await onApplicationsVolume('/Applications/Utilities', devs({ '/Applications': 16777234, '/Applications/Utilities': 16777234 }))).toBe(true)
+    expect(await onApplicationsVolume('/Volumes/Slate', devs({ '/Applications': 16777234, '/Volumes/Slate': 16777240 }))).toBe(false)
+  })
+
+  it('is false when either cannot be looked at', async () => {
+    expect(await onApplicationsVolume('/Applications/Slate.app', devs({ '/Applications': 1 }))).toBe(false)
+    expect(await onApplicationsVolume('/Applications/Slate.app', devs({ '/Applications/Slate.app': 1 }))).toBe(false)
   })
 })
 

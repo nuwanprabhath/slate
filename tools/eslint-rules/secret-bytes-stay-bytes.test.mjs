@@ -18,8 +18,8 @@ ruleTester({ typed: true }).run('slate/secret-bytes-stay-bytes (types)', /** @ty
     typed('interface SlateNative { argon2idAsync(p: Uint8Array): number }\ndeclare const native: SlateNative\nexport const f = (pw: SecretBytes) => native.argon2idAsync(new Uint8Array(pw))'),
     typed("declare const ipcRenderer: { invoke(channel: string, ...args: any[]): Promise<unknown> }\nexport const f = (pw: SecretBytes) => ipcRenderer.invoke('x', pw)"),
     // A child's stdin is a pipe to sudo: the writer zeroes the bytes it wrote.
-    typed('interface Writable { end(chunk: any, done?: () => void): void }\ndeclare const child: { stdin: Writable | null }\nexport const f = (pw: SecretBytes) => { const stdin = child.stdin\n  if (stdin !== null) stdin.end(pw, () => pw.fill(0)) }'),
-    typed('interface Writable { write(chunk: any): boolean }\ndeclare const child: { stdin: Writable }\nexport const f = (pw: SecretBytes) => child.stdin.write(pw)'),
+    typed('interface Writable { end(chunk: any, done?: () => void): void }\ninterface ChildProcess { stdin: Writable | null }\ndeclare const child: ChildProcess\nexport const f = (pw: SecretBytes) => { const stdin = child.stdin\n  if (stdin !== null) stdin.end(pw, () => pw.fill(0)) }'),
+    typed('interface Writable { write(chunk: any): boolean }\ninterface ChildProcess { stdin: Writable }\ndeclare const child: ChildProcess\nexport const f = (pw: SecretBytes) => child.stdin.write(pw)'),
     // The module gets the bytes, a copy of them, or their length; public bytes become text freely.
     typed('export const n = (pw: SecretBytes) => `${pw.length} bytes`'),
     typed("declare const salt: Uint8Array\nexport const s = new TextDecoder().decode(salt) + Buffer.from(salt).toString('hex')"),
@@ -54,6 +54,9 @@ ruleTester({ typed: true }).run('slate/secret-bytes-stay-bytes (types)', /** @ty
     // A stream named stdin that is not a child's: a file, a log, a socket.
     { ...typed('interface Writable { end(chunk: any): void }\ndeclare const stdin: Writable\nexport const f = (pw: SecretBytes) => stdin.end(pw)'), errors: text },
     { ...typed('interface Writable { end(chunk: any): void }\ndeclare function openLog(): Writable\nexport const f = (pw: SecretBytes) => { const stdin = openLog(); stdin.end(pw) }'), errors: text },
+    // A `let`, which could be pointed at a file later, and a `stdin` field of something that is not a child process.
+    { ...typed('interface Writable { end(chunk: any): void }\ninterface ChildProcess { stdin: Writable | null }\ndeclare const child: ChildProcess\nexport const f = (pw: SecretBytes) => { let stdin = child.stdin\n  stdin?.end(pw) }'), errors: text },
+    { ...typed('interface Writable { end(chunk: any): void }\ndeclare const logger: { stdin: Writable }\nexport const f = (pw: SecretBytes) => logger.stdin.end(pw)'), errors: text },
     // Only a Writable is a sink: any other object that happens to have an `end` is a helper that lost the brand.
     { ...typed('declare const sink: { end(chunk: any): void }\nexport const f = (pw: SecretBytes) => sink.end(pw)'), errors: text },
     // A passwordBytes result, under an innocent name.

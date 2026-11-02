@@ -55,7 +55,8 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 work=$(mktemp -d) || fail "Could not make a folder to check the disk image in."
-cp "$dmg" "$work/Slate.dmg" || fail "The disk image could not be read."
+# Capped: the download sits where the user can point it at anything (a link to /dev/zero would fill root's disk).
+head -c 1073741824 < "$dmg" > "$work/Slate.dmg" || fail "The disk image could not be read."
 if command -v sha512sum >/dev/null 2>&1; then sum=$(sha512sum "$work/Slate.dmg"); else sum=$(shasum -a 512 "$work/Slate.dmg"); fi
 [ "${sum%% *}" = "$expected" ] || fail "The downloaded file changed since it was verified, so it was not installed."
 

@@ -9,7 +9,8 @@ exec </dev/null
 if [ "$(id -u)" -eq 0 ]; then PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH; unset TMPDIR; fi
 work=$(mktemp -d) || exit 1
 trap 'rm -rf "$work"' EXIT
-cp "$1" "$work/slate.deb" || { echo "The downloaded file could not be read." >&2; exit 1; }
+# Capped: the download sits where the user can point it at anything (a link to /dev/zero would fill root's disk).
+head -c 1073741824 < "$1" > "$work/slate.deb" || { echo "The downloaded file could not be read." >&2; exit 1; }
 if command -v sha512sum >/dev/null 2>&1; then sum=$(sha512sum "$work/slate.deb"); else sum=$(shasum -a 512 "$work/slate.deb"); fi
 [ "${sum%% *}" = "$2" ] || { echo "The downloaded file changed since it was verified, so it was not installed." >&2; exit 1; }
 DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$work/slate.deb"

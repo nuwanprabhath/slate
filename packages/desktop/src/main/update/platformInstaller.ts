@@ -215,9 +215,9 @@ export async function nobodyButRootChanges(path: string, ops: PathOps = realOps)
 }
 
 /** Whether `path` is on the same volume as /Applications, which a mounted disk image never is. */
-async function onApplicationsVolume(path: string): Promise<boolean> {
-  const [here, apps] = await Promise.all([stat(path), stat('/Applications')]).catch(() => [null, null] as const)
-  return here !== null && apps !== null && here.dev === apps.dev
+export async function onApplicationsVolume(path: string, statDev: (p: string) => Promise<number> = (p) => stat(p).then((s) => s.dev)): Promise<boolean> {
+  const [here, apps] = await Promise.all([statDev(path), statDev('/Applications')]).catch(() => [null, null] as const)
+  return here !== null && apps !== null && here === apps
 }
 
 /**
@@ -232,7 +232,7 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
   const pid = opts.pid ?? process.pid
   const argv = opts.argv ?? process.argv
   const rootOnly = opts.rootOnly ?? ((path: string) => nobodyButRootChanges(path))
-  const sameVolume = opts.onApplicationsVolume ?? onApplicationsVolume
+  const sameVolume = opts.onApplicationsVolume ?? ((path: string) => onApplicationsVolume(path))
   const sudoFile = opts.sudo ?? '/usr/bin/sudo'
   const withSudo = (cmd: Command): Command => (cmd.file === 'sudo' ? { ...cmd, file: sudoFile } : cmd)
   const probeSudo = (): Promise<boolean> => {

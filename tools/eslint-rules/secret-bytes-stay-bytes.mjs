@@ -68,14 +68,16 @@ export default {
      * them to main, and the stream is the pipe to sudo's `-S` (the writer zeroes what it wrote). Only a
      * receiver typed `Writable` that is `child.stdin`, or a variable declared from it, counts, so a file or log stream (however it is named) or a helper of our own named `end` is still reported.
      */
-    const isStdinMember = (/** @type {any} */ n) => n?.type === 'MemberExpression' && !n.computed && n.property.type === 'Identifier' && n.property.name === 'stdin'
-    /** `child.stdin`, or a variable declared as `const stdin = child.stdin`: the one stream that is a pipe to a child. */
+    /** `x.stdin` where x is a child process (a stream of ours that happens to have a `stdin` field does not count). */
+    const isStdinMember = (/** @type {any} */ n) =>
+      n?.type === 'MemberExpression' && !n.computed && n.property.type === 'Identifier' && n.property.name === 'stdin' && /\bChildProcess\b/.test(typeOf(n.object))
+    /** `child.stdin`, or a variable declared `const stdin = child.stdin` (a `let` could be pointed at a file later): the one stream that is a pipe to a child. */
     const isStdin = (/** @type {any} */ n) => {
       if (isStdinMember(n)) return true
       if (n.type !== 'Identifier') return false
       for (let scope = context.sourceCode.getScope(n); scope; scope = scope.upper) {
         const variable = scope.set.get(n.name)
-        if (variable) return isStdinMember(variable.defs[0]?.node?.init)
+        if (variable) return variable.defs[0]?.parent?.kind === 'const' && isStdinMember(variable.defs[0]?.node?.init)
       }
       return false
     }

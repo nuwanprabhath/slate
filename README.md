@@ -89,10 +89,14 @@ It never interrupts with a dialog, and a failed check stays silent.
 
 - **AppImage**: *Download and install*, then *Restart and install*.
 - **macOS**: *Install and restart* downloads and verifies the dmg, quits Slate, swaps the new
-  version in wherever Slate is installed, clears its quarantine flag, deletes the dmg and opens
-  Slate again. If your account cannot write there, the banner asks for your password. If anything
-  fails, the old version is put back, the dmg is kept and the next start says why. *Download* still
-  fetches and opens the dmg for you to drag into Applications, or use *Copy install command*.
+  version in, clears its quarantine flag, deletes the dmg and opens Slate again. It works where
+  your account owns Slate.app and the folder it is in (the usual case: you dragged it into
+  Applications). If the folder belongs to root and nothing above it can be changed by your
+  account, the banner asks for your password. Slate will not replace an app as root in any
+  other place (a root-owned app in a folder you can change, a group-writable folder, a disk
+  image); the banner says so, and *Download* still fetches and opens the dmg for you to drag into
+  Applications, or use *Copy install command*. If anything fails, the old version is put back,
+  the dmg is kept and the next start says why.
 - **.deb**: *Install and restart* downloads and verifies the `.deb`, installs it with
   `sudo apt-get`, then starts the new version. If sudo wants a password, the banner asks for it: it
   goes to sudo's standard input only and is never saved or logged. *Download* fetches the `.deb`;
