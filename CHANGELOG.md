@@ -6,13 +6,15 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-02
+
 ### Added
 
 - **Install and restart** on macOS and Ubuntu (.deb). The update banner installs the new version and restarts into it; *Download* stays beside it for doing it by hand.
   - **The password.** When sudo needs your password, the banner asks for it. It is typed into a secret field, sent as bytes straight to sudo's standard input, and never saved, logged or shown again. A wrong one is said so, with the field ready for another try; Cancel keeps the download.
   - **Ubuntu:** the checked `.deb` is installed with `apt-get` while Slate runs, then deleted, and the new version starts once Slate has quit. Started from a systemd user service, it gets a unit of its own so it outlives the old one.
   - **macOS:** once Slate has quit, a helper swaps the new `Slate.app` in wherever yours is installed, clears its quarantine, deletes the dmg and opens Slate again. If anything fails, the old app is put back, the dmg is kept and the next start says why. A copy macOS runs read-only (from a quarantined download) is refused with what to do.
-  - **Checked again before it runs:** the downloaded file must still hash to the sha512 the signed update feed names for it, or nothing is installed.
+  - **Checked again before it runs:** the downloaded file must still hash to the sha512 the signed update feed names for it, or nothing is installed. Root copies the file into a folder only it can write and checks that copy, so replacing the download after the check changes nothing. The script root runs reaches sudo on its standard input; no file your account could rewrite is ever run as root.
   - **A failed install** keeps the download and offers *Try again*, *Open installer*, *Show in folder* or the install command.
 
 ## [0.5.1] - 2026-10-31
