@@ -53,15 +53,15 @@ interface RunResult {
  * What a child reads on stdin: the password and a newline (what `sudo -S` takes), then the script
  * sudo's command reads, in a copy the writer zeroes once the pipe has taken it. Built in its own
  * ArrayBuffer (`new Uint8Array(n)` would keep a short password on V8's heap, where the move to the
- * pipe leaves an unwiped copy: T-ZERO-04, `moduleCopy`). A plain `Uint8Array`, not `SecretBytes`: a
- * child's stdin is not one of the sinks `slate/secret-bytes-stay-bytes` knows, and these are bytes that
- * are zeroed, never text. Null when there is nothing to send.
+ * pipe leaves an unwiped copy: T-ZERO-04, `moduleCopy`). Typed `SecretBytes`, so the lint rule keeps
+ * watching it: a child's stdin is a sink it knows, and nothing here turns it into text. Null when there
+ * is nothing to send.
  */
-function stdinBytes(password: SecretBytes | null, script: string | null): Uint8Array | null {
+function stdinBytes(password: SecretBytes | null, script: string | null): SecretBytes | null {
   const body = script === null ? new Uint8Array(0) : new TextEncoder().encode(script)
   const head = password === null ? 0 : password.length + 1
   if (head + body.length === 0) return null
-  const out = new Uint8Array(new ArrayBuffer(head + body.length))
+  const out: SecretBytes = new Uint8Array(new ArrayBuffer(head + body.length))
   if (password !== null) {
     for (let i = 0; i < password.length; i++) out[i] = password[i] ?? 0
     out[password.length] = 0x0a
@@ -75,7 +75,7 @@ function stdinBytes(password: SecretBytes | null, script: string | null): Uint8A
  * script reach `sudo -S`. `input` is zeroed once the pipe has taken it. Never a shell command string,
  * never argv, never a log line.
  */
-export function runWithInput(file: string, args: readonly string[], opts: { input: Uint8Array | null; timeoutMs: number }): Promise<RunResult> {
+export function runWithInput(file: string, args: readonly string[], opts: { input: SecretBytes | null; timeoutMs: number }): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = spawnProgram(file, args, { stdio: ['pipe', 'ignore', 'pipe'] })
     let stderr = ''
@@ -111,7 +111,7 @@ export function runWithInput(file: string, args: readonly string[], opts: { inpu
  * Starts `file` detached, so it outlives this process, and resolves once its stdin has taken `input`
  * (zeroed after): Slate must not quit before the script is in the pipe.
  */
-function launchDetached(file: string, args: readonly string[], input: Uint8Array | null): Promise<void> {
+function launchDetached(file: string, args: readonly string[], input: SecretBytes | null): Promise<void> {
   return new Promise((resolve) => {
     const child = spawnProgram(file, args, { detached: true, stdio: [input === null ? 'ignore' : 'pipe', 'ignore', 'ignore'] })
     // A helper that cannot start leaves Slate quitting with the old version in place.

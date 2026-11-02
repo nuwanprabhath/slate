@@ -196,8 +196,8 @@ report() {
   # As the user, so a link planted at the result path cannot make root write anywhere.
   if [ "$(id -u)" -eq 0 ]; then printf '%s\\n' "$line" | sudo -u "#$uid" tee "$result" >/dev/null; else printf '%s\\n' "$line" > "$result"; fi
 }
-detach() { [ -n "$mnt" ] && { hdiutil detach "$mnt" -quiet || hdiutil detach "$mnt" -quiet -force; rmdir "$mnt"; }; mnt=""; }
-tidy() { [ -n "$stage" ] && rm -rf "$stage"; detach; [ -n "$work" ] && rm -rf "$work"; }
+unmount() { [ -n "$mnt" ] && { hdiutil detach -quiet "$mnt" || hdiutil detach -quiet -force "$mnt"; rmdir "$mnt"; }; mnt=""; }
+tidy() { [ -n "$stage" ] && rm -rf "$stage"; unmount; [ -n "$work" ] && rm -rf "$work"; }
 fail() { tidy; report false "$1"; relaunch; cleanup; exit 1; }
 
 i=0
@@ -220,7 +220,7 @@ stage=$(mktemp -d "$parent/.slate-update-XXXXXX") || fail "Could not make room f
 old="$stage.old"
 ditto "$new" "$stage" || fail "The new version could not be copied out of the disk image."
 chmod 755 "$stage"
-detach
+unmount
 mv "$app" "$old" || fail "The installed version could not be moved aside."
 if ! mv "$stage" "$app"; then
   mv "$old" "$app" || { tidy; report false "The new version could not be installed and the old one could not be put back: it is at $(basename "$old")."; cleanup; exit 1; }

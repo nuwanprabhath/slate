@@ -12,13 +12,6 @@ import type { SavedTheme } from '../shared/theme/resolve'
 function settle<T>(call: Promise<T>, ...secrets: Array<SecretBytes | undefined>): Promise<T> {
   return call.finally(() => zeroSecret(...secrets))
 }
-/**
- * `settle` for sudo's password in Install and restart, which is not a vault channel: the guard
- * (tools/guards/vaultSecrets.test.ts) holds every `settle` channel to vaultIpc.ts.
- */
-function forwardSecret<T>(call: Promise<T>, secret: SecretBytes | null): Promise<T> {
-  return call.finally(() => zeroSecret(secret))
-}
 const secretIn = (s: { password: SecretBytes } | { recoveryKey: SecretBytes }): SecretBytes => ('password' in s ? s.password : s.recoveryKey)
 
 const api: SlateApi = {
@@ -125,7 +118,7 @@ const api: SlateApi = {
     download: () => ipcRenderer.invoke(CH.updateDownload),
     install: () => ipcRenderer.invoke(CH.updateInstall),
     prepareInstall: () => ipcRenderer.invoke(CH.updatePrepareInstall),
-    installAndRestart: (password) => forwardSecret(ipcRenderer.invoke(CH.updateInstallAndRestart, password), password),
+    installAndRestart: (password) => settle(ipcRenderer.invoke(CH.updateInstallAndRestart, password), password ?? undefined),
     openInstaller: () => ipcRenderer.invoke(CH.updateOpenInstaller),
     showInFolder: () => ipcRenderer.invoke(CH.updateShowInFolder),
     copyCommand: () => ipcRenderer.invoke(CH.updateCopyCommand),

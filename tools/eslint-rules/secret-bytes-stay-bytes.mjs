@@ -10,7 +10,9 @@
  * `toString` is one call away), `String.fromCodePoint`, `.join`, `Array.from` and spreading it into an
  * array. Because a helper or a wider type loses the brand (re-review C7 L), handing a secret to a
  * parameter, variable or assignment not typed `SecretBytes`/`VaultSecret` is reported too; the
- * sanctioned hand-offs are the module (`SlateNative`, given its own copy) and `ipcRenderer.invoke`.
+ * sanctioned hand-offs are the module (`SlateNative`, given its own copy), `ipcRenderer.invoke` and a
+ * child process's stdin (`Writable#write`/`end`: how Install and restart gives sudo its password; the
+ * writer zeroes its copy).
  * The one residual, `checkPassword` (vault/password.ts), is the rule's only allowed file.
  */
 const SECRET_TYPE = /\b(SecretBytes|VaultSecret)\b/
@@ -61,10 +63,16 @@ export default {
       if (params.length === 0) return 'no parameter'
       return checker.typeToString(checker.getTypeOfSymbolAtLocation(params[Math.min(i, params.length - 1)], tsNode))
     }
-    /** The module and IPC take secret bytes by design: the module wipes its copy, IPC carries them to main. */
+    /**
+     * The module, IPC and a child's stdin take secret bytes by design: the module wipes its copy, IPC carries
+     * them to main, and the stream is the pipe to sudo's `-S` (the writer zeroes what it wrote). Only a
+     * receiver typed `Writable` counts, so a helper of our own named `end` is still reported.
+     */
     const sanctionedSink = (/** @type {any} */ callee) =>
       callee.type === 'MemberExpression' &&
-      ((callee.object.type === 'Identifier' && callee.object.name === 'ipcRenderer') || /\bSlateNative\b/.test(typeOf(callee.object)))
+      ((callee.object.type === 'Identifier' && callee.object.name === 'ipcRenderer') ||
+        /\bSlateNative\b/.test(typeOf(callee.object)) ||
+        (!callee.computed && callee.property.type === 'Identifier' && (callee.property.name === 'write' || callee.property.name === 'end') && /\bWritable\b/.test(typeOf(callee.object))))
     /** A hand-off to something not typed as a secret: a parameter, a variable, an assignment. */
     const handOff = (/** @type {any} */ node) => {
       if (!typed) return

@@ -45,6 +45,8 @@ export const SECRET_CHANNELS: Readonly<Partial<Record<keyof typeof CH, true>>> =
   vaultChangePassword: true,
   vaultNewRecovery: true,
   vaultRekeyPrepare: true,
+  // Not the vault's: sudo's password in Install and restart (update/ipc.ts, through secretHandler).
+  updateInstallAndRestart: true,
 }
 const SECRET: ReadonlySet<string> = new Set(Object.keys(SECRET_CHANNELS).map((k) => CH[k as keyof typeof CH]))
 
