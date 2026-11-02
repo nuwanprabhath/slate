@@ -19,6 +19,7 @@ ruleTester({ typed: true }).run('slate/secret-bytes-stay-bytes (types)', /** @ty
     typed("declare const ipcRenderer: { invoke(channel: string, ...args: any[]): Promise<unknown> }\nexport const f = (pw: SecretBytes) => ipcRenderer.invoke('x', pw)"),
     // A child's stdin is a pipe to sudo: the writer zeroes the bytes it wrote.
     typed('interface Writable { end(chunk: any, done?: () => void): void }\ndeclare const stdin: Writable\nexport const f = (pw: SecretBytes) => stdin.end(pw, () => pw.fill(0))'),
+    typed('interface Writable { write(chunk: any): boolean }\ndeclare const child: { stdin: Writable }\nexport const f = (pw: SecretBytes) => child.stdin.write(pw)'),
     // The module gets the bytes, a copy of them, or their length; public bytes become text freely.
     typed('export const n = (pw: SecretBytes) => `${pw.length} bytes`'),
     typed("declare const salt: Uint8Array\nexport const s = new TextDecoder().decode(salt) + Buffer.from(salt).toString('hex')"),
@@ -47,6 +48,9 @@ ruleTester({ typed: true }).run('slate/secret-bytes-stay-bytes (types)', /** @ty
     { ...typed('export const f = (pw: SecretBytes) => [...pw].length'), errors: text },
     // A copy handed to a helper that is not the module is the same hole as the secret itself.
     { ...typed('declare function derive(p: Uint8Array): number\nexport const f = (pw: SecretBytes) => derive(new Uint8Array(pw))'), errors: text },
+    // Only a child's stdin is: a file or log stream is a Writable too, and a secret written to it would sit on disk.
+    { ...typed('interface Writable { write(chunk: any): boolean }\ndeclare const logFile: Writable\nexport const f = (pw: SecretBytes) => logFile.write(pw)'), errors: text },
+    { ...typed('interface Writable { end(chunk: any): void }\ndeclare const out: { file: Writable }\nexport const f = (pw: SecretBytes) => out.file.end(pw)'), errors: text },
     // Only a Writable is a sink: any other object that happens to have an `end` is a helper that lost the brand.
     { ...typed('declare const sink: { end(chunk: any): void }\nexport const f = (pw: SecretBytes) => sink.end(pw)'), errors: text },
     // A passwordBytes result, under an innocent name.

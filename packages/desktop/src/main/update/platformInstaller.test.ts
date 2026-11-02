@@ -1,11 +1,11 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScopedLog } from '../log/logger'
 import { secretBytes } from '../../shared/secret'
-import { CHANGED_SINCE_VERIFIED, DEB_INSTALL_SCRIPT, sha512Hex } from './installCommands'
-import { createPlatformInstaller, PASSWORD_NOT_ACCEPTED } from './platformInstaller'
+import { sha512Hex } from './installCommands'
+import { NOT_HERS, PASSWORD_NOT_ACCEPTED, SCRIPT_NOT_ROOTS, createPlatformInstaller, runWithInput, stdinBytes } from './platformInstaller'
 
 const PASSWORD = 'correct horse battery staple 7!'
 /** What the signed feed names for the installers these tests write; only its hex reaches the script. */
@@ -14,6 +14,8 @@ const HEX = sha512Hex(SHA512)
 
 let root: string
 let shims: string
+let scripts: string
+const restore: string[] = []
 const quit = vi.fn()
 const logged: unknown[] = []
 const log: ScopedLog = {
@@ -25,35 +27,80 @@ const log: ScopedLog = {
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'slate-inst-'))
   shims = join(root, 'shims')
+  scripts = join(root, 'resources', 'update')
   mkdirSync(shims)
+  mkdirSync(scripts, { recursive: true })
   vi.stubEnv('PATH', `${shims}:/usr/bin:/bin`)
   logged.length = 0
   quit.mockReset()
 })
 afterEach(() => {
   vi.unstubAllEnvs()
+  for (const p of restore.splice(0)) chmodSync(p, 0o755)
   rmSync(root, { recursive: true, force: true })
 })
+
+const sudoPath = () => join(shims, 'sudo')
 
 /** A `sudo` that records its arguments and what it read from stdin, then behaves as `body` says. */
 function fakeSudo(body: string): { args: () => string; stdin: () => string } {
   const args = join(root, 'sudo.args')
   const stdin = join(root, 'sudo.stdin')
-  writeFileSync(join(shims, 'sudo'), `#!/bin/sh\necho "$*" >> '${args}'\n${body}\n`)
-  chmodSync(join(shims, 'sudo'), 0o700)
+  writeFileSync(sudoPath(), `#!/bin/sh\necho "$*" >> '${args}'\n${body}\n`)
+  chmodSync(sudoPath(), 0o700)
   return { args: () => (existsSync(args) ? readFileSync(args, 'utf8') : ''), stdin: () => (existsSync(stdin) ? readFileSync(stdin, 'utf8') : '') }
 }
 /** The stdin of the sudo it replaces, kept for the test to read. */
 const readStdin = () => `cat >> '${join(root, 'sudo.stdin')}'`
 
+const base = () => ({ resultFile: join(root, 'update-result.json'), downloadsDir: root, scriptsDir: scripts, sudo: sudoPath(), quit, log, rootOnly: (_path: string) => Promise.resolve(true) })
+
 function linux(execPath = '/opt/Slate/slate') {
-  return createPlatformInstaller({ platform: 'linux', resultFile: join(root, 'update-result.json'), downloadsDir: root, quit, log, execPath, pid: 4242, argv: [execPath, '--user-data-dir=/x'] })
+  return createPlatformInstaller({ ...base(), platform: 'linux', execPath, pid: 4242, argv: [execPath, '--user-data-dir=/x'] })
 }
 function installer(file: string): string {
   const path = join(root, file)
   writeFileSync(path, 'deb')
   return path
 }
+
+describe('the stdin copy of a password', () => {
+  it('is the password and a newline, in an ArrayBuffer of exactly that size, so no copy stays on the V8 heap', () => {
+    const password = secretBytes('hunter2')
+    const line = stdinBytes(password)
+    expect(line).not.toBeNull()
+    expect([...line!]).toEqual([...password, 0x0a])
+    expect(line!.buffer.byteLength).toBe(password.length + 1)
+    expect(line!.byteOffset).toBe(0)
+    expect(line!.buffer).not.toBe(password.buffer)
+    expect(stdinBytes(null)).toBeNull()
+  })
+
+  it('is zeroed once the pipe has taken it, after the program read it', async () => {
+    const out = join(root, 'read')
+    const program = join(shims, 'reader')
+    writeFileSync(program, `#!/bin/sh\ncat > '${out}'\n`, { mode: 0o700 })
+    const input = stdinBytes(secretBytes('hunter2'))
+    const copy = [...input!]
+    expect(await runWithInput(program, [], { input, timeoutMs: 10_000 })).toMatchObject({ code: 0 })
+    expect([...readFileSync(out)]).toEqual(copy)
+    expect([...input!].every((b) => b === 0)).toBe(true)
+  })
+
+  it('is zeroed when the program cannot be started at all', async () => {
+    const input = stdinBytes(secretBytes('hunter2'))
+    expect(await runWithInput(join(root, 'no-such-program'), [], { input, timeoutMs: 10_000 })).toMatchObject({ code: null })
+    expect([...input!].every((b) => b === 0)).toBe(true)
+  })
+
+  it('is zeroed when proc.ts refuses to start the program (a throw before any child exists)', async () => {
+    const input = stdinBytes(secretBytes('hunter2'))
+    const result = await runWithInput('/bin/sh', ['-c', 'true'], { input, timeoutMs: 10_000 })
+    expect(result.code).toBeNull()
+    expect(result.stderr).toContain('refuses')
+    expect([...input!].every((b) => b === 0)).toBe(true)
+  })
+})
 
 describe('Ubuntu: needsPassword', () => {
   it('is false when sudo would not ask, and true when it would', async () => {
@@ -65,23 +112,25 @@ describe('Ubuntu: needsPassword', () => {
 })
 
 describe('Ubuntu: installDownloaded', () => {
-  it('runs the install script as root through sudo -n when no password is needed, then deletes the download', async () => {
+  const script = () => join(scripts, 'install-deb.sh')
+
+  it('runs the install script as root by path through sudo -n when no password is needed, then deletes the download', async () => {
     const sudo = fakeSudo(readStdin())
     const deb = installer('a.deb')
     expect(await linux().installDownloaded(deb, { password: null, version: '0.6.0', sha512: SHA512 })).toEqual({ ok: true })
-    expect(sudo.args()).toBe(`-n /bin/sh -s -- ${deb} ${HEX}\n`)
-    // The script arrives on stdin: root runs no file the user could rewrite.
-    expect(sudo.stdin()).toBe(DEB_INSTALL_SCRIPT)
+    expect(sudo.args()).toBe(`-n /bin/sh ${script()} ${deb} ${HEX}\n`)
+    expect(sudo.stdin()).toBe('')
     expect(existsSync(deb)).toBe(false)
   })
 
-  it('sends the password to sudo on stdin only, ahead of the script: not argv, not the log, not the outcome', async () => {
+  it('sends the password to sudo on stdin and nothing else with it: not argv, not the log, not the outcome', async () => {
     const sudo = fakeSudo(readStdin())
     const deb = installer('b.deb')
     const outcome = await linux().installDownloaded(deb, { password: secretBytes(PASSWORD), version: '0.6.0', sha512: SHA512 })
     expect(outcome).toEqual({ ok: true })
-    expect(sudo.stdin()).toBe(`${PASSWORD}\n${DEB_INSTALL_SCRIPT}`)
-    expect(sudo.args()).toBe(`-S -k -p  /bin/sh -s -- ${deb} ${HEX}\n`)
+    // Only the password: a script sharing the pipe would be run by sudo's shell if sudo did not read the password.
+    expect(sudo.stdin()).toBe(`${PASSWORD}\n`)
+    expect(sudo.args()).toBe(`-S -k -p  /bin/sh ${script()} ${deb} ${HEX}\n`)
     expect(sudo.args()).not.toContain(PASSWORD)
     expect(JSON.stringify(logged)).not.toContain(PASSWORD)
     expect(JSON.stringify(outcome)).not.toContain(PASSWORD)
@@ -106,15 +155,20 @@ describe('Ubuntu: installDownloaded', () => {
     expect(existsSync(deb)).toBe(true)
   })
 
-  it('passes on the script\'s refusal of a file that changed since it was verified, word for word, so the service can tell', async () => {
-    fakeSudo(`echo "${CHANGED_SINCE_VERIFIED}" >&2; exit 1`)
-    expect(await linux().installDownloaded(installer('g.deb'), { password: null, version: '0.6.0', sha512: SHA512 })).toEqual({ ok: false, reason: 'install', message: CHANGED_SINCE_VERIFIED })
+  it('reports a missing sudo as an install failure rather than throwing', async () => {
+    const installerWithoutSudo = createPlatformInstaller({ ...base(), platform: 'linux', sudo: join(root, 'no-sudo'), execPath: '/opt/Slate/slate' })
+    const outcome = await installerWithoutSudo.installDownloaded(installer('f.deb'), { password: null, version: '0.6.0', sha512: SHA512 })
+    expect(outcome).toMatchObject({ ok: false, reason: 'install' })
   })
 
-  it('reports a missing sudo as an install failure rather than throwing', async () => {
-    vi.stubEnv('PATH', shims)
-    const outcome = await linux().installDownloaded(installer('f.deb'), { password: null, version: '0.6.0', sha512: SHA512 })
-    expect(outcome).toMatchObject({ ok: false, reason: 'install', message: expect.stringContaining('sudo') as string })
+  it('runs no script that this account could rewrite as root: the real check refuses a script folder in a writable place', async () => {
+    const sudo = fakeSudo('exit 0')
+    const deb = installer('g.deb')
+    const { rootOnly: _unused, ...withoutOverride } = base()
+    const real = createPlatformInstaller({ ...withoutOverride, platform: 'linux', execPath: '/opt/Slate/slate' })
+    expect(await real.installDownloaded(deb, { password: null, version: '0.6.0', sha512: SHA512 })).toEqual({ ok: false, reason: 'install', message: SCRIPT_NOT_ROOTS })
+    expect(sudo.args()).toBe('')
+    expect(existsSync(deb)).toBe(true)
   })
 })
 
@@ -137,14 +191,24 @@ describe('Ubuntu: restart', () => {
 })
 
 describe('macOS', () => {
-  const mac = (execPath: string) => createPlatformInstaller({ platform: 'darwin', resultFile: join(root, 'update-result.json'), downloadsDir: root, quit, log, execPath, pid: 4242 })
+  const mac = (execPath: string, over: Partial<ReturnType<typeof base>> = {}) =>
+    createPlatformInstaller({ ...base(), ...over, platform: 'darwin', execPath, pid: 4242 })
   const bundle = () => {
     const app = join(root, 'Apps', 'Slate.app')
     mkdirSync(join(app, 'Contents', 'MacOS'), { recursive: true })
     return { app, exec: join(app, 'Contents', 'MacOS', 'Slate') }
   }
+  /** A bundle and its folder this account cannot write, as when root owns them. */
+  const rootsBundle = () => {
+    const b = bundle()
+    const parent = join(root, 'Apps')
+    chmodSync(b.app, 0o555)
+    chmodSync(parent, 0o555)
+    restore.push(b.app, parent)
+    return b
+  }
 
-  it('needs no password when the bundle and its folder are writable', async () => {
+  it('needs no password when the bundle and its folder are the account\'s own', async () => {
     expect(await mac(bundle().exec).needsPassword('/dl/Slate.dmg')).toBe(false)
   })
 
@@ -162,77 +226,122 @@ describe('macOS', () => {
     expect(quit).toHaveBeenCalledTimes(1)
   })
 
+  it('asks sudo whether it needs a password only when the folder is out of the account\'s reach', async () => {
+    const { exec } = rootsBundle()
+    fakeSudo('exit 1')
+    expect(await mac(exec).needsPassword('/dl/Slate.dmg')).toBe(true)
+    fakeSudo('exit 0')
+    expect(await mac(exec).needsPassword('/dl/Slate.dmg')).toBe(false)
+  })
+
   it('checks a password with sudo -v before anything quits, so a wrong one is known at once', async () => {
+    const { exec } = rootsBundle()
     const sudo = fakeSudo('echo "Sorry, try again." >&2; exit 1')
-    expect(await mac(bundle().exec).installDownloaded('/dl/Slate.dmg', { password: secretBytes('nope'), version: '1', sha512: SHA512 })).toEqual({ ok: false, reason: 'password', message: PASSWORD_NOT_ACCEPTED })
+    expect(await mac(exec).installDownloaded('/dl/Slate.dmg', { password: secretBytes('nope'), version: '1', sha512: SHA512 })).toEqual({ ok: false, reason: 'password', message: PASSWORD_NOT_ACCEPTED })
     expect(sudo.args()).toBe('-S -k -p  -v\n')
   })
 
-  it('hands root the helper on sudo\'s stdin, after the password, never as a file the user could rewrite', async () => {
+  it('runs the helper as root by path with only the password on stdin, so sudo never hands a password to a shell', async () => {
+    const { exec, app } = rootsBundle()
     const sudo = fakeSudo(readStdin())
-    const { exec } = bundle()
-    const outcome = await mac(exec).installDownloaded(join(root, 'Slate.dmg'), { password: secretBytes(PASSWORD), version: '0.6.0', sha512: SHA512 })
+    const dmg = join(root, 'Slate.dmg')
+    const outcome = await mac(exec).installDownloaded(dmg, { password: secretBytes(PASSWORD), version: '0.6.0', sha512: SHA512 })
     expect(outcome).toEqual({ ok: true })
-    // The detached helper's sudo reads it after this returns.
-    await vi.waitFor(() => expect(sudo.stdin().split('hdiutil attach').length).toBeGreaterThan(1), { timeout: 5000 })
-    const calls = sudo.args().trim().split('\n')
-    expect(calls).toEqual(['-S -k -p  -v', '-S -k -p  /bin/sh -s --'])
-    expect(sudo.stdin().startsWith(`${PASSWORD}\n${PASSWORD}\n#!/bin/sh\n`)).toBe(true)
+    const script = join(scripts, 'install-dmg.sh')
+    const uid = String(process.getuid?.() ?? 501)
+    // The detached helper's sudo reads its password after this returns.
+    await vi.waitFor(() => expect(sudo.args().trim().split('\n')).toHaveLength(2), { timeout: 5000 })
+    expect(sudo.args().trim().split('\n')).toEqual(['-S -k -p  -v', `-S -k -p  /bin/sh ${script} 4242 ${dmg} ${HEX} ${app} ${join(root, 'update-result.json')} 0.6.0 ${uid}`])
+    await vi.waitFor(() => expect(sudo.stdin()).toBe(`${PASSWORD}\n${PASSWORD}\n`), { timeout: 5000 })
     expect(sudo.args()).not.toContain(PASSWORD)
     expect(JSON.stringify(logged)).not.toContain(PASSWORD)
   })
 
+  it('refuses to run as root in a folder the account can change, where a swap under root would be possible', async () => {
+    const { exec, app } = bundle()
+    chmodSync(app, 0o555)
+    restore.push(app)
+    const sudo = fakeSudo('exit 0')
+    await expect(mac(exec, { rootOnly: () => Promise.resolve(false) }).needsPassword('/dl/Slate.dmg')).rejects.toThrow(NOT_HERS)
+    expect(await mac(exec, { rootOnly: () => Promise.resolve(false) }).installDownloaded('/dl/Slate.dmg', { password: secretBytes('x'), version: '1', sha512: SHA512 })).toEqual({ ok: false, reason: 'install', message: NOT_HERS })
+    expect(sudo.args()).toBe('')
+  })
+
+  it('refuses to run a helper as root from a folder the account can change', async () => {
+    const { exec } = rootsBundle()
+    const sudo = fakeSudo('exit 0')
+    // The folder is out of reach but the script's is not.
+    const onlyApps = (path: string) => Promise.resolve(path.startsWith(join(root, 'Apps')))
+    expect(await mac(exec, { rootOnly: onlyApps }).installDownloaded('/dl/Slate.dmg', { password: secretBytes('x'), version: '1', sha512: SHA512 })).toEqual({ ok: false, reason: 'install', message: SCRIPT_NOT_ROOTS })
+    expect(sudo.args()).toBe('')
+  })
+
   it('is not offered on another platform', async () => {
-    const win = createPlatformInstaller({ platform: 'win32', resultFile: join(root, 'r.json'), downloadsDir: root, quit, log })
+    const win = createPlatformInstaller({ ...base(), platform: 'win32' })
     expect(await win.installDownloaded('C:\\a.exe', { password: null, version: '1', sha512: SHA512 })).toMatchObject({ ok: false, reason: 'install' })
   })
 })
 
 describe('takePreviousInstall', () => {
   const read = () => linux().takePreviousInstall()
+  const result = () => join(root, 'update-result.json')
+
   it('says nothing when no helper ran', async () => {
     expect(await read()).toBeNull()
   })
 
   it('reads a failure once, with the installer it kept, and deletes the file', async () => {
     const dmg = installer('Slate.dmg')
-    writeFileSync(join(root, 'update-result.json'), JSON.stringify({ version: '0.6.0', ok: false, message: 'The disk image could not be opened.', path: dmg }))
+    writeFileSync(result(), JSON.stringify({ version: '0.6.0', ok: false, message: 'The disk image could not be opened.', path: dmg }))
     expect(await read()).toEqual({ version: '0.6.0', ok: false, message: 'The disk image could not be opened.', path: dmg })
     expect(await read()).toBeNull()
   })
 
-  it('takes a file to offer again only when it is a .dmg directly in the downloads folder', async () => {
+  it('drops the path of an installer that is gone', async () => {
+    writeFileSync(result(), JSON.stringify({ version: '0.6.0', ok: false, message: 'x', path: join(root, 'gone.dmg') }))
+    expect(await read()).toMatchObject({ path: null })
+  })
+
+  it('takes a file to offer again only when it is a real .dmg directly in the downloads folder', async () => {
     const elsewhere = mkdtempSync(join(tmpdir(), 'slate-elsewhere-'))
     const forged = join(elsewhere, 'Slate.dmg')
     writeFileSync(forged, 'x')
     const notDmg = installer('run-me.command')
-    for (const path of [forged, notDmg, join(root, 'sub', '..', 'x', 'Slate.dmg'), 42]) {
-      writeFileSync(join(root, 'update-result.json'), JSON.stringify({ version: '0.6.0', ok: false, message: 'x', path }))
-      expect(await read()).toMatchObject({ path: null })
+    const link = join(root, 'Link.dmg')
+    symlinkSync(forged, link)
+    for (const path of [forged, notDmg, link, join(root, 'sub', '..', 'x', 'Slate.dmg'), 42]) {
+      writeFileSync(result(), JSON.stringify({ version: '0.6.0', ok: false, message: 'x', path }))
+      expect(await read(), String(path)).toMatchObject({ path: null })
     }
     rmSync(elsewhere, { recursive: true, force: true })
   })
 
-  it('refuses a version that is not a version, and keeps a message to one short line', async () => {
-    writeFileSync(join(root, 'update-result.json'), JSON.stringify({ version: '<img src=x>', ok: false, message: 'x', path: null }))
+  it('refuses a version that is not a version, and keeps a message to one short line without control characters', async () => {
+    writeFileSync(result(), JSON.stringify({ version: '<img src=x>', ok: false, message: 'x', path: null }))
     expect(await read()).toBeNull()
-    writeFileSync(join(root, 'update-result.json'), JSON.stringify({ version: '0.6.0', ok: false, message: `first\n\n  second ${'z'.repeat(1000)}`, path: null }))
+    writeFileSync(result(), JSON.stringify({ version: '0.6.0', ok: false, message: `first\n\n  second \u001b[31m ${'z'.repeat(1000)}`, path: null }))
     const previous = await read()
-    expect(previous?.message.startsWith('first second zzz')).toBe(true)
-    expect(previous?.message.length).toBe(300)
+    expect(previous?.message.startsWith('first second [31m zzz')).toBe(true)
+    expect(previous?.message.length).toBe(200)
   })
 
-  it('drops the path of an installer that is gone', async () => {
-    writeFileSync(join(root, 'update-result.json'), JSON.stringify({ version: '0.6.0', ok: false, message: 'x', path: join(root, 'gone.dmg') }))
-    expect(await read()).toMatchObject({ path: null })
+  it('does not read a link or a large file where the result should be, and removes it', async () => {
+    const target = join(root, 'target.json')
+    writeFileSync(target, JSON.stringify({ version: '0.6.0', ok: false, message: 'from a link', path: null }))
+    symlinkSync(target, result())
+    expect(await read()).toBeNull()
+    expect(existsSync(result())).toBe(false)
+    expect(existsSync(target)).toBe(true)
+    writeFileSync(result(), JSON.stringify({ version: '0.6.0', ok: false, message: 'y'.repeat(10_000), path: null }))
+    expect(await read()).toBeNull()
   })
 
   it('treats a torn or foreign file as none', async () => {
-    writeFileSync(join(root, 'update-result.json'), '{"version":')
+    writeFileSync(result(), '{"version":')
     expect(await read()).toBeNull()
-    writeFileSync(join(root, 'update-result.json'), JSON.stringify({ version: 1 }))
+    writeFileSync(result(), JSON.stringify({ version: 1 }))
     expect(await read()).toBeNull()
-    writeFileSync(join(root, 'update-result.json'), 'null')
+    writeFileSync(result(), 'null')
     expect(await read()).toBeNull()
   })
 })

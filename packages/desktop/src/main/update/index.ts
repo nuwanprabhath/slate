@@ -36,7 +36,7 @@ export function createUpdates(store: () => DocStore | null, isE2E: boolean, ipc:
   const manifestName = process.platform === 'darwin' ? 'latest-mac.yml' : process.platform === 'linux' ? 'latest-linux.yml' : 'latest.yml'
   const fakeFeed = fake ? fakeBackend({ downloadsDir: tmpdir(), copy: (t) => void clipboard.writeText(t), manifestName, signature: fakeSignature(fake), install: fakeInstall(fake) }) : null
   const diag = diagLog.scoped('update')
-  const installer = createPlatformInstaller({ platform: process.platform, resultFile: join(app.getPath('userData'), 'update-result.json'), quit: () => app.quit(), log: diag, downloadsDir: app.getPath('downloads') })
+  const installer = createPlatformInstaller({ platform: process.platform, resultFile: join(app.getPath('userData'), 'update-result.json'), quit: () => app.quit(), log: diag, downloadsDir: app.getPath('downloads'), scriptsDir: join(process.resourcesPath, 'update') })
   const backend = fakeFeed ?? electronBackend({ downloadsDir: app.getPath('downloads'), log, installer })
   const verifier = createUpdateVerifier({
     // The fake feed's own key exists only in an e2e run; a real feed verifies against the pinned keys alone.

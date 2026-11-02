@@ -30,6 +30,8 @@ module.exports = {
   extraResources: [
     { from: 'launchers', to: 'bin' },
     { from: 'resources/bin', to: 'converter' },
+    // Install and restart's root-side scripts (src/main/update/platformInstaller.ts): root runs them by path from here, root-owned when a package installed it, never from a file the user can rewrite.
+    { from: 'resources/update', to: 'update' },
     { from: '../native/fips/${platform}-${arch}', to: 'fips' },
     // OpenSSL (Apache-2.0), SQLCipher (BSD-3) and the vendored better-sqlite3 binding (MIT) require their notices.
     { from: '../native/licenses', to: 'licenses' },
