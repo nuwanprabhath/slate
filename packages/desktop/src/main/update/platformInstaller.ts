@@ -1,4 +1,4 @@
-import { access, constants, lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, constants, lstat, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { InstallOutcome } from '../../shared/api'
@@ -27,6 +27,8 @@ export interface PlatformInstallerOptions {
   scriptsDir: string
   /** Whether no process of this account can change `path`, nor anything above it: the test for running it as root. */
   rootOnly?: (path: string) => Promise<boolean>
+  /** Whether a macOS bundle is on the volume /Applications is on: root never works in a disk image's volume, which the account mounted. */
+  onApplicationsVolume?: (path: string) => Promise<boolean>
   /** The sudo to run, by its full path so no PATH of ours chooses it. */
   sudo?: string
   /** The running binary; `process.execPath` unless a test places it elsewhere. */
@@ -43,7 +45,7 @@ export const PASSWORD_NOT_ACCEPTED = 'That password was not accepted.'
 const TRANSLOCATED = 'Slate is running from a quarantined copy macOS made read-only. Move Slate.app to Applications, run `xattr -cr` on it, open it, then try again.'
 const NOT_A_BUNDLE = 'Slate is not running from an app bundle.'
 /** A bundle owned by someone else in a folder this account can change: root would be working in a place an attacker could swap under it. */
-export const NOT_HERS = 'Slate.app belongs to another account in a folder your account can change, so Slate will not replace it as root. Use Download, and drag the new Slate into Applications.'
+export const NOT_HERS = 'Slate.app is in a place your account can change, or on a disk image, so Slate will not replace it as root. Use Download, and drag the new Slate into Applications.'
 export const SCRIPT_NOT_ROOTS = 'The update script is in a folder your account can change, so Slate will not run it as root. Use Download, and install the new version yourself.'
 
 /** apt can take minutes on a slow mirror or a busy dpkg lock. */
@@ -183,12 +185,39 @@ function parsePrevious(text: string, downloadsDir: string): PreviousInstall | nu
 
 const writable = (path: string): Promise<boolean> => access(path, constants.W_OK).then(() => true, () => false)
 
-/** True when this account can change none of `path` and the folders above it (the real `rootOnly`). */
-async function nobodyButRootChanges(path: string): Promise<boolean> {
+/** What `nobodyButRootChanges` asks of the file system; a test supplies its own. */
+export interface PathOps {
+  lstat(path: string): Promise<{ uid: number; mode: number }>
+  /** null when this account can write `path`, else why it cannot. */
+  access(path: string): Promise<NodeJS.ErrnoException | null>
+}
+const realOps: PathOps = {
+  lstat: (path) => lstat(path),
+  access: (path) => access(path, constants.W_OK).then(() => null, (e: NodeJS.ErrnoException) => e),
+}
+
+/**
+ * True only when root owns `path` and every folder above it, none of them is writable by group or
+ * others, and this account is refused write on each (EACCES or EPERM). Not enough: "this account cannot
+ * write it now" also describes a read-only volume the account mounted (it can unmount it and mount its
+ * own under the same name) and a folder it owns and has set to 0555 (it can chmod it back). The file
+ * system root itself is checked by owner and mode only: on macOS it is the sealed system volume, which
+ * answers EROFS to everyone.
+ */
+export async function nobodyButRootChanges(path: string, ops: PathOps = realOps): Promise<boolean> {
   for (let p = path; ; p = dirname(p)) {
-    if (await writable(p)) return false
+    const info = await ops.lstat(p).catch(() => null)
+    if (info === null || info.uid !== 0 || (info.mode & 0o022) !== 0) return false
     if (dirname(p) === p) return true
+    const refused = await ops.access(p)
+    if (refused === null || (refused.code !== 'EACCES' && refused.code !== 'EPERM')) return false
   }
+}
+
+/** Whether `path` is on the same volume as /Applications, which a mounted disk image never is. */
+async function onApplicationsVolume(path: string): Promise<boolean> {
+  const [here, apps] = await Promise.all([stat(path), stat('/Applications')]).catch(() => [null, null] as const)
+  return here !== null && apps !== null && here.dev === apps.dev
 }
 
 /**
@@ -202,7 +231,8 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
   const execPath = opts.execPath ?? process.execPath
   const pid = opts.pid ?? process.pid
   const argv = opts.argv ?? process.argv
-  const rootOnly = opts.rootOnly ?? nobodyButRootChanges
+  const rootOnly = opts.rootOnly ?? ((path: string) => nobodyButRootChanges(path))
+  const sameVolume = opts.onApplicationsVolume ?? onApplicationsVolume
   const sudoFile = opts.sudo ?? '/usr/bin/sudo'
   const withSudo = (cmd: Command): Command => (cmd.file === 'sudo' ? { ...cmd, file: sudoFile } : cmd)
   const probeSudo = (): Promise<boolean> => {
@@ -218,7 +248,7 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
    */
   const macPlan = async (bundle: string): Promise<'user' | 'root'> => {
     if (await writable(bundle) && await writable(dirname(bundle))) return 'user'
-    if (!await rootOnly(dirname(bundle))) throw new Error(NOT_HERS)
+    if (!await sameVolume(dirname(bundle)) || !await rootOnly(dirname(bundle))) throw new Error(NOT_HERS)
     if (!await rootOnly(join(opts.scriptsDir, 'install-dmg.sh'))) throw new Error(SCRIPT_NOT_ROOTS)
     return 'root'
   }

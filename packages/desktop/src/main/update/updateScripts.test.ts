@@ -188,8 +188,23 @@ exit 0`)
     const text = readFileSync(join(SCRIPTS, 'install-dmg.sh'), 'utf8')
     expect(text).toContain('sudo -u "#$uid" tee "$result"')
     expect(text).not.toMatch(/chown|password/i)
-    // Run as root it takes its commands from a PATH of its own, not the caller's.
-    expect(text).toContain('PATH=/usr/sbin:/usr/bin:/sbin:/bin')
-    expect(readFileSync(join(SCRIPTS, 'install-deb.sh'), 'utf8')).toContain('PATH=/usr/sbin:/usr/bin:/sbin:/bin')
+    // Run as root it takes its commands from a PATH and a temp folder of its own, not the caller's.
+    for (const script of ['install-dmg.sh', 'install-deb.sh']) {
+      expect(readFileSync(join(SCRIPTS, script), 'utf8'), script).toContain('PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH; unset TMPDIR')
+    }
+  })
+
+  // These run only as root, which a test is not: what they say is pinned here, and platformInstaller.test.ts pins the same rule in code.
+  it('as root repeats the folder checks after Slate has quit, before it makes anything: owner, mode, and the volume', () => {
+    const text = readFileSync(join(SCRIPTS, 'install-dmg.sh'), 'utf8')
+    const check = text.indexOf("stat -L -f '%u %Lp'")
+    expect(check).toBeGreaterThan(text.indexOf('while kill -0'))
+    expect(check).toBeLessThan(text.indexOf('work=$(mktemp -d)'))
+    expect(text).toContain('[ "$1" = 0 ] && [ $((0$2 & 022)) -eq 0 ]')
+    expect(text).toContain('[ "$(stat -f %d "$parent")" = "$(stat -f %d /Applications)" ]')
+  })
+
+  it('deletes the download as the user when it runs as root: Downloads can be pointed anywhere', () => {
+    expect(readFileSync(join(SCRIPTS, 'install-dmg.sh'), 'utf8')).toContain('sudo -u "#$uid" rm -f "$dmg"')
   })
 })

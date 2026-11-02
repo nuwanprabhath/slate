@@ -10,7 +10,7 @@
 # the quarantine; deletes the .dmg only on success; writes its result as the user, for the next start;
 # and opens Slate again as the user.
 exec </dev/null
-if [ "$(id -u)" -eq 0 ]; then PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH; fi
+if [ "$(id -u)" -eq 0 ]; then PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH; unset TMPDIR; fi
 pid=$1 dmg=$2 expected=$3 app=$4 result=$5 version=$6 uid=$7
 case $version in *[!0-9A-Za-z.+-]*) version=unknown ;; esac
 esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
@@ -39,6 +39,21 @@ while kill -0 "$pid" 2>/dev/null; do
   sleep 0.2
 done
 
+if [ "$(id -u)" -eq 0 ]; then
+  # Root works only where nobody else can change anything: Slate checked this before it quit, and a
+  # volume or folder can be swapped in the seconds since. Root owns the folder and every one above it,
+  # none is writable by group or others, and the folder is on the volume /Applications is on (never
+  # a disk image the account mounted, which it could detach and replace).
+  p=$parent
+  while :; do
+    set -- $(stat -L -f '%u %Lp' "$p")
+    [ "$1" = 0 ] && [ $((0$2 & 022)) -eq 0 ] || fail "Slate.app is in a place other accounts can change, so it was not replaced as root."
+    [ "$p" = / ] && break
+    p=$(dirname "$p")
+  done
+  [ "$(stat -f %d "$parent")" = "$(stat -f %d /Applications)" ] || fail "Slate.app is on a disk image, so it was not replaced as root."
+fi
+
 work=$(mktemp -d) || fail "Could not make a folder to check the disk image in."
 cp "$dmg" "$work/Slate.dmg" || fail "The disk image could not be read."
 if command -v sha512sum >/dev/null 2>&1; then sum=$(sha512sum "$work/Slate.dmg"); else sum=$(shasum -a 512 "$work/Slate.dmg"); fi
@@ -62,7 +77,8 @@ fi
 stage=""
 rm -rf "$old"
 xattr -cr "$app"
-rm -f "$dmg"
+# The download sits in the user's Downloads, which they can point at anything: delete it as them.
+if [ "$(id -u)" -eq 0 ]; then sudo -u "#$uid" rm -f "$dmg"; else rm -f "$dmg"; fi
 tidy
 report true ""
 relaunch

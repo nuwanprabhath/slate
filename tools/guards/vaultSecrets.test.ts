@@ -119,6 +119,17 @@ describe('C7: VaultApi takes every typed secret as bytes (Z-5)', () => {
     expect(secretChannelsNotWrapped(good, 'ipc.handle(CH.vaultUnlock, (_e, a) => a)', ['vaultUnlock'])).toEqual(['vaultUnlock: also registered in index.ts'])
   })
 
+  it('every channel main registers through secretHandler is a SECRET_CHANNELS row and is sent with settle, so a secret channel cannot be added to main alone (review L1)', () => {
+    const registered = new Set<string>()
+    for (const file of ['packages/desktop/src/main/vaultIpc.ts', ...Object.values(NON_VAULT_SECRET_CHANNELS)]) {
+      for (const m of read(file).matchAll(/ipc\.handle\(\s*CH\.(\w+)\s*,\s*secretHandler\(/g)) registered.add(m[1]!)
+    }
+    const guard = read('packages/desktop/src/main/ipcGuard.ts')
+    const block = /export const SECRET_CHANNELS[^=]*= \{([\s\S]*?)\n\}/.exec(guard)?.[1] ?? ''
+    const marked = [...block.matchAll(/^\s*(\w+): true,/gm)].map((m) => m[1]!)
+    expect([...registered].sort()).toEqual(marked.sort())
+  })
+
   it('main checks the shape of each secret it receives (passwordBytes: a Uint8Array of 1-4096 bytes)', () => {
     expect(read('packages/desktop/src/shared/secret.ts')).toMatch(/arg instanceof Uint8Array && arg\.length >= 1 && arg\.length <= SECRET_MAX_BYTES \? arg : null/)
     expect(read('packages/desktop/src/shared/secret.ts')).toMatch(/export const SECRET_MAX_BYTES = 4096/)

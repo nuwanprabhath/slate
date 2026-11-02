@@ -66,11 +66,19 @@ export default {
     /**
      * The module, IPC and a child's stdin take secret bytes by design: the module wipes its copy, IPC carries
      * them to main, and the stream is the pipe to sudo's `-S` (the writer zeroes what it wrote). Only a
-     * receiver typed `Writable` and named `stdin` counts, so a file or log stream (or a helper of our own named `end`) is still reported.
+     * receiver typed `Writable` that is `child.stdin`, or a variable declared from it, counts, so a file or log stream (however it is named) or a helper of our own named `end` is still reported.
      */
-    /** `child.stdin`, or a variable named `stdin` holding it: the one stream that is a pipe to a child. */
-    const isStdin = (/** @type {any} */ n) =>
-      (n.type === 'Identifier' && n.name === 'stdin') || (n.type === 'MemberExpression' && !n.computed && n.property.type === 'Identifier' && n.property.name === 'stdin')
+    const isStdinMember = (/** @type {any} */ n) => n?.type === 'MemberExpression' && !n.computed && n.property.type === 'Identifier' && n.property.name === 'stdin'
+    /** `child.stdin`, or a variable declared as `const stdin = child.stdin`: the one stream that is a pipe to a child. */
+    const isStdin = (/** @type {any} */ n) => {
+      if (isStdinMember(n)) return true
+      if (n.type !== 'Identifier') return false
+      for (let scope = context.sourceCode.getScope(n); scope; scope = scope.upper) {
+        const variable = scope.set.get(n.name)
+        if (variable) return isStdinMember(variable.defs[0]?.node?.init)
+      }
+      return false
+    }
     const sanctionedSink = (/** @type {any} */ callee) =>
       callee.type === 'MemberExpression' &&
       ((callee.object.type === 'Identifier' && callee.object.name === 'ipcRenderer') ||

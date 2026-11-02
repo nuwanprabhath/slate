@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScopedLog } from '../log/logger'
 import { secretBytes } from '../../shared/secret'
 import { sha512Hex } from './installCommands'
-import { NOT_HERS, PASSWORD_NOT_ACCEPTED, SCRIPT_NOT_ROOTS, createPlatformInstaller, runWithInput, stdinBytes } from './platformInstaller'
+import { NOT_HERS, PASSWORD_NOT_ACCEPTED, SCRIPT_NOT_ROOTS, createPlatformInstaller, nobodyButRootChanges, runWithInput, stdinBytes, type PathOps } from './platformInstaller'
 
 const PASSWORD = 'correct horse battery staple 7!'
 /** What the signed feed names for the installers these tests write; only its hex reaches the script. */
@@ -53,7 +53,7 @@ function fakeSudo(body: string): { args: () => string; stdin: () => string } {
 /** The stdin of the sudo it replaces, kept for the test to read. */
 const readStdin = () => `cat >> '${join(root, 'sudo.stdin')}'`
 
-const base = () => ({ resultFile: join(root, 'update-result.json'), downloadsDir: root, scriptsDir: scripts, sudo: sudoPath(), quit, log, rootOnly: (_path: string) => Promise.resolve(true) })
+const base = () => ({ resultFile: join(root, 'update-result.json'), downloadsDir: root, scriptsDir: scripts, sudo: sudoPath(), quit, log, rootOnly: (_path: string) => Promise.resolve(true), onApplicationsVolume: (_path: string) => Promise.resolve(true) })
 
 function linux(execPath = '/opt/Slate/slate') {
   return createPlatformInstaller({ ...base(), platform: 'linux', execPath, pid: 4242, argv: [execPath, '--user-data-dir=/x'] })
@@ -99,6 +99,56 @@ describe('the stdin copy of a password', () => {
     expect(result.code).toBeNull()
     expect(result.stderr).toContain('refuses')
     expect([...input!].every((b) => b === 0)).toBe(true)
+  })
+})
+
+describe('nobodyButRootChanges: what "out of this account\'s reach" has to mean before root works there', () => {
+  type Entry = { uid: number; mode: number; refused?: string | null }
+  /** A tree of path -> owner, mode and what write access answers (EACCES unless said). */
+  const tree = (entries: Record<string, Entry>): PathOps & { asked: string[] } => {
+    const asked: string[] = []
+    return {
+      asked,
+      lstat: (p) => (entries[p] === undefined ? Promise.reject(new Error('ENOENT')) : Promise.resolve(entries[p])),
+      access: (p) => {
+        asked.push(p)
+        const refused = entries[p]?.refused === undefined ? 'EACCES' : entries[p].refused
+        return Promise.resolve(refused === null ? null : Object.assign(new Error(refused), { code: refused }))
+      },
+    }
+  }
+  const rootDir = { uid: 0, mode: 0o40755 }
+  const apps = { '/': rootDir, '/Applications': rootDir, '/Applications/Slate.app': rootDir }
+
+  it('is true for a chain root owns, nobody else can write, and this account is refused on', async () => {
+    const ops = tree(apps)
+    expect(await nobodyButRootChanges('/Applications/Slate.app', ops)).toBe(true)
+    // The file system root is judged by owner and mode: on macOS the sealed system volume answers EROFS to everyone.
+    expect(ops.asked).toEqual(['/Applications/Slate.app', '/Applications'])
+  })
+
+  it('is false when this account can write any part of it', async () => {
+    expect(await nobodyButRootChanges('/Applications/Slate.app', tree({ ...apps, '/Applications': { ...rootDir, refused: null } }))).toBe(false)
+  })
+
+  it('is false for a read-only volume the account mounted: it can unmount it and mount its own under the same name', async () => {
+    const ops = tree({ '/': rootDir, '/Volumes': rootDir, '/Volumes/Slate': { uid: 501, mode: 0o40755, refused: 'EROFS' } })
+    expect(await nobodyButRootChanges('/Volumes/Slate', ops)).toBe(false)
+    // Even when the image's files claim root as their owner, a read-only mount is not "refused", it is changeable.
+    expect(await nobodyButRootChanges('/Volumes/Slate', tree({ '/': rootDir, '/Volumes': rootDir, '/Volumes/Slate': { ...rootDir, refused: 'EROFS' } }))).toBe(false)
+  })
+
+  it('is false for a folder the account owns and has set to 0555: its owner can chmod it back', async () => {
+    expect(await nobodyButRootChanges('/Applications/Slate.app', tree({ ...apps, '/Applications/Slate.app': { uid: 501, mode: 0o40555 } }))).toBe(false)
+  })
+
+  it('is false when group or others can write, even if root owns it', async () => {
+    expect(await nobodyButRootChanges('/Applications/Slate.app', tree({ ...apps, '/Applications': { uid: 0, mode: 0o40775 } }))).toBe(false)
+    expect(await nobodyButRootChanges('/Applications/Slate.app', tree({ ...apps, '/Applications': { uid: 0, mode: 0o41777 } }))).toBe(false)
+  })
+
+  it('is false for anything it cannot look at', async () => {
+    expect(await nobodyButRootChanges('/Applications/Gone.app', tree(apps))).toBe(false)
   })
 })
 
@@ -264,6 +314,15 @@ describe('macOS', () => {
     const sudo = fakeSudo('exit 0')
     await expect(mac(exec, { rootOnly: () => Promise.resolve(false) }).needsPassword('/dl/Slate.dmg')).rejects.toThrow(NOT_HERS)
     expect(await mac(exec, { rootOnly: () => Promise.resolve(false) }).installDownloaded('/dl/Slate.dmg', { password: secretBytes('x'), version: '1', sha512: SHA512 })).toEqual({ ok: false, reason: 'install', message: NOT_HERS })
+    expect(sudo.args()).toBe('')
+  })
+
+  it('refuses to run as root in a disk image\'s volume, which the account mounted and could replace after Slate quits', async () => {
+    const { exec } = rootsBundle()
+    const sudo = fakeSudo('exit 0')
+    const onImage = { onApplicationsVolume: (_path: string) => Promise.resolve(false) }
+    await expect(mac(exec, onImage).needsPassword('/dl/Slate.dmg')).rejects.toThrow(NOT_HERS)
+    expect(await mac(exec, onImage).installDownloaded('/dl/Slate.dmg', { password: secretBytes('x'), version: '1', sha512: SHA512 })).toEqual({ ok: false, reason: 'install', message: NOT_HERS })
     expect(sudo.args()).toBe('')
   })
 
