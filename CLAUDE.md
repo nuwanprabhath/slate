@@ -169,7 +169,7 @@ from the main checkout, when the worktree's `package-lock.json` matches main's:
 
 ```sh
 cd <worktree>
-for d in node_modules packages/*/node_modules packages/native/build packages/native/fips packages/native/prebuilds; do
+for d in node_modules tools/lint/node_modules packages/*/node_modules packages/native/build packages/native/fips packages/native/prebuilds; do
   [ -e "<main>/$d" ] && cp -Rc "<main>/$d" "$d"
 done
 ```
@@ -178,7 +178,8 @@ done
 changes. Measured on 0.5.1: a working worktree for about 26 MB of real disk against about 690 MB, and
 typecheck, unit tests, the native tests and the Electron binary all ran in it. `du` still reports the
 full size, so judge the cost by `df`. `packages/native/{build,fips,prebuilds}` are untracked build
-output, so a new worktree lacks them unless cloned. Run `npm ci` instead when the lockfile differs
+output, and `tools/lint/node_modules` is the lint toolchain's own install (`npm run lint` fails without it), so a
+new worktree lacks them unless cloned. Run `npm ci` instead when the lockfile differs
 from main's. Delete `ui-review/` when a branch is done; `npm run ui:review` rebuilds it.
 
 ## Definition of done
