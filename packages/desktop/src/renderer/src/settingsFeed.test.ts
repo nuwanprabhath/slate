@@ -47,6 +47,17 @@ describe('followSettings', () => {
     expect(apply).toHaveBeenLastCalledWith(withShortcuts(true))
   })
 
+  it('applies nothing after the unsubscribe, not even a first read still in flight', async () => {
+    const { api, release, off } = fakeApi()
+    const apply = vi.fn()
+    followSettings(api, apply)()
+    release(withShortcuts(false))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(apply).not.toHaveBeenCalled()
+    expect(off).toHaveBeenCalledTimes(1)
+  })
+
   it('returns the unsubscribe', () => {
     const { api, off } = fakeApi()
     followSettings(api, vi.fn())()
