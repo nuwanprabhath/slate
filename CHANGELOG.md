@@ -6,6 +6,10 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A setting changed in the first moments after launch (from the menu, say) could be undone: the page's first read of the settings, taken before the change, could arrive after it and overwrite it, leaving the editors on the old value until the next change. The first read now applies only when no change has arrived. This was the cause of the occasional failure of the Markdown Shortcuts end-to-end test on Ubuntu.
+
 ## [0.6.0] - 2026-11-02
 
 ### Added
