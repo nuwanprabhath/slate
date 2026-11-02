@@ -45,6 +45,8 @@ export const SECRET_CHANNELS: Readonly<Partial<Record<keyof typeof CH, true>>> =
   vaultChangePassword: true,
   vaultNewRecovery: true,
   vaultRekeyPrepare: true,
+  // Not the vault's: sudo's password in Install and restart (update/ipc.ts, through secretHandler).
+  updateInstallAndRestart: true,
 }
 const SECRET: ReadonlySet<string> = new Set(Object.keys(SECRET_CHANNELS).map((k) => CH[k as keyof typeof CH]))
 
@@ -121,6 +123,8 @@ export const CHANNEL_POLICY: Readonly<Record<keyof typeof CH, ChannelPolicy>> = 
   updateCheck: 'unlocked',
   updateDownload: 'unlocked',
   updateInstall: 'unlocked',
+  updatePrepareInstall: 'unlocked',
+  updateInstallAndRestart: 'unlocked',
   updateOpenInstaller: 'unlocked',
   updateShowInFolder: 'unlocked',
   updateCopyCommand: 'unlocked',
@@ -246,6 +250,8 @@ export const SELF_TEST_POLICY: Readonly<Record<keyof typeof CH, SelfTestPolicy>>
   updateCheck: 'refused',
   updateDownload: 'refused',
   updateInstall: 'refused',
+  updatePrepareInstall: 'refused',
+  updateInstallAndRestart: 'refused',
   updateOpenInstaller: 'refused',
   updateShowInFolder: 'refused',
   updateCopyCommand: 'refused',

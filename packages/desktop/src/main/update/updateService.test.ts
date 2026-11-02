@@ -1,7 +1,9 @@
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UpdateState } from '../../shared/api'
+import { secretBytes } from '../../shared/secret'
 import { FAKE_HYBRID_KEY } from './fakeBackend'
+import { CHANGED_SINCE_VERIFIED } from './installCommands'
 import { artifactMessage, keyIdOf, manifestMessage, UpdateSignatureError, type Ed25519UpdateKey } from './signature'
 import { UpdateService, type FoundUpdate, type UpdateBackend, type UpdatePrefs } from './updateService'
 import { createUpdateVerifier, type UpdateVerifier, type VerifiedRelease } from './verifier'
@@ -24,6 +26,11 @@ function stubBackend(version = '0.2.0') {
     showInFolder: vi.fn(),
     openExternal: vi.fn(),
     copy: vi.fn(),
+    needsPassword: vi.fn().mockResolvedValue(false),
+    stillVerified: vi.fn().mockResolvedValue(true),
+    installDownloaded: vi.fn<UpdateBackend['installDownloaded']>().mockResolvedValue({ ok: true }),
+    restart: vi.fn(),
+    takePreviousInstall: vi.fn<UpdateBackend['takePreviousInstall']>().mockResolvedValue(null),
   }
 }
 
@@ -408,6 +415,221 @@ describe('UpdateService', () => {
       }
       expect(await run('download')).toEqual([])
       expect(await run('install')).toEqual(['downloaded 0.4.0'])
+    })
+  })
+})
+
+describe('UpdateService: Install and restart', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const available = async (kind: UpdateState['kind'] = 'deb', backend = stubBackend()) => {
+    const ctx = setup({ kind, backend })
+    await ctx.service.check()
+    return ctx
+  }
+
+  it('is offered for a dmg or deb install with a release in hand, and for nothing else', async () => {
+    expect((await available('deb')).service.state().installable).toBe(true)
+    expect((await available('dmg')).service.state().installable).toBe(true)
+    for (const kind of ['auto', 'manual'] as const) {
+      const { service, backend } = await available(kind)
+      expect(service.state().installable).toBeUndefined()
+      expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+      expect(backend.downloadFile).not.toHaveBeenCalled()
+    }
+  })
+
+  it('downloads and verifies, installs without a password, and restarts into it, opening nothing', async () => {
+    const { service, backend, verifier, states } = await available('dmg')
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    expect(verifier.artifact).toHaveBeenCalledTimes(1)
+    expect(backend.downloadFile).toHaveBeenCalledTimes(1)
+    // A hand-over would open the dmg a second install could start from.
+    expect(backend.openPath).not.toHaveBeenCalled()
+    expect(backend.stillVerified).toHaveBeenCalledWith('/dl/Slate-0.2.0-mac-arm64.dmg', 'd')
+    expect(backend.installDownloaded).toHaveBeenCalledWith('/dl/Slate-0.2.0-mac-arm64.dmg', { password: null, version: '0.2.0', sha512: 'd' })
+    expect(backend.restart).toHaveBeenCalledTimes(1)
+    expect(service.state()).toMatchObject({ phase: 'restarting', visible: true })
+    expect([...new Set(states.map((s) => s.phase))]).toEqual(['checking', 'available', 'downloading', 'downloaded', 'installing', 'restarting'])
+    expect(states.filter((s) => s.phase === 'downloading').every((s) => s.installRequested)).toBe(true)
+  })
+
+  it('waits in needs-password when sudo wants one, and installs with the password it is sent', async () => {
+    const { service, backend } = await available('deb')
+    backend.needsPassword.mockResolvedValue(true)
+    expect(await service.prepareInstall()).toEqual({ needsPassword: true })
+    expect(service.state()).toMatchObject({ phase: 'needs-password', visible: true, version: '0.2.0' })
+    expect(backend.installDownloaded).not.toHaveBeenCalled()
+    const password = secretBytes('hunter2')
+    expect(await service.installAndRestart(password)).toEqual({ ok: true })
+    expect(backend.installDownloaded).toHaveBeenCalledWith('/dl/Slate-0.2.0-linux-amd64.deb', { password, version: '0.2.0', sha512: 'b' })
+    expect(service.state().phase).toBe('restarting')
+    expect(backend.restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('says a refused password was refused and stays on the form', async () => {
+    const { service, backend } = await available('deb')
+    backend.needsPassword.mockResolvedValue(true)
+    backend.installDownloaded.mockResolvedValueOnce({ ok: false, reason: 'password', message: 'That password was not accepted.' })
+    await service.prepareInstall()
+    await service.installAndRestart(secretBytes('wrong'))
+    expect(service.state()).toMatchObject({ phase: 'needs-password', installError: 'That password was not accepted.' })
+    expect(backend.restart).not.toHaveBeenCalled()
+    await service.installAndRestart(secretBytes('right'))
+    expect(service.state().phase).toBe('restarting')
+    expect(service.state().installError).toBeUndefined()
+  })
+
+  it('asks for a password without saying anything was refused when sudo wanted one after all', async () => {
+    const { service, backend } = await available('deb')
+    backend.installDownloaded.mockResolvedValueOnce({ ok: false, reason: 'password-required', message: '' })
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    expect(service.state()).toMatchObject({ phase: 'needs-password' })
+    expect(service.state().installError).toBeUndefined()
+  })
+
+  it('keeps the verified download when the install fails, and Try again installs it without downloading again', async () => {
+    const { service, backend, diag } = await available('deb')
+    backend.installDownloaded.mockResolvedValueOnce({ ok: false, reason: 'install', message: 'E: Unable to locate package' })
+    await service.prepareInstall()
+    expect(service.state()).toMatchObject({ phase: 'downloaded', installError: 'E: Unable to locate package', installable: true, file: '/dl/Slate-0.2.0-linux-amd64.deb' })
+    expect(backend.restart).not.toHaveBeenCalled()
+    expect(diag.warn).toHaveBeenCalled()
+    await service.prepareInstall()
+    expect(backend.downloadFile).toHaveBeenCalledTimes(1)
+    expect(backend.installDownloaded).toHaveBeenCalledTimes(2)
+    expect(service.state().phase).toBe('restarting')
+  })
+
+  it('says why when this install cannot be replaced at all (a quarantined copy), and installs nothing', async () => {
+    const { service, backend } = await available('dmg')
+    backend.needsPassword.mockRejectedValue(new Error('Slate is running from a quarantined copy.'))
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    expect(service.state()).toMatchObject({ phase: 'downloaded', installError: 'Slate is running from a quarantined copy.' })
+    expect(backend.installDownloaded).not.toHaveBeenCalled()
+  })
+
+  it('refuses a file that no longer matches the sha512 the signed feed names, and forgets it', async () => {
+    const { service, backend } = await available('deb')
+    backend.stillVerified.mockResolvedValue(false)
+    await service.prepareInstall()
+    expect(backend.installDownloaded).not.toHaveBeenCalled()
+    expect(service.state()).toMatchObject({ phase: 'available', installError: expect.stringContaining('changed since it was verified') as string })
+    expect(service.state().file).toBeUndefined()
+    // The next try downloads and verifies afresh.
+    backend.stillVerified.mockResolvedValue(true)
+    await service.prepareInstall()
+    expect(backend.downloadFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores a second click while the first is still downloading or asking sudo, so two installs never start', async () => {
+    const { service, backend } = await available('deb')
+    let release!: () => void
+    backend.downloadFile.mockImplementationOnce(() => new Promise<string>((resolve) => { release = () => resolve('/dl/Slate-0.2.0-linux-amd64.deb') }))
+    const first = service.prepareInstall()
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    release()
+    await first
+    expect(backend.downloadFile).toHaveBeenCalledTimes(1)
+    expect(backend.installDownloaded).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats the root-side re-check refusing the file the same way as the one in main: forgets the download and offers a fresh one', async () => {
+    const { service, backend } = await available('deb')
+    backend.installDownloaded.mockResolvedValueOnce({ ok: false, reason: 'install', message: CHANGED_SINCE_VERIFIED })
+    await service.prepareInstall()
+    expect(service.state()).toMatchObject({ phase: 'available', installError: CHANGED_SINCE_VERIFIED })
+    await service.prepareInstall()
+    expect(backend.downloadFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses to install outside needs-password, and with nothing downloaded', async () => {
+    const { service, backend } = await available('deb')
+    expect(await service.installAndRestart(secretBytes('x'))).toMatchObject({ ok: false, reason: 'install' })
+    await service.prepareInstall()
+    expect(await service.installAndRestart(null)).toMatchObject({ ok: false, reason: 'install' })
+    expect(backend.installDownloaded).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a download of a verified release that fails verification, installing nothing', async () => {
+    const { service, backend, verifier } = await available('deb')
+    verifier.artifact.mockRejectedValue(new UpdateSignatureError('bad signature'))
+    await service.prepareInstall()
+    expect(service.state().phase).toBe('error')
+    expect(backend.downloadFile).not.toHaveBeenCalled()
+    expect(backend.installDownloaded).not.toHaveBeenCalled()
+  })
+
+  it('Cancel on the password form keeps the download and offers Install and restart again, without dismissing the release', async () => {
+    const { service, backend, prefs } = await available('deb')
+    backend.needsPassword.mockResolvedValue(true)
+    await service.prepareInstall()
+    service.dismiss()
+    expect(service.state()).toMatchObject({ phase: 'downloaded', visible: true, installable: true })
+    expect(service.state().installRequested).toBeUndefined()
+    expect(prefs().dismissed).toBeUndefined()
+  })
+
+  it('stays visible while installing even if the release was dismissed or skipped before', async () => {
+    const { service, backend } = setup({ kind: 'deb', prefs: { dismissed: '0.2.0', skipped: '0.2.0' } })
+    await service.check({ manual: true })
+    backend.needsPassword.mockResolvedValue(true)
+    await service.prepareInstall()
+    service.skip()
+    expect(service.state()).toMatchObject({ phase: 'needs-password', visible: true })
+  })
+
+  it('is not interrupted by a check while it installs', async () => {
+    const { service, backend } = await available('deb')
+    backend.needsPassword.mockResolvedValue(true)
+    await service.prepareInstall()
+    backend.check.mockClear()
+    await service.check({ manual: true })
+    expect(backend.check).not.toHaveBeenCalled()
+    expect(service.state().phase).toBe('needs-password')
+  })
+
+  it('no longer offers a download of an older release once a newer one is found', async () => {
+    const { service, backend } = await available('deb')
+    backend.installDownloaded.mockResolvedValueOnce({ ok: false, reason: 'install', message: 'x' })
+    await service.prepareInstall()
+    expect(service.state().installable).toBe(true)
+    backend.check.mockResolvedValue(found('0.3.0'))
+    await service.check({ manual: true })
+    await service.prepareInstall()
+    expect(backend.installDownloaded).toHaveBeenLastCalledWith('/dl/Slate-0.3.0-linux-amd64.deb', { password: null, version: '0.3.0', sha512: 'b' })
+    expect(backend.downloadFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('still hands the download over to install by hand: Download opens a dmg and keeps the command for a deb', async () => {
+    const dmg = await available('dmg')
+    await dmg.service.download()
+    expect(dmg.backend.openPath).toHaveBeenCalledWith('/dl/Slate-0.2.0-mac-arm64.dmg')
+    expect(dmg.service.state()).toMatchObject({ phase: 'downloaded', installable: true })
+    const deb = await available('deb')
+    await deb.service.download()
+    expect(deb.service.state().command).toMatch(/^sudo apt install /)
+    expect(deb.backend.openPath).not.toHaveBeenCalled()
+  })
+
+  describe('after the macOS helper ran', () => {
+    it('says nothing when it succeeded or never ran', async () => {
+      const { service, backend } = setup({ kind: 'dmg' })
+      await service.restorePreviousInstall()
+      backend.takePreviousInstall.mockResolvedValue({ version: '0.2.0', ok: true, message: '', path: null })
+      await service.restorePreviousInstall()
+      expect(service.state()).toMatchObject({ phase: 'idle', visible: false })
+    })
+
+    it('shows the failure with the installer it kept, even when that release was dismissed', async () => {
+      const { service, backend } = setup({ kind: 'dmg', prefs: { dismissed: '0.2.0' } })
+      backend.takePreviousInstall.mockResolvedValue({ version: '0.2.0', ok: false, message: 'The disk image could not be opened.', path: '/dl/Slate-0.2.0-mac-arm64.dmg' })
+      await service.restorePreviousInstall()
+      expect(service.state()).toMatchObject({
+        phase: 'downloaded', visible: true, version: '0.2.0', installError: 'The disk image could not be opened.', file: '/dl/Slate-0.2.0-mac-arm64.dmg',
+      })
+      expect(service.state().installable).toBeUndefined()
     })
   })
 })

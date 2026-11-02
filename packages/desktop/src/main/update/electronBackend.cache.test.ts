@@ -14,10 +14,13 @@ vi.mock('electron', () => ({ clipboard: {}, net: {}, shell: {} }))
 
 const verified = { version: '0.4.0', files: [{ url: 'Slate-0.4.0-x86_64.AppImage', sha512: 'R09PRA==', size: 1 }] } as unknown as VerifiedRelease
 
+/** The install half is covered by platformInstaller.test.ts; this file is about the feed and the download. */
+const installer = { needsPassword: async () => false, stillVerified: async () => true, installDownloaded: async () => ({ ok: true as const }), restart() {}, takePreviousInstall: async () => null }
+
 describe('electronBackend: the update electron-updater acts on must be the verified one (review F2)', () => {
   it('refuses to download or install when a later check replaced the cached update', async () => {
     const { electronBackend } = await import('./electronBackend')
-    const backend = electronBackend({ downloadsDir: '/tmp', log: () => {} })
+    const backend = electronBackend({ downloadsDir: '/tmp', log: () => {}, installer })
     updater.updateInfoAndProvider = { info: { version: '0.5.0', files: [{ url: 'Slate-0.5.0-x86_64.AppImage', sha512: 'RVZJTA==' }] } }
     await expect(backend.downloadAuto(verified, () => {})).rejects.toThrow(/not the verified 0\.4\.0/)
     expect(() => backend.installAuto(verified)).toThrow(/not the verified/)

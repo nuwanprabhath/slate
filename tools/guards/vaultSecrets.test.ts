@@ -48,11 +48,19 @@ export function secretParamsNotBytes(params: Param[]): string[] {
     .map((p) => `${p.method}(${p.name}: ${p.type})`)
 }
 
+/**
+ * The secret channels that are not the vault's, and the file that registers each through `secretHandler`
+ * (the same zeroing, kept next to the code that uses the secret). sudo's password in Install and restart.
+ */
+export const NON_VAULT_SECRET_CHANNELS: Readonly<Record<string, string>> = {
+  updateInstallAndRestart: 'packages/desktop/src/main/update/ipc.ts',
+}
+
 /** Secret channels that vaultIpc.ts does not register as `ipc.handle(CH.<x>, secretHandler(…))`, or that index.ts registers too. */
 export function secretChannelsNotWrapped(vaultIpc: string, index: string, channels: string[]): string[] {
   const out: string[] = []
   for (const ch of channels) {
-    if (!new RegExp(`ipc\\.handle\\(\\s*CH\\.${ch}\\s*,\\s*secretHandler\\(`).test(vaultIpc)) out.push(`${ch}: not through secretHandler in vaultIpc.ts`)
+    if (!new RegExp(`ipc\\.handle\\(\\s*CH\\.${ch}\\s*,\\s*secretHandler\\(`).test(vaultIpc)) out.push(`${ch}: not through secretHandler where it is registered`)
     if (new RegExp(`\\bCH\\.${ch}\\b`).test(index)) out.push(`${ch}: also registered in index.ts`)
   }
   return out
@@ -86,7 +94,10 @@ describe('C7: VaultApi takes every typed secret as bytes (Z-5)', () => {
     const preload = read('packages/desktop/src/preload/index.ts')
     const channels = [...preload.matchAll(/settle\(ipcRenderer\.invoke\(CH\.(\w+)/g)].map((m) => m[1]!)
     expect(channels.length).toBeGreaterThanOrEqual(10)
-    expect(secretChannelsNotWrapped(read('packages/desktop/src/main/vaultIpc.ts'), read('packages/desktop/src/main/index.ts'), channels)).toEqual([])
+    const own = channels.filter((c) => c in NON_VAULT_SECRET_CHANNELS)
+    expect(secretChannelsNotWrapped(read('packages/desktop/src/main/vaultIpc.ts'), read('packages/desktop/src/main/index.ts'), channels.filter((c) => !own.includes(c)))).toEqual([])
+    // A non-vault secret channel is wrapped in the file the table names, and index.ts does not register it too.
+    for (const c of own) expect(secretChannelsNotWrapped(read(NON_VAULT_SECRET_CHANNELS[c]!), read('packages/desktop/src/main/index.ts'), [c]), c).toEqual([])
     expect(read('packages/desktop/src/main/vaultIpc.ts')).toMatch(/\} finally \{\n\s+zeroSecret\(\.\.\.secretsIn\(args\)\)/)
   })
 
@@ -104,8 +115,19 @@ describe('C7: VaultApi takes every typed secret as bytes (Z-5)', () => {
   it('the wrapper check sees a secret channel registered bare, or registered elsewhere (self-test)', () => {
     const good = 'ipc.handle(\n    CH.vaultUnlock,\n    secretHandler(async (arg) => d.unlock(arg)),\n  )'
     expect(secretChannelsNotWrapped(good, '', ['vaultUnlock'])).toEqual([])
-    expect(secretChannelsNotWrapped('ipc.handle(CH.vaultUnlock, async (_e, arg) => unlock(arg))', '', ['vaultUnlock'])).toEqual(['vaultUnlock: not through secretHandler in vaultIpc.ts'])
+    expect(secretChannelsNotWrapped('ipc.handle(CH.vaultUnlock, async (_e, arg) => unlock(arg))', '', ['vaultUnlock'])).toEqual(['vaultUnlock: not through secretHandler where it is registered'])
     expect(secretChannelsNotWrapped(good, 'ipc.handle(CH.vaultUnlock, (_e, a) => a)', ['vaultUnlock'])).toEqual(['vaultUnlock: also registered in index.ts'])
+  })
+
+  it('every channel main registers through secretHandler is a SECRET_CHANNELS row and is sent with settle, so a secret channel cannot be added to main alone (review L1)', () => {
+    const registered = new Set<string>()
+    for (const file of ['packages/desktop/src/main/vaultIpc.ts', ...Object.values(NON_VAULT_SECRET_CHANNELS)]) {
+      for (const m of read(file).matchAll(/ipc\.handle\(\s*CH\.(\w+)\s*,\s*secretHandler\(/g)) registered.add(m[1]!)
+    }
+    const guard = read('packages/desktop/src/main/ipcGuard.ts')
+    const block = /export const SECRET_CHANNELS[^=]*= \{([\s\S]*?)\n\}/.exec(guard)?.[1] ?? ''
+    const marked = [...block.matchAll(/^\s*(\w+): true,/gm)].map((m) => m[1]!)
+    expect([...registered].sort()).toEqual(marked.sort())
   })
 
   it('main checks the shape of each secret it receives (passwordBytes: a Uint8Array of 1-4096 bytes)', () => {

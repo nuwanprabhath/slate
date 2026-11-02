@@ -10,10 +10,13 @@ vi.mock('electron-updater', () => ({
 }))
 vi.mock('electron', () => ({ clipboard: {}, net: {}, shell: {} }))
 
+/** The install half is covered by platformInstaller.test.ts; this file is about the feed and the download. */
+const installer = { needsPassword: async () => false, stillVerified: async () => true, installDownloaded: async () => ({ ok: true as const }), restart() {}, takePreviousInstall: async () => null }
+
 describe('electronBackend', () => {
   it('does not touch electron-updater until a check runs', async () => {
     const { electronBackend } = await import('./electronBackend')
-    const backend = electronBackend({ downloadsDir: '/tmp', log: () => {} })
+    const backend = electronBackend({ downloadsDir: '/tmp', log: () => {}, installer })
     await expect(backend.check()).rejects.toThrow(/semver/)
   })
 

@@ -28,9 +28,9 @@ export function capabilityReason(kind: InstallKind): string | undefined {
     case 'auto':
       return undefined
     case 'dmg':
-      return "This build can't install updates itself; Slate downloads the installer and opens it."
+      return 'This build is not signed, so macOS will not let it replace itself. Install and restart swaps the new version in from a helper once Slate has quit.'
     case 'deb':
-      return "This build can't install updates itself; Slate downloads the .deb and gives you the sudo apt install command."
+      return 'Installed from a .deb package. Install and restart installs the update with apt, asking for your sudo password if it is needed.'
     case 'manual':
       return "This build can't install updates itself; Slate opens the release page."
   }

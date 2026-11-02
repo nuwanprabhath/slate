@@ -44,7 +44,7 @@ test('skipping hides the banner; the updates section says so and Stop skipping b
     const section = page.getByTestId('updates-section')
     await expect(section.getByTestId('update-skipped')).toContainText('Skipping 9.9.9')
     await expect(section.getByTestId('update-version')).toHaveText('Version 0.1.0')
-    await expect(section.getByTestId('update-reason')).toContainText('sudo apt install')
+    await expect(section.getByTestId('update-reason')).toContainText('Install and restart installs the update with apt')
 
     await section.getByTestId('update-check-now').click()
     await expect(section.getByTestId('update-check-result')).toHaveText('Slate 9.9.9 is available (skipped).')
@@ -67,6 +67,102 @@ test('the section switches automatic checks and the interval through the setting
     await section.getByTestId('setting-update-automatic').uncheck()
     await expect(section.getByTestId('setting-update-interval')).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => window.slate.settings.get().then((s) => s.updateAutomaticChecks))).toBe(false)
+  } finally {
+    await app.close()
+  }
+})
+
+test('Install and restart installs without a password when none is needed and says it is restarting', async () => {
+  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  try {
+    const banner = page.getByTestId('update-banner')
+    await expect(banner).toContainText('Slate 9.9.9 is available')
+    await page.getByTestId('update-install-restart').click()
+    await expect(banner).toHaveAttribute('data-phase', 'restarting')
+    await expect(banner).toContainText('Restarting into Slate 9.9.9')
+    // Nothing else is offered once it is under way.
+    await expect(banner.getByRole('button')).toHaveCount(0)
+  } finally {
+    await app.close()
+  }
+})
+
+test('Install and restart asks for the password, refuses a wrong one, then installs with the right one', async () => {
+  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-sudo' })
+  try {
+    const banner = page.getByTestId('update-banner')
+    await expect(banner).toContainText('Slate 9.9.9 is available')
+    await page.getByTestId('update-install-restart').click()
+    await expect(banner).toHaveAttribute('data-phase', 'needs-password')
+    await expect(banner).toContainText('Slate 9.9.9 needs your password to install')
+    const field = page.getByTestId('update-password')
+    await expect(field).toBeFocused()
+    await expect(page.getByTestId('update-password-note')).toContainText('never saved')
+
+    await field.fill('not it')
+    await page.getByTestId('update-password-submit').click()
+    await expect(banner).toContainText('Could not install Slate 9.9.9: That password was not accepted.')
+    // The typed text left the field with the submit, so a refused password comes back to an empty one.
+    await expect(field).toHaveValue('')
+    await expect(field).toBeFocused()
+
+    await field.fill('sesame')
+    await field.press('Enter')
+    await expect(banner).toHaveAttribute('data-phase', 'restarting')
+    // The password is in no text the page shows.
+    expect(await page.evaluate(() => document.body.innerText)).not.toContain('sesame')
+  } finally {
+    await app.close()
+  }
+})
+
+test('Cancel on the password form keeps the download and offers Install and restart again', async () => {
+  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-sudo' })
+  try {
+    const banner = page.getByTestId('update-banner')
+    await page.getByTestId('update-install-restart').click()
+    await expect(banner).toHaveAttribute('data-phase', 'needs-password')
+    await page.getByTestId('update-password-cancel').click()
+    await expect(banner).toHaveAttribute('data-phase', 'downloaded')
+    await expect(banner).toContainText('Slate 9.9.9 is downloaded')
+    await expect(page.getByTestId('update-install-restart')).toHaveText('Install and restart')
+  } finally {
+    await app.close()
+  }
+})
+
+test('a failed install says why and offers Try again, keeping the download for the install command', async () => {
+  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-installfail' })
+  try {
+    const banner = page.getByTestId('update-banner')
+    await page.getByTestId('update-install-restart').click()
+    await expect(banner).toContainText('Could not install Slate 9.9.9: apt-get exited with 100.')
+    await expect(page.getByTestId('update-install-restart')).toHaveText('Try again')
+    await expect(page.getByTestId('update-copy-command')).toBeVisible()
+  } finally {
+    await app.close()
+  }
+})
+
+test('a mac build offers Install and restart beside Download', async () => {
+  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'dmg' })
+  try {
+    await expect(page.getByTestId('update-banner')).toContainText('Slate 9.9.9 is available')
+    await expect(page.getByTestId('update-install-restart')).toBeVisible()
+    await expect(page.getByTestId('update-download')).toHaveText('Download')
+    await page.getByTestId('update-install-restart').click()
+    await expect(page.getByTestId('update-banner')).toHaveAttribute('data-phase', 'restarting')
+  } finally {
+    await app.close()
+  }
+})
+
+test('an AppImage keeps its own Download and install, with no Install and restart', async () => {
+  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'auto' })
+  try {
+    await expect(page.getByTestId('update-banner')).toContainText('Slate 9.9.9 is available')
+    await expect(page.getByTestId('update-install-restart')).toHaveCount(0)
+    await expect(page.getByTestId('update-download')).toHaveText('Download and install')
   } finally {
     await app.close()
   }

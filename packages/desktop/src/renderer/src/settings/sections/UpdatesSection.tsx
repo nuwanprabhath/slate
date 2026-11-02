@@ -43,7 +43,7 @@ export function UpdatesSection() {
       .finally(() => setChecking(false))
   }
 
-  const busy = checking || update?.phase === 'checking' || update?.phase === 'downloading'
+  const busy = checking || update?.phase === 'checking' || update?.phase === 'downloading' || update?.phase === 'installing' || update?.phase === 'restarting'
   const hours = settings.updateCheckIntervalHours
   const intervals = INTERVAL_PRESETS.includes(hours) ? INTERVAL_PRESETS : [...INTERVAL_PRESETS, hours].sort((a, b) => a - b)
 

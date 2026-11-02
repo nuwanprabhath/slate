@@ -1,5 +1,6 @@
 import { env, envSnapshot } from '../testHooks'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { app, BrowserWindow, clipboard } from 'electron'
 import type { IpcRegistrar } from '../ipcGuard'
 import { CH } from '../../shared/ipc'
@@ -8,8 +9,9 @@ import { onSettingsWritten, readSettings } from '../settings'
 import type { DocStore } from '../store'
 import { detectInstallKind } from './capability'
 import { electronBackend } from './electronBackend'
-import { FAKE_CURRENT_VERSION, fakeBackend, fakeInstallKind, fakeSignature } from './fakeBackend'
+import { FAKE_CURRENT_VERSION, fakeBackend, fakeInstall, fakeInstallKind, fakeSignature } from './fakeBackend'
 import { registerUpdateIpc, updatePrefsIn } from './ipc'
+import { createPlatformInstaller } from './platformInstaller'
 import { PINNED_UPDATE_KEYS } from './signature'
 import { createUpdateVerifier } from './verifier'
 import { UpdateService, type UpdatePrefs } from './updateService'
@@ -32,8 +34,10 @@ export function createUpdates(store: () => DocStore | null, isE2E: boolean, ipc:
   }
   const live = app.isPackaged && !isE2E
   const manifestName = process.platform === 'darwin' ? 'latest-mac.yml' : process.platform === 'linux' ? 'latest-linux.yml' : 'latest.yml'
-  const fakeFeed = fake ? fakeBackend({ downloadsDir: tmpdir(), copy: (t) => void clipboard.writeText(t), manifestName, signature: fakeSignature(fake) }) : null
-  const backend = fakeFeed ?? electronBackend({ downloadsDir: app.getPath('downloads'), log })
+  const fakeFeed = fake ? fakeBackend({ downloadsDir: tmpdir(), copy: (t) => void clipboard.writeText(t), manifestName, signature: fakeSignature(fake), install: fakeInstall(fake) }) : null
+  const diag = diagLog.scoped('update')
+  const installer = createPlatformInstaller({ platform: process.platform, resultFile: join(app.getPath('userData'), 'update-result.json'), quit: () => app.quit(), log: diag, downloadsDir: app.getPath('downloads'), scriptsDir: join(process.resourcesPath, 'update') })
+  const backend = fakeFeed ?? electronBackend({ downloadsDir: app.getPath('downloads'), log, installer })
   const verifier = createUpdateVerifier({
     // The fake feed's own key exists only in an e2e run; a real feed verifies against the pinned keys alone.
     keys: fakeFeed ? fakeFeed.keys : PINNED_UPDATE_KEYS,
@@ -51,7 +55,7 @@ export function createUpdates(store: () => DocStore | null, isE2E: boolean, ipc:
     loadPrefs: prefs.load,
     savePrefs: prefs.save,
     log,
-    diag: diagLog.scoped('update'),
+    diag,
     emit: (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.updateStateEvent, state)),
     settings: () => {
       const open = store()
@@ -63,5 +67,7 @@ export function createUpdates(store: () => DocStore | null, isE2E: boolean, ipc:
   registerUpdateIpc(ipc, service)
   onSettingsWritten(() => service.settingsChanged())
   if (live || fake) service.start()
+  // After the macOS helper ran: a failed install is said in the banner at the next start.
+  if (live) service.restorePreviousInstall().catch((e: unknown) => log(e))
   return service
 }

@@ -357,13 +357,14 @@ export type VaultProblem = 'join-needed' | 'other-vault' | 'not-encrypted' | 'ke
 
 /**
  * How this installation takes an update. `auto`: electron-updater installs it (AppImage).
- * `dmg`: an unsigned mac build downloads the dmg and opens it. `deb`: downloads the .deb and offers
- * the apt command. `manual`: only the release page (dev runs, other platforms).
+ * `dmg`: an unsigned mac build installs the dmg itself with a helper once Slate has quit. `deb`:
+ * installs the .deb with sudo apt-get. Both can also hand the download over to do by hand.
+ * `manual`: only the release page (dev runs, other platforms).
  */
 export type InstallKind = 'auto' | 'dmg' | 'deb' | 'manual'
 
 export interface UpdateState {
-  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'needs-password' | 'installing' | 'restarting' | 'error'
   kind: InstallKind
   version?: string
   releaseUrl?: string
@@ -383,7 +384,24 @@ export interface UpdateState {
   reason?: string
   /** The last check or download failure. */
   error?: string
+  /** The download in progress (or done) is for Install and restart, so nothing opens it. */
+  installRequested?: boolean
+  /** Why the last install did not happen, in one sentence. */
+  installError?: string
+  /** Install and restart can run now: a dmg or deb install with a release offered, or its verified download on disk. */
+  installable?: boolean
 }
+
+/** What `update.prepareInstall` answers: whether `update.installAndRestart` must be sent a password. */
+export interface PrepareInstallResult {
+  needsPassword: boolean
+}
+
+/**
+ * `password`: sudo refused the password. `password-required`: sudo wanted one when none was sent (its
+ * cache expired after the probe), so nothing was refused. `install`: anything else went wrong.
+ */
+export type InstallOutcome = { ok: true } | { ok: false; reason: 'password' | 'password-required' | 'install'; message: string }
 
 export interface AuditEntryRow {
   id: number
@@ -533,6 +551,10 @@ export interface SlateApi {
     check(): Promise<UpdateState>
     download(): Promise<void>
     install(): Promise<void>
+    /** Install and restart (dmg, deb): downloads and verifies, then installs at once or waits for a password. */
+    prepareInstall(): Promise<PrepareInstallResult>
+    /** The sudo password as bytes, or null when none is needed. It goes only to sudo's stdin and is never kept. */
+    installAndRestart(password: SecretBytes | null): Promise<InstallOutcome>
     openInstaller(): Promise<void>
     showInFolder(): Promise<void>
     copyCommand(): Promise<void>
