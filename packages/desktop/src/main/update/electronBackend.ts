@@ -1,13 +1,15 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createWriteStream } from 'node:fs'
+import { createReadStream, createWriteStream } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { clipboard, net } from 'electron'
 import { openExternalSafe, openLocalPath, revealInFolder } from '../openExternal'
 import { autoUpdater, type AppUpdater } from 'electron-updater'
 import { UpdateSignatureError } from './signature'
+import type { PlatformInstaller } from './platformInstaller'
 import type { UpdateBackend } from './updateService'
 import { sameRelease, type VerifiedRelease } from './verifier'
 import { assetUrl } from './versions'
@@ -27,7 +29,7 @@ export async function setQuarantine(path: string, run: RunFn = execFileAsync): P
 }
 
 /** Reads the GitHub feed (latest-mac.yml / latest-linux.yml) through electron-updater. */
-export function electronBackend(opts: { downloadsDir: string; log: (message: unknown) => void }): UpdateBackend {
+export function electronBackend(opts: { downloadsDir: string; log: (message: unknown) => void; installer: PlatformInstaller }): UpdateBackend {
   // electron-updater builds its updater on first access, and that throws for a non-semver app
   // version (an unpackaged Linux run reports "0.0"). Touching it only when a check runs keeps that
   // throw inside the update service, which logs it, instead of in app start-up.
@@ -49,6 +51,16 @@ export function electronBackend(opts: { downloadsDir: string; log: (message: unk
     if (!sameRelease(info, expected)) throw new UpdateSignatureError(`electron-updater holds ${info?.version ?? 'no update'}, not the verified ${expected.version}`)
   }
   return {
+    ...opts.installer,
+    async stillVerified(path, sha512) {
+      const hash = createHash('sha512')
+      try {
+        await pipeline(createReadStream(path), hash)
+      } catch {
+        return false
+      }
+      return hash.digest('base64') === sha512
+    },
     async check() {
       const result = await updater().checkForUpdates()
       if (!result) return null

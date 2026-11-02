@@ -88,11 +88,15 @@ under Help on Linux. When a newer version exists, a banner across the top of the
 It never interrupts with a dialog, and a failed check stays silent.
 
 - **AppImage**: *Download and install*, then *Restart and install*.
-- **macOS**: *Download* fetches the dmg, verifies it and opens it. Drag Slate to Applications, or use
-  *Copy install command*, paste it into Terminal after quitting Slate (it copies the app out of the
-  dmg and clears the quarantine flag).
-- **.deb**: *Download* fetches the `.deb`; *Copy install command* gives
-  `sudo apt install '<path to the .deb>'` to run in a terminal.
+- **macOS**: *Install and restart* downloads and verifies the dmg, quits Slate, swaps the new
+  version in wherever Slate is installed, clears its quarantine flag, deletes the dmg and opens
+  Slate again. If your account cannot write there, the banner asks for your password. If anything
+  fails, the old version is put back, the dmg is kept and the next start says why. *Download* still
+  fetches and opens the dmg for you to drag into Applications, or use *Copy install command*.
+- **.deb**: *Install and restart* downloads and verifies the `.deb`, installs it with
+  `sudo apt-get`, then starts the new version. If sudo wants a password, the banner asks for it: it
+  goes to sudo's standard input only and is never saved or logged. *Download* fetches the `.deb`;
+  *Copy install command* gives `sudo apt install '<path to the .deb>'` to run in a terminal.
 
 *Skip this version* hides that version until you choose *Stop skipping* in Settings → Updates; the
 × hides the banner until the next version.

@@ -6,7 +6,7 @@ import type { UpdateState } from '../../../shared/api'
  */
 export function describeCheck(state: UpdateState): string {
   if (state.phase === 'error') return `Could not check: ${state.error ?? 'unknown error'}`
-  if (state.phase === 'available' || state.phase === 'downloading' || state.phase === 'downloaded') {
+  if (state.phase === 'available' || state.phase === 'downloading' || state.phase === 'downloaded' || state.phase === 'needs-password' || state.phase === 'installing' || state.phase === 'restarting') {
     const skipped = state.skippedVersion === state.version ? ' (skipped)' : ''
     return `Slate ${state.version} is available${skipped}.`
   }

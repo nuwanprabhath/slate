@@ -52,6 +52,8 @@ export const CH = {
   updateCheck: 'update:check',
   updateDownload: 'update:download',
   updateInstall: 'update:install',
+  updatePrepareInstall: 'update:prepare-install',
+  updateInstallAndRestart: 'update:install-and-restart',
   updateOpenInstaller: 'update:open-installer',
   updateShowInFolder: 'update:show-in-folder',
   updateCopyCommand: 'update:copy-command',

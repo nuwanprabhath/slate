@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { InstallKind } from '../../shared/api'
 import { FAKE_ED25519_PEM, FAKE_ED25519_PKCS8_B64, FAKE_MLDSA65_SIGS, FAKE_MLDSA65_SPKI_B64 } from './fakeHybridKey'
 import { artifactMessage, HYBRID_ALG, hybridMessage, manifestMessage, pinnedKeyId, type HybridUpdateKey, type PinnedUpdateKey } from './signature'
+import { PASSWORD_NOT_ACCEPTED } from './platformInstaller'
 import type { UpdateBackend } from './updateService'
 
 export const FAKE_VERSION = '9.9.9'
@@ -18,12 +19,26 @@ const pause = () => new Promise<void>((r) => setTimeout(r, 600))
  * `-badsig` with a key that is not pinned, `-nomldsa` with the ML-DSA half stripped.
  */
 export type FakeSignature = 'good' | 'unpinned' | 'stripped'
-const SUFFIX = /-(badsig|nomldsa)$/
+/**
+ * What Install and restart does in a fake run, from the suffix too: `-sudo` asks for a password and takes
+ * only `FAKE_SUDO_PASSWORD`, `-installfail` fails the install. With neither it succeeds without one. No fake
+ * run quits the app or runs a command.
+ */
+export type FakeInstall = 'ok' | 'sudo' | 'fail'
+const SUFFIX = /-(badsig|nomldsa|sudo|installfail)$/
+
+/** The one password the `-sudo` fake accepts. */
+export const FAKE_SUDO_PASSWORD = new TextEncoder().encode('sesame')
 
 /** SLATE_FAKE_UPDATE picks the install kind e2e tests exercise (`<kind>`, `<kind>-badsig` or `<kind>-nomldsa`); any other kind means deb. */
 export function fakeInstallKind(value: string): InstallKind {
   const kind = value.replace(SUFFIX, '')
   return kind === 'dmg' || kind === 'auto' || kind === 'manual' ? kind : 'deb'
+}
+
+export function fakeInstall(value: string): FakeInstall {
+  const m = SUFFIX.exec(value)
+  return m?.[1] === 'sudo' ? 'sudo' : m?.[1] === 'installfail' ? 'fail' : 'ok'
 }
 
 export function fakeSignature(value: string): FakeSignature {
@@ -56,8 +71,9 @@ export function pqSigFile(keyId: string, sig: { ed25519?: string; mldsa65?: stri
  * network. Its feed carries `.pq.sig` files by the test hybrid key, whose public half is `keys`: the e2e run
  * verifies for real against it (ML-DSA in the module), the way a production build verifies against its pin.
  */
-export function fakeBackend(opts: { downloadsDir: string; copy: (text: string) => void; manifestName: string; signature?: FakeSignature }): UpdateBackend & { keys: PinnedUpdateKey[] } {
+export function fakeBackend(opts: { downloadsDir: string; copy: (text: string) => void; manifestName: string; signature?: FakeSignature; install?: FakeInstall }): UpdateBackend & { keys: PinnedUpdateKey[] } {
   const mode = opts.signature ?? 'good'
+  const install = opts.install ?? 'ok'
   const files = FAKE_FILES
   const ed25519Pem = mode === 'unpinned' ? generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }).toString() : FAKE_ED25519_PEM
   const keyId = pinnedKeyId({ ...FAKE_HYBRID_KEY, ed25519Pem })
@@ -91,5 +107,16 @@ export function fakeBackend(opts: { downloadsDir: string; copy: (text: string) =
     showInFolder: () => {},
     openExternal: () => {},
     copy: opts.copy,
+    needsPassword: async () => install === 'sudo',
+    stillVerified: async () => true,
+    async installDownloaded(_path, { password }) {
+      if (install === 'fail') return { ok: false, reason: 'install', message: 'apt-get exited with 100.' }
+      if (install === 'sudo' && (password === null || password.length !== FAKE_SUDO_PASSWORD.length || password.some((b, i) => b !== FAKE_SUDO_PASSWORD[i]))) {
+        return password === null ? { ok: false, reason: 'password-required', message: '' } : { ok: false, reason: 'password', message: PASSWORD_NOT_ACCEPTED }
+      }
+      return { ok: true }
+    },
+    restart: () => {},
+    takePreviousInstall: async () => null,
   }
 }
