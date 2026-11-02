@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../../shared/api'
 import { spellcheckAvailable } from '../../shared/settings/spellcheck'
 import { ActivityBar } from './activity/ActivityBar'
 import { editorSettings } from './editorSettings'
+import { followSettings } from './settingsFeed'
 import { toolsFromViews } from './activity/tools'
 import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
@@ -130,8 +131,7 @@ export function App({ banners }: { banners?: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   useEffect(() => {
     void Library.load(window.slate).then(setLibrary)
-    void window.slate.settings.get().then(setSettings)
-    return window.slate.settings.onChange(setSettings)
+    return followSettings(window.slate.settings, setSettings)
   }, [])
   // null: closed; otherwise the section to open on.
   const [settingsOpen, setSettingsOpen] = useState<{ section?: string } | null>(null)
