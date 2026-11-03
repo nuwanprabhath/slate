@@ -161,6 +161,14 @@ same way for that one branch's guard changes.
    has uncommitted or unmerged work, or that the maintainer asked to keep; `backup/*` branches are
    the maintainer's to delete.
 
+## Dependabot
+
+`.github/dependabot.yml` opens grouped PRs on Mondays, plus one grouped PR for security fixes. Each
+changes a guard file (the root `package.json` or `.github/workflows/`), so CI's guard-commit check
+fails it and it is never merged on GitHub. Treat it as a to-do: apply the same change on a branch
+(`npm update <pkg>` or the action's new SHA), run the tests, bump the version, and merge it the
+usual way with a `Guardrail-Change:` trailer. Then close the PR.
+
 ## Worktrees on macOS
 
 A fresh `npm ci` in a worktree costs about 0.9 GB (`node_modules` 620 MB, of which Electron is 260 MB),
