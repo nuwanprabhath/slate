@@ -7,6 +7,6 @@
   "dependencies": {
     "@slate/core": "*",
     "linkedom": "^0.18.14",
-    "loro-crdt": "^1.16.4"
+    "loro-crdt": "^1.17.1"
   }
 }
