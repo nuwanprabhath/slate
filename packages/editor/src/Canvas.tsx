@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { PMJSON } from '@slate/core'
 import { activeEditor } from './activeEditor'
 import { Box, type GroupDrag } from './Box'
@@ -8,6 +8,8 @@ import { boxContentDragged, dropInNewBox } from './dragMove'
 import { imageFilesFrom, pasteHtml } from './images'
 import { linkedTextBlocks, pastePlain } from './links'
 import type { PageSession } from './PageSession'
+import { keepScroll } from './scrollMemory'
+import { findStore } from './find'
 import { useEditorServices } from './services'
 import './canvas.css'
 
@@ -70,6 +72,24 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
     }
     return out
   }, [boxes, session])
+
+  // Coming back to a page puts it where it was scrolled to, before the first paint.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!scrollRoot || !canvas) return
+    return keepScroll(scrollRoot, session.pageId, {
+      watch: (onGrow) => {
+        const ro = new ResizeObserver(onGrow)
+        ro.observe(canvas)
+        return () => ro.disconnect()
+      },
+      // The find bar scrolls to its current match: that wins over the remembered place.
+      interrupt: (giveUp) => {
+        if (findStore.active()) giveUp()
+        return findStore.subscribe(() => findStore.active() && giveUp())
+      },
+    })
+  }, [scrollRoot, session])
 
   // A selected box that was deleted (here, by undo or on another device) leaves the selection.
   useEffect(() => {

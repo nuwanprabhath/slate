@@ -105,6 +105,8 @@ export const findStore = {
   },
   forBox: (boxId: string): BoxHighlight[] => byBox.get(boxId) ?? [],
   hasMatches: (boxId: string): boolean => byBox.has(boxId),
+  /** The find bar shows matches, so it decides where the page is scrolled to. */
+  active: (): boolean => byBox.size > 0,
   subscribe(listener: () => void): () => void {
     listeners.add(listener)
     return () => {
