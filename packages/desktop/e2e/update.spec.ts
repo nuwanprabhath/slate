@@ -157,12 +157,16 @@ test('a mac build offers Install and restart beside Download', async () => {
   }
 })
 
-test('an AppImage keeps its own Download and install, with no Install and restart', async () => {
+test('an AppImage offers the same Install and restart, which downloads and restarts with no password', async () => {
   const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'auto' })
   try {
-    await expect(page.getByTestId('update-banner')).toContainText('Slate 9.9.9 is available')
-    await expect(page.getByTestId('update-install-restart')).toHaveCount(0)
-    await expect(page.getByTestId('update-download')).toHaveText('Download and install')
+    const banner = page.getByTestId('update-banner')
+    await expect(banner).toContainText('Slate 9.9.9 is available')
+    await expect(page.getByTestId('update-download')).toHaveCount(0)
+    await page.getByTestId('update-install-restart').click()
+    await expect(banner).toHaveAttribute('data-phase', 'restarting')
+    await expect(banner).toContainText('Restarting into Slate 9.9.9')
+    await expect(page.getByTestId('update-password')).toHaveCount(0)
   } finally {
     await app.close()
   }
