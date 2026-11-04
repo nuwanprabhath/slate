@@ -6,13 +6,15 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-04
+
 ### Added
 
 - **Pages remember where you were.** Going to another page and back returns to the place you had scrolled to, not the top, so you can go back and forth to copy things across. It lasts while Slate is open. The find bar still wins: a page opened with a find match shows the match.
 
 ### Changed
 
-- **Install and restart on the AppImage too.** The AppImage's banner now has the same single *Install and restart* as the .deb and macOS, in place of *Download and install* followed by *Restart and install*. It checks every file of the release, downloads it and restarts into the new version; it needs no password.
+- **Install and restart on the AppImage too.** The AppImage's banner now has the same single *Install and restart* as the .deb and macOS, in place of *Download and install* followed by *Restart and install*. It checks every file of the release, downloads it and restarts into the new version; it needs no password. If Slate has not restarted 30 seconds later, the banner offers *Try again*.
 
 ### Security
 
