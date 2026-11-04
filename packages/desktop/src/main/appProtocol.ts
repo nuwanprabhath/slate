@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { extname, join, sep } from 'node:path'
 
 /**
@@ -119,8 +119,14 @@ export async function appResponse(root: string, url: string): Promise<Response> 
   const path = resolveAppPath(root, url)
   if (!path) return notFound()
   try {
-    if (!(await stat(path)).isFile()) return notFound()
-    return new Response(await readFile(path), { headers: { 'Content-Type': contentTypeOf(path), 'X-Content-Type-Options': 'nosniff' } })
+    // One handle for the check and the read, so a file swapped for a directory in between is never read.
+    const file = await open(path, 'r')
+    try {
+      if (!(await file.stat()).isFile()) return notFound()
+      return new Response(await file.readFile(), { headers: { 'Content-Type': contentTypeOf(path), 'X-Content-Type-Options': 'nosniff' } })
+    } finally {
+      await file.close()
+    }
   } catch {
     return notFound()
   }

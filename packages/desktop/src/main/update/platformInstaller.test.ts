@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -407,6 +408,12 @@ describe('takePreviousInstall', () => {
     expect(existsSync(target)).toBe(true)
     writeFileSync(result(), JSON.stringify({ version: '0.6.0', ok: false, message: 'y'.repeat(10_000), path: null }))
     expect(await read()).toBeNull()
+  })
+
+  it('neither blocks on nor reads a FIFO where the result should be, and removes it', async () => {
+    execFileSync('mkfifo', [result()])
+    expect(await read()).toBeNull()
+    expect(existsSync(result())).toBe(false)
   })
 
   it('treats a torn or foreign file as none', async () => {
