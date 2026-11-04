@@ -17,7 +17,7 @@ export function sigVerCases(): SigVerCase[] {
   const src = readFileSync(join(__dirname, 'sigver.h'), 'utf8')
   const body = src.slice(src.indexOf('MLDSA_SIGVER[] = {'))
   const out: SigVerCase[] = []
-  for (const m of body.matchAll(/\{(\d+), (\d+), ([01]),[^\n]*\n((?:\s*"[0-9a-f]*"\s*,?)+)\}/g)) {
+  for (const m of body.matchAll(/\{(\d+), (\d+), ([01]),[^\n]*\n((?:\s*"[0-9a-f]*",?)+)\s*\}/g)) {
     const [pk, message, context, signature] = m[4]!
       .split(',')
       .slice(0, 4)

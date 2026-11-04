@@ -218,8 +218,8 @@ describe('electronPrintHost', () => {
       writeFileSync(old, 'x', { mode: 0o644 })
       chmodSync(old, 0o644)
       await host.writePdf(old, Uint8Array.from([4, 5]))
-      expect(statSync(old).mode & 0o777).toBe(0o600)
       expect(readFileSync(old)).toEqual(Buffer.from([4, 5]))
+      expect(statSync(old).mode & 0o777).toBe(0o600)
       expect(host.refusePath(join(dataDir, 'git-sync', 'abc', 'page.pdf'))).toBe('Choose a folder outside Slate’s data folder.')
       expect(host.refusePath(out)).toBeNull()
     } finally {

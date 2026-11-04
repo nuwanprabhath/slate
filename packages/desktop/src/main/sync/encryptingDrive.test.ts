@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
@@ -266,9 +266,9 @@ describe('EncryptingDrive over a memory drive', () => {
 function repoHaystacks(bare: string): Buffer[] {
   const out: Buffer[] = []
   const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const path = join(dir, name)
-      if (statSync(path).isDirectory()) walk(path)
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) walk(path)
       else {
         const bytes = readFileSync(path)
         out.push(bytes)

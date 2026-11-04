@@ -145,7 +145,7 @@ describe('review L1: strings are read whole or refused', () => {
 describe('review L3: a password is wiped on every exit', () => {
   it('C7: the recovery decoder cleanses every temporary on its one exit', () => {
     const body = /int scc_recovery_decode\([^)]*\) \{([\s\S]*?)\n\}/.exec(core)?.[1] ?? ''
-    for (const v of ['digits', 'key', 'digest', '&acc', '&check', '&diff', '&d0', '&d1', '&d2']) expect(body, v).toContain(`OPENSSL_cleanse(${v}, sizeof ${v.replace('&', '')})`)
+    for (const v of ['digits', 'key', 'digest', '&acc', '&check', '&diff', '&d0', '&d1', '&d2']) expect(body, v).toContain(`OPENSSL_cleanse(${v}, sizeof ${v.replace(/^&/, '')})`)
     expect(body.split('return').length - 1).toBe(1)
   })
 
