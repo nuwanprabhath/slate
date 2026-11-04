@@ -97,7 +97,8 @@ export function fakeBackend(opts: { downloadsDir: string; copy: (text: string) =
     installAuto: () => {},
     async downloadFile(file, _version, onProgress) {
       const path = join(opts.downloadsDir, file.url)
-      writeFileSync(path, '')
+      // Only this user may read it: e2e runs put the downloads folder in the shared temp directory.
+      writeFileSync(path, '', { mode: 0o600 })
       onProgress(50)
       await pause()
       onProgress(100)
