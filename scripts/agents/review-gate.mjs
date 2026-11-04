@@ -119,7 +119,9 @@ export function riskyAdditions(diff) {
 export const reasonTrailers = (log) => log.split('\n').map((l) => l.trim()).filter((l) => /^No-[A-Za-z-]+-Reason:/.test(l))
 
 const CONVENTIONAL = /^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([a-z0-9-]+\))?!?: .+/
-const AI = /^co-authored-by:.*(claude|anthropic|openai|copilot)|generated with \[?claude/im
+// Two patterns, not one alternation: the trailer is anchored to a line start, the footer may be anywhere.
+const AI_TRAILER = /^co-authored-by:.*(claude|anthropic|openai|copilot)/im
+const AI_FOOTER = /generated with \[?claude/i
 
 /** What the commit-msg hook should have refused, re-checked (it can be skipped with git config). */
 export function conventionalProblems(messages) {
@@ -127,7 +129,7 @@ export function conventionalProblems(messages) {
   for (const message of messages) {
     const subject = message.split('\n')[0] ?? ''
     if (!subject.startsWith('Merge') && !CONVENTIONAL.test(subject)) out.push(`not a Conventional Commit: "${subject}"`)
-    if (AI.test(message)) out.push(`AI attribution in "${subject}"`)
+    if (AI_TRAILER.test(message) || AI_FOOTER.test(message)) out.push(`AI attribution in "${subject}"`)
   }
   return out
 }

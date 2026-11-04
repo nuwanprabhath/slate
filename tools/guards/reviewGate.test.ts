@@ -106,7 +106,7 @@ describe('review gate: which branches need the security review (red team, cross-
   })
 
   it('re-checks the commit subjects the commit-msg hook should have refused (red team 12b)', () => {
-    expect(conventionalProblems(['feat(desktop): a', 'Merge branch main', 'wip', 'fix: b\n\nCo-Authored-By: Claude <x@anthropic.com>'])).toEqual(['not a Conventional Commit: "wip"', 'AI attribution in "fix: b"'])
+    expect(conventionalProblems(['feat(desktop): a', 'Merge branch main', 'wip', 'fix: b\n\nCo-Authored-By: Claude <x@anthropic.com>', 'fix: c\n\nbody 🤖 Generated with [Claude Code](https://claude.com)', 'fix: d\n\nnot co-authored-by: claude mid-line'])).toEqual(['not a Conventional Commit: "wip"', 'AI attribution in "fix: b"', 'AI attribution in "fix: c"'])
   })
 })
 
