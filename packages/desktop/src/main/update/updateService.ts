@@ -87,6 +87,12 @@ export interface UpdateSettings {
 }
 
 const FIRST_CHECK_MS = 10_000
+/**
+ * electron-updater's quitAndInstall can return without quitting and without throwing (no file in its
+ * cache, a second call): past this the banner stops saying it is restarting and offers Try again.
+ */
+const RESTART_TIMEOUT_MS = 30_000
+const DID_NOT_RESTART = 'Slate did not restart. Try again, or quit Slate and open it again.'
 const DEFAULT_SETTINGS: UpdateSettings = { automaticChecks: true, intervalHours: 6 }
 const MIN_INTERVAL_HOURS = 1
 const MAX_INTERVAL_HOURS = 24 * 7
@@ -349,12 +355,18 @@ export class UpdateService {
   private installAuto(): void {
     const found = this.found
     if (!found) return
-    this.patch({ phase: 'restarting', installRequested: true })
+    this.patch({ phase: 'restarting', installRequested: true, installError: undefined })
     try {
       this.deps.backend.installAuto(found)
     } catch (e) {
       this.fail('update install failed', e)
+      return
     }
+    setTimeout(() => {
+      if (this.s.phase !== 'restarting' || this.found !== found) return
+      this.deps.diag?.warn('update install did not restart', { version: found.version })
+      this.patch({ phase: 'downloaded', installRequested: undefined, installError: DID_NOT_RESTART })
+    }, RESTART_TIMEOUT_MS).unref?.()
   }
 
   openInstaller(): void {

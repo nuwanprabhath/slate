@@ -411,6 +411,7 @@ describe('UpdateService', () => {
         expect(service.state().phase).toBe('error')
         await service.download()
         service.install()
+        await service.prepareInstall()
         return installed
       }
       expect(await run('download')).toEqual([])
@@ -459,6 +460,37 @@ describe('UpdateService: Install and restart', () => {
     await service.prepareInstall()
     expect(backend.downloadAuto).toHaveBeenCalledTimes(1)
     expect(backend.installAuto).toHaveBeenCalledTimes(1)
+  })
+
+  it('an AppImage pressed twice while it downloads is downloaded and installed once', async () => {
+    let finish!: () => void
+    const backend = { ...stubBackend(), downloadAuto: vi.fn(() => new Promise<void>((r) => (finish = r))) }
+    const { service } = await available('auto', backend)
+    const first = service.prepareInstall()
+    await vi.waitFor(() => expect(backend.downloadAuto).toHaveBeenCalled())
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    service.install()
+    finish()
+    await first
+    expect(backend.downloadAuto).toHaveBeenCalledTimes(1)
+    expect(backend.installAuto).toHaveBeenCalledTimes(1)
+  })
+
+  it('an AppImage that does not quit goes back to Try again instead of saying it is restarting forever', async () => {
+    vi.useFakeTimers()
+    try {
+      const { service, backend } = await available('auto')
+      await service.prepareInstall()
+      expect(backend.installAuto).toHaveBeenCalledTimes(1)
+      expect(service.state().phase).toBe('restarting')
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(service.state()).toMatchObject({ phase: 'downloaded', installable: true })
+      expect(service.state().installError).toMatch(/did not restart/)
+      await service.prepareInstall()
+      expect(backend.installAuto).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('an AppImage whose artefacts do not verify is neither downloaded nor installed', async () => {
