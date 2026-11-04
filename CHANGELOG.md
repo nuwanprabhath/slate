@@ -15,7 +15,7 @@ All notable changes to Slate are recorded here. The format follows
 
 ### Security
 
-- Files the app serves to its own window, and the result the update installer leaves behind, are checked and read through one open file, so they cannot be swapped between the check and the read. The installer's result is still refused when it is a link or anything but a small regular file.
+- The result the update installer leaves behind is checked and read through one open file, so it cannot be swapped between the check and the read; it is still refused when it is a link or anything but a small regular file, and never read past its size cap. The release now packages Electron 45.1.0, the version tests run on (a guard test keeps the two equal).
 - Code scanning (CodeQL) is on for the repository; every finding is fixed or dismissed with its reason.
 - Updated: Electron 45.1.0, loro-crdt 1.17.1, electron-builder 26.18.0, electron-updater 6.8.11, @azure/msal-node 7.1.2, @modelcontextprotocol/sdk 1.32.2, and the lint tools. minimatch 11.0.1 in the lint tools (GHSA-g3hv-75wg-m249).
 

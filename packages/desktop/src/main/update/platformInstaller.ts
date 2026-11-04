@@ -387,6 +387,8 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
  * O_NOFOLLOW refuses a link and O_NONBLOCK keeps a FIFO from blocking the open. null: no file at all.
  */
 async function readResultFile(path: string): Promise<string | undefined | null> {
+  // Only macOS and Linux have a helper; without O_NOFOLLOW (Windows) nothing is read at all.
+  if (constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined) return (await lstat(path).catch(() => null)) === null ? null : undefined
   let file: FileHandle
   try {
     file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
@@ -394,8 +396,11 @@ async function readResultFile(path: string): Promise<string | undefined | null> 
     return (e as NodeJS.ErrnoException).code === 'ENOENT' ? null : undefined
   }
   try {
-    const info = await file.stat()
-    return info.isFile() && info.size <= MAX_RESULT_BYTES ? await file.readFile('utf8') : undefined
+    if (!(await file.stat()).isFile()) return undefined
+    // At most one byte past the cap, so a file that grows after the stat is still refused, not read whole.
+    const buf = Buffer.alloc(MAX_RESULT_BYTES + 1)
+    const { bytesRead } = await file.read(buf, 0, buf.length, 0)
+    return bytesRead <= MAX_RESULT_BYTES ? buf.toString('utf8', 0, bytesRead) : undefined
   } catch {
     return undefined
   } finally {
