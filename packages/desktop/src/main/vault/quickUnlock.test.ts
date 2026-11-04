@@ -62,12 +62,13 @@ describe('quick unlock (§8)', () => {
     const { p, prompts } = fakePlatform()
     await enableQuickUnlock(dir, proof, p, schedule)
     const file = join(dir, QUICK_UNLOCK_FILE)
+    const text = readFileSync(file, 'utf8')
     expect(statSync(file).mode & 0o777).toBe(0o600)
-    const json = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    const json = JSON.parse(text) as Record<string, unknown>
     // v2 (audit §4.5.4, F-GEN-03) for a header-v2 vault: a format, a version and the key epoch, all in the AAD.
     expect(Object.keys(json).sort()).toEqual(['ct', 'deviceId', 'format', 'keyEpoch', 'nonce', 'sealedQu', 'vaultId', 'version'])
     const mkBytes = await mkBytesOf(dir, 'correct horse')
-    expect(readFileSync(file, 'utf8')).not.toContain(mkBytes.toString('base64'))
+    expect(text).not.toContain(mkBytes.toString('base64'))
     const got = await openQuickUnlock(dir, p)
     expect(prompts).toEqual(['unlock your notes'])
     expect(masterKeyMatches(got, mkBytes)).toBe(true)

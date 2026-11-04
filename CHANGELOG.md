@@ -6,6 +6,19 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-04
+
+### Fixed
+
+- **Copy as Markdown keeps a backslash before a `|` in a table cell.** It used to disappear when the Markdown was read back or rendered.
+- **"Synced to GitHub" only for GitHub.** A git remote that merely had `github.com` somewhere in its address was called GitHub.
+
+### Security
+
+- The result the update installer leaves behind is checked and read through one open file, so it cannot be swapped between the check and the read; it is still refused when it is a link or anything but a small regular file, and never read past its size cap. The release now packages Electron 45.1.0, the version tests run on (a guard test keeps the two equal).
+- Code scanning (CodeQL) is on for the repository; every finding is fixed or dismissed with its reason.
+- Updated: Electron 45.1.0, electron-builder 26.18.0, electron-updater 6.8.11, @azure/msal-node 7.1.2, @modelcontextprotocol/sdk 1.32.2, and the lint tools. minimatch 11.0.1 in the lint tools (GHSA-g3hv-75wg-m249).
+
 ## [0.6.2] - 2026-11-04
 
 ### Added

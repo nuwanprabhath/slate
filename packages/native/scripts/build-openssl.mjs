@@ -11,7 +11,7 @@
 // Usage: node scripts/build-openssl.mjs [--target darwin-arm64|darwin-x64|linux-x64] [--only openssl|fips] [--jobs N]
 //        node scripts/build-openssl.mjs --check-pq [--libcrypto <path>]   (only the PQ check, on an existing build)
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { cpus } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -123,7 +123,7 @@ async function buildFipsProvider() {
   // Review M4: the pin is an input. A mismatch stops the build unless --update-pin was given on purpose.
   const digestFile = join(PACKAGE_DIR, 'fips-digest.json')
   const actual = { provider: sha256File(join(out, moduleName)), config: sha256File(join(out, 'fipsmodule.cnf')) }
-  const pins = checkPin(target, actual, existsSync(digestFile) ? JSON.parse(readFileSync(digestFile, 'utf8')) : {}, args['update-pin'])
+  const pins = checkPin(target, actual, readPins(digestFile), args['update-pin'])
   writeFileSync(digestFile, JSON.stringify(pins, null, 2) + '\n')
   console.log(`${moduleName} and fipsmodule.cnf match fips-digest.json: ${JSON.stringify(actual)}`)
   rmSync(src, { recursive: true, force: true })
@@ -136,4 +136,14 @@ if (args['check-pq']) {
 } else {
   if (args.only !== 'fips') await buildLibcrypto()
   if (args.only !== 'openssl') await buildFipsProvider()
+}
+
+/** fips-digest.json, or no pins yet. Read once, not checked first: the file cannot change in between. */
+function readPins(file) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch (e) {
+    if (e.code === 'ENOENT') return {}
+    throw e
+  }
 }

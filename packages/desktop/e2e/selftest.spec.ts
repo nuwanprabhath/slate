@@ -2,7 +2,7 @@
 // build ignores the fault hook) is the unit test in src/main/testHooks.test.ts plus e2e-packaged.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp, test, unlockWith } from './fixtures'
@@ -24,10 +24,10 @@ const SLATE_FILE = /^((vault|local-keys|preunlock|profile-floor|migration|quick-
 function snapshot(dir: string): Map<string, string> {
   const out = new Map<string, string>()
   const walk = (d: string) => {
-    for (const name of readdirSync(d)) {
-      const p = join(d, name)
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, entry.name)
       const rel = relative(dir, p)
-      if (statSync(p).isDirectory()) walk(p)
+      if (entry.isDirectory()) walk(p)
       else if (SLATE_FILE.test(rel)) out.set(rel, createHash('sha256').update(readFileSync(p)).digest('hex'))
     }
   }

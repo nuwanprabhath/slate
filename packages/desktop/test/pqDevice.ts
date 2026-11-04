@@ -1,6 +1,6 @@
 // Tests only (vault/pqUpgrade*.test.ts): a small encrypted device for the v2 → v3 upgrade, and an
 // in-memory remote header with OneDrive's eTag compare-and-swap. No production path imports it.
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { newId } from '@slate/core'
@@ -54,9 +54,9 @@ export async function testDevice(root: string, notes = 3, profile: ProfileId = '
 export function snapshot(dir: string, skip: readonly string[] = []): Record<string, string> {
   const out: Record<string, string> = {}
   const walk = (d: string) => {
-    for (const name of readdirSync(d)) {
-      const p = join(d, name)
-      if (statSync(p).isDirectory()) walk(p)
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, entry.name)
+      if (entry.isDirectory()) walk(p)
       else if (!skip.includes(relative(dir, p))) out[relative(dir, p)] = readFileSync(p).toString('base64')
     }
   }

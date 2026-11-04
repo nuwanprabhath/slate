@@ -146,6 +146,12 @@ const STRICT: Fuses = {
 }
 
 describe('electron-builder config', () => {
+  it('packages the Electron the lockfile installs, so dev, tests and the release run the same one', () => {
+    const { electronVersion } = createRequire(join(ROOT, 'packages/desktop/'))('./electron-builder.cjs') as { electronVersion?: string }
+    const locked = (JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> }).packages['node_modules/electron']?.version
+    expect(electronVersion, 'set electronVersion in packages/desktop/electron-builder.cjs to the lockfile\'s electron').toBe(locked)
+  })
+
   const config = createRequire(join(ROOT, 'packages/desktop/'))('./electron-builder.cjs') as { asar?: boolean; electronFuses?: Fuses }
   const loosened = allowlist('fuses-loosened')
 

@@ -25,7 +25,7 @@ function codeSpan(s: string): string {
 }
 
 /** One text node with its marks. Marks Markdown has no syntax for (underline, colour, highlight, …) leave the text bare. */
-function markText(node: PMJSON): string {
+function markText(node: PMJSON, cell = false): string {
   const raw = clean(node.text ?? '')
   const marks = node.marks ?? []
   const has = (type: string) => marks.some((m) => m.type === type)
@@ -37,17 +37,24 @@ function markText(node: PMJSON): string {
   const lead = raw.slice(0, leadEnd)
   const core = raw.slice(leadEnd, coreEnd)
   const trail = raw.slice(coreEnd)
-  let text = has('code') ? codeSpan(core) : core
+  let text = has('code') ? codeSpan(cell ? cellPipes(core, true) : core) : cell ? cellPipes(core, false) : core
   if (has('bold')) text = `**${text}**`
   if (has('italic')) text = `_${text}_`
   if (has('strike')) text = `~~${text}~~`
   const link = marks.find((m) => m.type === 'link')
-  if (link && typeof link.attrs?.href === 'string') text = `[${text}](${link.attrs.href})`
+  if (link && typeof link.attrs?.href === 'string') text = `[${text}](${cell ? cellPipes(link.attrs.href, false) : link.attrs.href})`
   return lead + text + trail
 }
 
-function inline(nodes: PMJSON[] = []): string {
-  return nodes.map((n) => (n.type === 'text' ? markText(n) : n.type === 'hardBreak' ? '  \n' : inline(n.content))).join('')
+/**
+ * A `|` in a GFM table cell is written `\|`. GFM reads `\|` before inline parsing, so in text (and a link
+ * destination) a backslash right before the pipe is doubled, or it would escape that backslash and be lost;
+ * in code, where backslashes are literal, it stays as it is (rendered output checked with GitHub's markdown API).
+ */
+const cellPipes = (s: string, code: boolean) => s.replace(/(\\*)\|/g, (_, run: string) => `${code ? run : run + run}\\|`)
+
+function inline(nodes: PMJSON[] = [], cell = false): string {
+  return nodes.map((n) => (n.type === 'text' ? markText(n, cell) : n.type === 'hardBreak' ? '  \n' : inline(n.content, cell))).join('')
 }
 
 /** Line breaks and the spaces around them become one space, by splitting: a regex over the spaces is quadratic on a long run. */
@@ -121,7 +128,7 @@ function blockLines(node: PMJSON): string[] {
     case 'image':
       return [`![${altText(String(node.attrs?.alt ?? ''))}](${String(node.attrs?.src ?? '')})`]
     case 'table': {
-      const cellText = (cell: PMJSON) => oneLine((cell.content ?? []).map((c) => inline(c.content)).join(' ')).trim().replace(/\|/g, '\\|')
+      const cellText = (cell: PMJSON) => oneLine((cell.content ?? []).map((c) => inline(c.content, true)).join(' ')).trim()
       const rows = (node.content ?? []).map((row) => (row.content ?? []).map(cellText))
       if (rows.length === 0) return []
       const line = (cells: string[]) => `| ${cells.join(' | ')} |`

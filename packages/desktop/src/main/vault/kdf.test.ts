@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { argon2id } from 'hash-wasm'
@@ -122,10 +122,10 @@ describe('allowWeakForTests', () => {
   it('is never passed by production code', () => {
     const offenders: string[] = []
     const walk = (dir: string): void => {
-      for (const name of readdirSync(dir)) {
-        const p = join(dir, name)
-        if (statSync(p).isDirectory()) walk(p)
-        else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name)
+        if (entry.isDirectory()) walk(p)
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
           const src = readFileSync(p, 'utf8')
           // The declaration and pass-through sites read `opts`; only a literal `true` would weaken it.
           if (/allowWeakForTests\s*:\s*true/.test(src)) offenders.push(p)

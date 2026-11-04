@@ -85,6 +85,15 @@ describe('toMarkdown', () => {
     expect(toMarkdown(doc)).toBe('under lit H2O\n\ninside\n\n@ann')
   })
 
+  it('escapes a pipe in a table cell so that GFM keeps the backslash before it in text, and in code and links', () => {
+    const cell = (...c: PMJSON[]): PMJSON => ({ type: 'tableCell', content: [p(...c)] })
+    const row = (...c: PMJSON[]): PMJSON => ({ type: 'tableRow', content: c })
+    const link = [{ type: 'link', attrs: { href: 'https://e.com/a|b' } }]
+    const table = { type: 'table', content: [row(cell(t('h'))), row(cell(t('a|b \\|c'))), row(cell(t('x\\|y', [{ type: 'code' }]))), row(cell(t('l', link)))] }
+    // GitHub renders these rows as `a|b \|c`, `x\|y` in code, and a link to a%7Cb (checked with its markdown API).
+    expect(toMarkdown([table]).split('\n').slice(2)).toEqual(['| a\\|b \\\\\\|c |', '| `x\\\\|y` |', '| [l](https://e.com/a\\|b) |'])
+  })
+
   it('writes an image with its alt text, and table cells on one line', () => {
     expect(toMarkdown([{ type: 'image', attrs: { src: 'slate-blob://blob/y.png', alt: 'chart' } }])).toBe('![chart](slate-blob://blob/y.png)')
     const cell = (...c: PMJSON[]): PMJSON => ({ type: 'tableCell', content: c })

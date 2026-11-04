@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyncState } from '../../../shared/api'
 import { openSettings } from '../settings/open'
+import { isGitHubRemote } from './remoteHost'
 import { syncAgeText } from './syncAge'
 import './sync.css'
 
@@ -15,7 +16,7 @@ const LABELS: Record<SyncState['status'], string> = {
 
 /** "OneDrive", "GitHub" or "your git repository": where this device syncs to. */
 export function providerName(state: Pick<SyncState, 'provider' | 'remote'> | null): string {
-  if (state?.provider === 'git') return /github\.com[:/]/.test(state.remote ?? '') ? 'GitHub' : 'your git repository'
+  if (state?.provider === 'git') return isGitHubRemote(state.remote ?? '') ? 'GitHub' : 'your git repository'
   return 'OneDrive'
 }
 

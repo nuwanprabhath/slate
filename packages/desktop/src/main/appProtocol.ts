@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { extname, join, sep } from 'node:path'
 
 /**
@@ -119,7 +119,8 @@ export async function appResponse(root: string, url: string): Promise<Response> 
   const path = resolveAppPath(root, url)
   if (!path) return notFound()
   try {
-    if (!(await stat(path)).isFile()) return notFound()
+    // readFile alone, no stat first: it refuses a directory (EISDIR) and leaves no gap between a check and
+    // the read, and it is the path Electron's asar integrity check (the embedded-asar fuse) covers.
     return new Response(await readFile(path), { headers: { 'Content-Type': contentTypeOf(path), 'X-Content-Type-Options': 'nosniff' } })
   } catch {
     return notFound()

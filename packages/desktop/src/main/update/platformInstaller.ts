@@ -1,4 +1,4 @@
-import { access, constants, lstat, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, constants, lstat, mkdtemp, open, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { InstallOutcome } from '../../shared/api'
@@ -361,10 +361,8 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
     },
 
     async takePreviousInstall() {
-      // A regular file of a few lines: a link, or a big file, is not what the helper wrote.
-      const info = await lstat(opts.resultFile).catch(() => undefined)
-      if (info === undefined) return null
-      const text = info.isFile() && info.size <= MAX_RESULT_BYTES ? await readFile(opts.resultFile, 'utf8').catch(() => undefined) : undefined
+      const text = await readResultFile(opts.resultFile)
+      if (text === null) return null
       await rm(opts.resultFile, { force: true })
       if (text === undefined) return null
       let previous: PreviousInstall | null
@@ -380,5 +378,32 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
       log.info('read the last install result', { ok: previous.ok, version: previous.version })
       return { ...previous, path: kept ? named : null }
     },
+  }
+}
+
+/**
+ * The helper's result: a regular file of a few lines; a link, a big file or anything else is not what
+ * it wrote (undefined). Checked and read through one handle, so the path cannot be swapped in between;
+ * O_NOFOLLOW refuses a link and O_NONBLOCK keeps a FIFO from blocking the open. null: no file at all.
+ */
+async function readResultFile(path: string): Promise<string | undefined | null> {
+  // Only macOS and Linux have a helper; without O_NOFOLLOW (Windows) nothing is read at all.
+  if (constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined) return (await lstat(path).catch(() => null)) === null ? null : undefined
+  let file: FileHandle
+  try {
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT' ? null : undefined
+  }
+  try {
+    if (!(await file.stat()).isFile()) return undefined
+    // At most one byte past the cap, so a file that grows after the stat is still refused, not read whole.
+    const buf = Buffer.alloc(MAX_RESULT_BYTES + 1)
+    const { bytesRead } = await file.read(buf, 0, buf.length, 0)
+    return bytesRead <= MAX_RESULT_BYTES ? buf.toString('utf8', 0, bytesRead) : undefined
+  } catch {
+    return undefined
+  } finally {
+    await file.close()
   }
 }

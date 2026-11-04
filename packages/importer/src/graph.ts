@@ -21,6 +21,13 @@ export class GraphError extends Error {
   }
 }
 
+/** A loop, not `/\/+$/`: the regex retries from every slash and is quadratic on a long run of them. */
+function withoutTrailingSlashes(url: string): string {
+  let end = url.length
+  while (end > 0 && url[end - 1] === '/') end--
+  return url.slice(0, end)
+}
+
 /** Authenticated Graph requests: bounded concurrency, 429/503 retried honouring Retry-After. */
 export class GraphHttp {
   readonly baseUrl: string
@@ -33,7 +40,7 @@ export class GraphHttp {
   private waiting: Array<() => void> = []
 
   constructor(opts: GraphClientOptions) {
-    this.baseUrl = opts.baseUrl.replace(/\/+$/, '')
+    this.baseUrl = withoutTrailingSlashes(opts.baseUrl)
     this.getToken = opts.getToken
     this.doFetch = opts.fetch ?? ((input, init) => fetch(input, init))
     this.maxConcurrent = opts.maxConcurrent ?? 2

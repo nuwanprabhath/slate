@@ -51,12 +51,14 @@ describe('security audit events (§4.8)', () => {
     expect([...emitters.values()].sort()).toEqual([...audit].sort())
   })
 
+  const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
   it('each event name is a string literal in securityEvents.ts and nowhere else in main', () => {
     const problems: string[] = []
     for (const name of audit) {
-      const where = sources.filter((f) => new RegExp(`['"\`]${name.replace(/[.]/g, '\\.')}['"\`]`).test(text.get(f)!))
+      const where = sources.filter((f) => new RegExp(`['"\`]${escapeRegExp(name)}['"\`]`).test(text.get(f)!))
       if (where.length !== 1 || where[0] !== EMITTERS) problems.push(`${name}: found in ${where.join(', ') || 'no file'}; emit it through securityEvent in ${EMITTERS}`)
-      const count = (text.get(EMITTERS)!.match(new RegExp(`'${name.replace(/[.]/g, '\\.')}'`, 'g')) ?? []).length
+      const count = (text.get(EMITTERS)!.match(new RegExp(`'${escapeRegExp(name)}'`, 'g')) ?? []).length
       if (count !== 1) problems.push(`${name}: ${count} emitters in ${EMITTERS}, expected exactly one`)
     }
     expect(problems).toEqual([])
