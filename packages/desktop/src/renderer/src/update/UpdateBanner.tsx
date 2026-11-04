@@ -20,7 +20,7 @@ export function UpdateBanner() {
   }
   const { phase } = state
   const downloaded = phase === 'downloaded'
-  const assisted = state.kind === 'dmg' || state.kind === 'deb'
+  const assisted = state.kind !== 'manual'
   // Once Install and restart is under way nothing else is offered: the banner only says what is happening.
   const busy = phase === 'installing' || phase === 'restarting' || (phase === 'downloading' && state.installRequested === true)
   return (
@@ -44,14 +44,10 @@ export function UpdateBanner() {
               {state.installError ? 'Try again' : 'Install and restart'}
             </button>
           )}
-          {phase === 'available' && (
+          {/* An AppImage has nothing to open by hand: Install and restart is its only way in. */}
+          {phase === 'available' && state.kind !== 'auto' && (
             <button type="button" data-testid="update-download" onClick={() => void u.download()}>
-              {state.kind === 'auto' ? 'Download and install' : 'Download'}
-            </button>
-          )}
-          {downloaded && state.kind === 'auto' && (
-            <button type="button" onClick={() => void u.install()}>
-              Restart and install
+              Download
             </button>
           )}
           {downloaded && state.file && (

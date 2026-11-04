@@ -26,6 +26,10 @@ test('UI: update banner offers Install and restart (macOS)', async () => {
   await fakeRun('dmg', (app, page) => reviewUi(app, page, 'update available dmg'))
 })
 
+test('UI: update banner offers Install and restart alone (AppImage)', async () => {
+  await fakeRun('auto', (app, page) => reviewUi(app, page, 'update available appimage'))
+})
+
 test('UI: update banner asks for the password, then says it was refused', async () => {
   await fakeRun('deb-sudo', async (app, page) => {
     await reviewUi(app, page, 'update password', {

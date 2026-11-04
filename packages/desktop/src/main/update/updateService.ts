@@ -217,7 +217,7 @@ export class UpdateService {
         // electron-updater picks the file itself, so every artefact of the release must verify.
         for (const f of found.files) await this.deps.verifier.artifact(found, f)
         await backend.downloadAuto(found, progress)
-        this.set({ ...base, phase: 'downloaded' })
+        this.set({ ...base, phase: 'downloaded', installRequested: forInstall || undefined })
         return
       }
       const file = pickInstaller(found.files, kind, this.deps.arch)
@@ -232,11 +232,12 @@ export class UpdateService {
     }
   }
 
-  /** Whether Install and restart can run: a dmg or deb install, with a release to fetch or its verified download in hand. */
+  /** Whether Install and restart can run: a dmg, deb or AppImage install, with a release to fetch or its verified download in hand. */
   private installable(): boolean {
     const { kind } = this.deps
+    if (this.s.phase === 'available') return kind !== 'manual' && this.found !== null
+    if (kind === 'auto') return this.s.phase === 'downloaded' && this.found !== null
     if (kind !== 'dmg' && kind !== 'deb') return false
-    if (this.s.phase === 'available') return this.found !== null
     return this.s.phase === 'downloaded' && this.downloaded !== null && this.downloaded.version === this.s.version
   }
 
@@ -244,6 +245,8 @@ export class UpdateService {
    * Install and restart, first half (dmg, deb): downloads and verifies the installer unless the
    * verified one is already on disk, then asks whether the install needs a password. If it does, the
    * state waits in `needs-password` for `installAndRestart`; if not, this installs and restarts at once.
+   * An AppImage needs no password: electron-updater downloads it once every artefact verifies, then
+   * swaps it in and restarts.
    */
   async prepareInstall(): Promise<PrepareInstallResult> {
     // A second click while the first still downloads or asks sudo would start a second install.
@@ -259,6 +262,10 @@ export class UpdateService {
   private async prepare(): Promise<PrepareInstallResult> {
     if (this.s.phase === 'available') {
       await this.fetch({ forInstall: true })
+    }
+    if (this.deps.kind === 'auto') {
+      if (this.s.phase === 'downloaded') this.installAuto()
+      return { needsPassword: false }
     }
     const downloaded = this.downloaded
     if (downloaded === null) return { needsPassword: false }
@@ -336,8 +343,13 @@ export class UpdateService {
   }
 
   install(): void {
+    if (this.s.phase === 'downloaded' && this.deps.kind === 'auto') this.installAuto()
+  }
+
+  private installAuto(): void {
     const found = this.found
-    if (this.s.phase !== 'downloaded' || this.deps.kind !== 'auto' || !found) return
+    if (!found) return
+    this.patch({ phase: 'restarting', installRequested: true })
     try {
       this.deps.backend.installAuto(found)
     } catch (e) {

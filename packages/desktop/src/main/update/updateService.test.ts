@@ -429,15 +429,45 @@ describe('UpdateService: Install and restart', () => {
     return ctx
   }
 
-  it('is offered for a dmg or deb install with a release in hand, and for nothing else', async () => {
+  it('is offered for a dmg, deb or AppImage install with a release in hand, and not where Slate cannot install', async () => {
     expect((await available('deb')).service.state().installable).toBe(true)
     expect((await available('dmg')).service.state().installable).toBe(true)
-    for (const kind of ['auto', 'manual'] as const) {
-      const { service, backend } = await available(kind)
-      expect(service.state().installable).toBeUndefined()
-      expect(await service.prepareInstall()).toEqual({ needsPassword: false })
-      expect(backend.downloadFile).not.toHaveBeenCalled()
-    }
+    expect((await available('auto')).service.state().installable).toBe(true)
+    const { service, backend } = await available('manual')
+    expect(service.state().installable).toBeUndefined()
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    expect(backend.downloadFile).not.toHaveBeenCalled()
+    expect(backend.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('an AppImage installs and restarts in one go: every artefact verified, downloaded, then quit and install', async () => {
+    const { service, backend, verifier, states } = await available('auto')
+    expect(await service.prepareInstall()).toEqual({ needsPassword: false })
+    expect(verifier.artifact).toHaveBeenCalledTimes(found('0.2.0').files.length)
+    const verified = await verifier.release.mock.results[0]!.value
+    expect(backend.downloadAuto).toHaveBeenCalledWith(verified, expect.any(Function))
+    expect(backend.installAuto).toHaveBeenCalledWith(verified)
+    expect(backend.needsPassword).not.toHaveBeenCalled()
+    expect(states.map((s) => s.phase)).toContain('restarting')
+    expect(service.state().installable).toBeUndefined()
+  })
+
+  it('an AppImage already downloaded installs and restarts without downloading again', async () => {
+    const { service, backend } = await available('auto')
+    await service.download()
+    expect(service.state().installable).toBe(true)
+    await service.prepareInstall()
+    expect(backend.downloadAuto).toHaveBeenCalledTimes(1)
+    expect(backend.installAuto).toHaveBeenCalledTimes(1)
+  })
+
+  it('an AppImage whose artefacts do not verify is neither downloaded nor installed', async () => {
+    const { service, backend, verifier } = await available('auto')
+    verifier.artifact.mockRejectedValue(new UpdateSignatureError('nope'))
+    await service.prepareInstall()
+    expect(backend.downloadAuto).not.toHaveBeenCalled()
+    expect(backend.installAuto).not.toHaveBeenCalled()
+    expect(service.state().phase).toBe('error')
   })
 
   it('downloads and verifies, installs without a password, and restarts into it, opening nothing', async () => {
