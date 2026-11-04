@@ -101,6 +101,17 @@ describe('toMarkdown', () => {
     expect(toMarkdown([table])).toBe('| a b | x y |\n| --- | --- |')
   })
 
+  it('stays fast on a long run of backslashes in a table cell, in text and in code', () => {
+    const run = '\\'.repeat(100_000) + 'x'
+    const cell = (...c: PMJSON[]): PMJSON => ({ type: 'tableCell', content: [p(...c)] })
+    const table = { type: 'table', content: [{ type: 'tableRow', content: [cell(t(run)), cell(t(run, [{ type: 'code' }]))] }] }
+    const start = performance.now()
+    const md = toMarkdown([table])
+    // Generous for a loaded machine: the linear version takes milliseconds, a quadratic one many seconds.
+    expect(performance.now() - start).toBeLessThan(2000)
+    expect(md.split('\n')[0]!.length).toBeGreaterThan(200_000)
+  })
+
   it('stays fast on long runs of spaces, in a paragraph, a heading, a table cell and an image alt', () => {
     const long = 'a' + ' '.repeat(200_000) + 'b'
     const cell: PMJSON = { type: 'tableCell', content: [p(t(long, [{ type: 'bold' }]))] }

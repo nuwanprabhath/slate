@@ -51,7 +51,21 @@ function markText(node: PMJSON, cell = false): string {
  * destination) a backslash right before the pipe is doubled, or it would escape that backslash and be lost;
  * in code, where backslashes are literal, it stays as it is (rendered output checked with GitHub's markdown API).
  */
-const cellPipes = (s: string, code: boolean) => s.replace(/(\\*)\|/g, (_, run: string) => `${code ? run : run + run}\\|`)
+function cellPipes(s: string, code: boolean): string {
+  // One pass, not /(\\*)\|/g: that retries from every backslash of a run with no pipe after it (quadratic).
+  let out = ''
+  let run = 0
+  for (const c of s) {
+    if (c === '\\') {
+      run++
+      continue
+    }
+    const backslashes = '\\'.repeat(c === '|' && !code ? run * 2 : run)
+    out += c === '|' ? `${backslashes}\\|` : backslashes + c
+    run = 0
+  }
+  return out + '\\'.repeat(run)
+}
 
 function inline(nodes: PMJSON[] = [], cell = false): string {
   return nodes.map((n) => (n.type === 'text' ? markText(n, cell) : n.type === 'hardBreak' ? '  \n' : inline(n.content, cell))).join('')
