@@ -15,7 +15,7 @@
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",
-    "loro-crdt": "^1.17.1",
+    "loro-crdt": "^1.16.4",
     "loro-prosemirror": "^0.4.4",
     "lowlight": "^3.3.0",
     "react": "^19.3.1",
