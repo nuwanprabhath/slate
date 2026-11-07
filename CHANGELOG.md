@@ -6,6 +6,13 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-11-08
+
+### Changed
+
+- Electron is updated to 45.2.1 (Chromium 156.0.8078.75, with upstream security fixes), and the
+  TipTap editor libraries to 3.32.2. Notes and editing behave as before.
+
 ## [0.6.6] - 2026-11-07
 
 Carries 0.6.5's changes, which were never published.

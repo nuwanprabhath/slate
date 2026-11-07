@@ -20,7 +20,7 @@ module.exports = {
   productName: 'Slate',
   copyright: 'Copyright © 2026 Nuwan Munasinghe',
   // package.json holds a range (^45.1.0); electron-builder needs the exact release to download. tools/guards/packaging.test.ts keeps it equal to the lockfile's.
-  electronVersion: '45.1.0',
+  electronVersion: '45.2.1',
   directories: { output: 'release', buildResources: 'build' },
   files: ['out/**', 'resources/**', 'package.json'],
   // slate_native.node (the crypto module with SQLCipher inside, out/native) is loaded from app.asar.unpacked, which onlyLoadAppFromAsar allows: that fuse only governs where the app's entry point comes from.
