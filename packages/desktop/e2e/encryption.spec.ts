@@ -64,34 +64,48 @@ const synced = (page: Page) =>
       }),
   )
 
-/**
- * Every object reachable from the branch, as git prints it (decompressed), followed by what each plaintext Loro
- * document among them says, history included. Loro does not promise typed text is one run of bytes (1.17 stores
- * text typed a key at a time in pieces), so a byte search alone would miss a plaintext note and pass the
- * "no plaintext" checks below for the wrong reason. A document's chunks are decoded together: each later chunk
- * builds on the ones before it.
- */
-function reachableContents(): string {
-  const objects = execFileSync('git', ['--git-dir', bare, 'rev-list', '--objects', 'main'], { encoding: 'utf8' })
+/** Every object reachable from the branch: its path (empty for a commit) and its bytes as git prints them, decompressed. */
+function reachableObjects(): Array<{ path: string; bytes: Buffer }> {
+  return execFileSync('git', ['--git-dir', bare, 'rev-list', '--objects', 'main'], { encoding: 'utf8' })
     .trim()
     .split('\n')
     .map((l) => {
       const [sha, path = ''] = l.split(' ')
-      return { sha: sha!, path }
+      return { path, bytes: execFileSync('git', ['--git-dir', bare, 'cat-file', '-p', sha!]) }
     })
-  const docs = new Map<string, Buffer[]>()
-  const raw = objects.map(({ sha, path }) => {
-    const bytes = execFileSync('git', ['--git-dir', bare, 'cat-file', '-p', sha])
-    const docId = /^docs\/([^/]+)\//.exec(path)?.[1]
-    if (docId !== undefined && bytes.subarray(0, 4).toString('latin1') === 'loro') docs.set(docId, [...(docs.get(docId) ?? []), bytes])
-    return bytes.toString('latin1')
-  })
-  const decoded = [...docs.values()].map((chunks) => {
+}
+
+const isLoro = (bytes: Buffer): boolean => bytes.subarray(0, 4).toString('latin1') === 'loro'
+
+/** The paths of reachable objects that are plaintext Loro documents (they start with Loro's magic). */
+function loroObjects(): string[] {
+  return reachableObjects()
+    .filter((o) => isLoro(o.bytes))
+    .map((o) => o.path)
+}
+
+/**
+ * Every reachable object's bytes, followed by what each plaintext Loro document among them says: its content now
+ * and its history. Loro does not promise typed text is one run of bytes (1.17 stores text typed a key at a time in
+ * pieces), so a byte search alone could miss a plaintext note and pass the "no plaintext" checks below for the
+ * wrong reason. Every blob with Loro's magic is decoded, wherever it is stored; a document's chunks under
+ * `docs/<id>/` together, since each builds on the ones before it. History that cannot be applied (a chunk missing)
+ * fails the test rather than leaving text undecoded.
+ */
+function reachableContents(): string {
+  const objects = reachableObjects()
+  const groups = new Map<string, Buffer[]>()
+  for (const { path, bytes } of objects) {
+    if (!isLoro(bytes)) continue
+    const key = /^docs\/([^/]+)\//.exec(path)?.[1] ?? path
+    groups.set(key, [...(groups.get(key) ?? []), bytes])
+  }
+  const decoded = [...groups].map(([key, chunks]) => {
     const doc = new LoroDoc()
-    doc.importBatch(chunks)
-    return JSON.stringify(doc.exportJsonUpdates())
+    if (doc.importBatch(chunks).pending !== null) throw new Error(`${key}: Loro history with changes missing on the remote`)
+    return `${JSON.stringify(doc.toJSON())}\n${JSON.stringify(doc.exportJsonUpdates())}`
   })
-  return [...raw, ...decoded].join('\n')
+  return [...objects.map((o) => o.bytes.toString('latin1')), ...decoded].join('\n')
 }
 
 async function lockWindow(app: ElectronApplication): Promise<Page> {
@@ -192,6 +206,8 @@ test.describe.serial('Encrypt my notes with git sync', () => {
     const contents = reachableContents()
     expect(contents).toContain('e2ee')
     expect(contents).not.toContain(MARKER)
+    // Nothing on the remote is a plaintext Loro document, whatever its path or however its text is laid out.
+    expect(loroObjects()).toEqual([])
     // Suite 0x02 names (audit §4.6): 64 hex characters, SIV ‖ CTR.
     expect(contents).toMatch(/\b[0-9a-f]{64}\.c\b/)
     expect(execFileSync('git', ['--git-dir', bare, 'rev-list', '--count', 'main'], { encoding: 'utf8' }).trim()).not.toBe('0')
@@ -224,6 +240,7 @@ test.describe.serial('Encrypt my notes with git sync', () => {
     await expect(b.getByTestId('vault-join-banner')).toHaveCount(0)
     expect(existsSync(join(bData, 'slate.db'))).toBe(false)
     expect(reachableContents()).not.toContain(MARKER)
+    expect(loroObjects()).toEqual([])
   })
 
   test('A changes its password; B unlocks with the new one after a sync', async () => {
