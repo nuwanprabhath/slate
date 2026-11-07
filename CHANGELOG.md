@@ -15,6 +15,7 @@ Carries 0.6.5's changes, which were never published.
 - Text typed into a new box could disappear when another device synced the page at the moment the box
   was made: that device filled the box's still-empty content with its own empty paragraph, which could
   win over the text. A box is now created together with its content, so no device ever sees it empty.
+  Update every device that syncs: a box made by an earlier version can still be emptied this way.
 
 ## [0.6.5] - 2026-11-07 (not released: held for the fix in 0.6.6; shipped in 0.6.6)
 

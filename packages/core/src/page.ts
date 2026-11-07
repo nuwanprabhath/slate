@@ -68,9 +68,9 @@ export class PageDoc {
   }
 
   /**
-   * A box and its content in one commit: `content`'s blocks, else one empty paragraph. Never an empty content map,
-   * even for a moment: the editor fills an empty one with its own doc, so a device that synced the box before its
-   * content would write one too, and the two writes to the same keys hide one side's text.
+   * A box and its content in one commit: `content`'s blocks, else (none, or an empty list) one empty paragraph.
+   * Never an empty content map or an empty doc, even for a moment: the editor fills either with its own doc, so a
+   * device that synced the box first would write one too, and the two writes to the same keys hide one side's text.
    */
   addBox(init: { x: number; y: number; width: number; content?: PMJSON[] }): string {
     const id = newId()
@@ -81,7 +81,7 @@ export class PageDoc {
     box.set('width', init.width)
     box.set('private', false)
     box.set('z', z)
-    writeContent(box.setContainer('content', new LoroMap()), init.content ?? [{ type: 'paragraph' }], this.doc)
+    writeContent(box.setContainer('content', new LoroMap()), init.content?.length ? init.content : [{ type: 'paragraph' }], this.doc)
     this.doc.commit()
     return id
   }

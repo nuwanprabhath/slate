@@ -302,8 +302,7 @@ export class SyncEngine {
     // A new local change (fresh box ids), so it goes out with this device's next push.
     const from = state.doc.oplogVersion()
     for (const { box, content } of missing) {
-      const blocks = content?.content ?? []
-      const id = page.addBox({ x: box.x, y: box.y, width: box.width, ...(blocks.length > 0 ? { content: blocks } : {}) })
+      const id = page.addBox({ x: box.x, y: box.y, width: box.width, content: content?.content ?? [] })
       if (box.private) page.updateBox(id, { private: true })
     }
     state.doc.commit()

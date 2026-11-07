@@ -30,6 +30,12 @@ describe('PageDoc', () => {
     expect(contentToJSON(other.contentMap(id)!)).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] })
   })
 
+  it('a box added with an empty list of blocks gets the empty paragraph too, never a doc with no blocks', () => {
+    const page = new PageDoc()
+    const id = page.addBox({ x: 0, y: 0, width: 100, content: [] })
+    expect(contentToJSON(page.contentMap(id)!)).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] })
+  })
+
   it('a box added with content holds it in the same update', () => {
     const page = new PageDoc()
     const updates = recordUpdates(page.doc)
