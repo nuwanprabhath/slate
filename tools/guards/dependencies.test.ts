@@ -6,7 +6,8 @@ import { allowlist, exists, read, ROOT } from './repo'
 /**
  * Supply chain, checked on every manifest: each dependency is one the maintainer approved (with a
  * reason in tools/guards/allowlists/dependencies.json), comes from the npm registry, and is pinned
- * by an integrity hash in its lockfile.
+ * by an integrity hash in its lockfile. An override forces a version on a package something else
+ * depends on, so it is approved the same way, under `override:<selector>`, and pins an exact version.
  */
 interface Manifest {
   name?: string
@@ -14,6 +15,7 @@ interface Manifest {
   devDependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
+  overrides?: Record<string, unknown>
 }
 
 const MANIFESTS = ['package.json', 'tools/lint/package.json', ...readdirSync(join(ROOT, 'packages')).map((p) => `packages/${p}/package.json`)].filter(exists)
@@ -28,6 +30,9 @@ const deps = (m: Manifest): Array<[string, string]> => [
   ...Object.entries(m.peerDependencies ?? {}),
 ]
 
+const overrides = (m: Manifest): Array<[string, unknown]> => Object.entries(m.overrides ?? {})
+const overrideKey = (selector: string): string => `override:${selector}`
+
 describe('dependencies', () => {
   const approved = allowlist('dependencies')
 
@@ -38,8 +43,18 @@ describe('dependencies', () => {
     ).toEqual([])
   })
 
+  it('every override is approved, with a reason, and pins an exact registry version', () => {
+    const problems = manifests.flatMap(({ file, json }) =>
+      overrides(json).flatMap(([selector, version]) => [
+        ...(overrideKey(selector) in approved ? [] : [`${file}: override ${selector}: add "${overrideKey(selector)}" to tools/guards/allowlists/dependencies.json with a reason; the maintainer approves overrides`]),
+        ...(typeof version === 'string' && /^\d+\.\d+\.\d+$/.test(version) ? [] : [`${file}: override ${selector} must pin an exact version (x.y.z), not ${JSON.stringify(version)}`]),
+      ]),
+    )
+    expect(problems).toEqual([])
+  })
+
   it('the approval list has no entry nothing depends on', () => {
-    const used = new Set(manifests.flatMap(({ json }) => deps(json).map(([name]) => name)))
+    const used = new Set(manifests.flatMap(({ json }) => [...deps(json).map(([name]) => name), ...overrides(json).map(([selector]) => overrideKey(selector))]))
     expect(Object.keys(approved).filter((name) => !used.has(name))).toEqual([])
   })
 

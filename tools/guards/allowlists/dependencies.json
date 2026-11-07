@@ -1,5 +1,5 @@
 {
-  "$comment": "Every dependency and devDependency of every package.json (root, packages/*, tools/lint), with why Slate needs it. tools/guards/dependencies.test.ts fails on one that is missing here. Adding an entry is how a new dependency is proposed: the maintainer approves it in review (tools/guards/ is a security-sensitive path). Workspace packages (@slate/*) need no entry.",
+  "$comment": "Every dependency and devDependency of every package.json (root, packages/*, tools/lint), with why Slate needs it. tools/guards/dependencies.test.ts fails on one that is missing here. Adding an entry is how a new dependency is proposed: the maintainer approves it in review (tools/guards/ is a security-sensitive path). Workspace packages (@slate/*) need no entry. An override is approved under \"override:<selector>\" and pins an exact version.",
   "@azure/msal-node": "Microsoft sign-in for the OneNote import and OneDrive sync (Graph tokens).",
   "@eslint-community/eslint-plugin-eslint-comments": "Lint: a disable comment needs a reason and cannot switch off a guard rule.",
   "@eslint/js": "Lint: ESLint's core rule set, used by the flat config.",
@@ -40,6 +40,9 @@
   "loro-prosemirror": "Binds Loro documents to the ProseMirror editor.",
   "lowlight": "Syntax highlighting for code blocks.",
   "node-addon-api": "Build: the C++ headers of the better-sqlite3 binding vendored into @slate/native (header-only; nothing of it ships as JavaScript).",
+  "override:@isaacs/nonrecursive-glob-match": "Root: minimatch 11's dependency, held at 1.0.3 so the override above stays outside Dependabot's 7-day cooldown; lift it with the next minimatch update.",
+  "override:minimatch@^10": "GHSA-g3hv-75wg-m249 (>=7.0.0 <11.0.1): root, app-builder-lib's minimatch 10 → 11.0.3 (packaging only); tools/lint, the lint toolchain's → 11.0.1. Drop each once its dependents move to minimatch 11.",
+  "override:minimatch@^9": "Root: @electron/universal's minimatch 9 is in GHSA-g3hv-75wg-m249 (>=7.0.0 <11.0.1); 11.0.3 is fixed. Packaging only; drop it once electron-builder depends on minimatch 11.",
   "react": "The renderer UI.",
   "react-dom": "The renderer UI.",
   "typescript": "The compiler: TypeScript 7 for `tsc` at the root; TypeScript 6 in tools/lint for typescript-eslint, which needs its JavaScript API.",
