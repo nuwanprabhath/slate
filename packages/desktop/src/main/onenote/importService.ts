@@ -1,5 +1,5 @@
 import type { KeyHandle } from '@slate/native'
-import { NotebookDoc, PageDoc, SECTION_COLORS, newId, writeContent, type TreeItem } from '@slate/core'
+import { NotebookDoc, PageDoc, SECTION_COLORS, newId, type TreeItem } from '@slate/core'
 import { GraphClient, runImport, selectionToPaths, type GraphSource, type ImportProgress, type ImportSink, type ImportState, type OneNoteNotebook, type SectionPath } from '@slate/importer'
 import type { TreeID } from 'loro-crdt'
 import type { BlobStore } from '../blobs'
@@ -89,9 +89,7 @@ function docStoreSink(store: DocStore, blobs: BlobStore, pageOrder: Map<string, 
       page.setNeedsLayout(true)
       for (const box of page.listBoxes()) page.deleteBox(box.id)
       for (const box of mapped.boxes) {
-        const id = page.addBox({ x: box.x, y: box.y, width: box.width })
-        writeContent(page.contentMap(id)!, box.blocks, page.doc)
-        page.doc.commit()
+        page.addBox({ x: box.x, y: box.y, width: box.width, content: box.blocks })
       }
       store.append(pageDocId(pageId), page.doc.export({ mode: 'update', from }))
     },

@@ -4,7 +4,6 @@ import {
   markdownToBlocks,
   PageDoc,
   placeBelow,
-  writeContent,
   type Access,
   type NotebookDoc,
   type TreeItem,
@@ -116,9 +115,7 @@ export function appendToPage(src: DocSource, pageId: string, markdown: string): 
     const page = await src.loadPage(pageId)
     const from = page.doc.oplogVersion()
     const { x, y } = placeBelow(page)
-    const boxId = page.addBox({ x, y, width: 480 })
-    writeContent(page.contentMap(boxId)!, markdownToBlocks(markdown), page.doc)
-    page.doc.commit()
+    const boxId = page.addBox({ x, y, width: 480, content: markdownToBlocks(markdown) })
     await src.save(`page:${pageId}`, page.doc.export({ mode: 'update', from }))
     return { boxId }
   })
@@ -135,9 +132,7 @@ export function createPage(src: DocSource, notebookId: string, sectionId: string
     await src.save(`notebook:${notebookId}`, ref.doc.doc.export({ mode: 'update', from }))
     const page = new PageDoc()
     if (markdown && markdown.trim() !== '') {
-      const boxId = page.addBox({ x: 40, y: 40, width: 480 })
-      writeContent(page.contentMap(boxId)!, markdownToBlocks(markdown), page.doc)
-      page.doc.commit()
+      page.addBox({ x: 40, y: 40, width: 480, content: markdownToBlocks(markdown) })
     }
     await src.save(`page:${pageId}`, page.doc.export({ mode: 'snapshot' }))
     return { pageId }
