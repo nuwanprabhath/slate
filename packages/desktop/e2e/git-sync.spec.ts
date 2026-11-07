@@ -35,8 +35,8 @@ async function configureGit(page: Page) {
   await page.getByTestId('git-test').click()
   await expect(page.getByTestId('sync-check')).toContainText('Connected')
   await page.getByTestId('sync-settings-save').click()
-  // Save waits for a first sync (clone, vault check, push): about 4 s here, more on a loaded machine.
-  await expect(page.getByTestId('sync-settings')).toHaveCount(0, { timeout: 20_000 })
+  // Save waits for a first sync (clone, vault check, push): about 4 s alone, over 20 s with other syncing apps beside it.
+  await expect(page.getByTestId('sync-settings')).toHaveCount(0, { timeout: 45_000 })
 }
 
 /**
@@ -75,6 +75,9 @@ test('with sync off the toolbar button opens Sync settings, at the toolbar right
 
 test.describe.serial('git sync between two devices', () => {
   test.beforeAll(async () => {
+    // Two launches and two saves, each save waiting up to 45 s for its first sync (configureGit): far more than
+    // the default 30 s for one hook when other specs run beside this one.
+    test.setTimeout(150_000)
     execFileSync('git', ['init', '--bare', '--initial-branch=main', bare])
     a = (await launch(aData)).page
     b = (await launch(bData)).page

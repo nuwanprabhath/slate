@@ -223,7 +223,7 @@ rules:
   "R-1..R-5":
     wp: [C9]
     tests:
-      C9-rotation-unit: [packages/desktop/src/main/vault/rekey.test.ts, packages/desktop/src/main/vault/rotation.test.ts]
+      C9-rotation-unit: [packages/desktop/src/main/vault/rekey.test.ts, packages/desktop/src/main/vault/rekeyCrashSteps.test.ts, packages/desktop/src/main/vault/rekeyRemote.test.ts, packages/desktop/src/main/vault/rekeyUpgrade.test.ts, packages/desktop/src/main/vault/rotation.test.ts]
       C9-rotation-e2e: [packages/desktop/e2e/rotation.spec.ts]
 mapping:
   M-01:
