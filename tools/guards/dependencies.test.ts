@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -78,5 +79,15 @@ describe('dependencies', () => {
       }
     }
     expect(problems).toEqual([])
+  })
+
+  // A lockfile edited by hand, or regenerated in part, can drop a nested copy that a range still needs
+  // (0.6.7's first try lost electron's undici-types 7.24.6); typecheck and the tests did not notice.
+  it('every lockfile gives a valid tree: each locked range is met by the copy node resolution finds', () => {
+    for (const lockfile of LOCKFILES) {
+      const ls = spawnSync('npm', ['ls', '--all', '--package-lock-only', '--json'], { cwd: join(ROOT, lockfile, '..'), encoding: 'utf8' })
+      const problems = (JSON.parse(ls.stdout) as { problems?: string[] }).problems ?? []
+      expect(problems, `${lockfile}: regenerate it with npm (npm install --package-lock-only), never by hand`).toEqual([])
+    }
   })
 })
