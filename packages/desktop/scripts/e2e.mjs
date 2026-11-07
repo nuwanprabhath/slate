@@ -30,11 +30,14 @@ function count(projects) {
 }
 
 const phases = args.some((a) => a === '--project' || a.startsWith('--project=')) ? [[]] : [['parallel', 'os-shared'], ['perf']]
+// Each Playwright run empties its output folder first: the perf pass writes to its own, so the first pass's
+// failure traces survive for CI's e2e-results artifact (test-results/).
+const output = (projects) => (projects.length === 1 && projects[0] === 'perf' ? ['--output=test-results/perf'] : [])
 const runnable = phases.filter((projects) => count(projects) > 0)
 if (runnable.length === 0) {
   process.stderr.write(`e2e: no tests found for: ${args.join(' ') || '(no filter)'}\n`)
   process.exit(1)
 }
 let status = 0
-for (const projects of runnable) status = (playwright(projectArgs(projects), { stdio: 'inherit' }).status ?? 1) || status
+for (const projects of runnable) status = (playwright([...projectArgs(projects), ...output(projects)], { stdio: 'inherit' }).status ?? 1) || status
 process.exit(status)
