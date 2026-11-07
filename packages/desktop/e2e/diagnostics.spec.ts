@@ -24,8 +24,11 @@ test('it logs again at the next start while on, and stops when switched off', as
   const text = await second.page.evaluate(() => window.slate.diagnostics.read())
   expect(text.match(/diagnostic log on/g)).toHaveLength(2)
   await second.page.evaluate(() => window.slate.settings.set({ debugLog: false }))
+  // Startup may still be logging (the file watcher, the vault) when the page is ready: compare from the moment it was switched off.
+  const atOff = await second.page.evaluate(() => window.slate.diagnostics.read())
+  expect(atOff.startsWith(text)).toBe(true)
   await second.page.evaluate(() => window.slate.settings.set({ markdownShortcuts: true }))
-  expect(await second.page.evaluate(() => window.slate.diagnostics.read())).toBe(text)
+  expect(await second.page.evaluate(() => window.slate.diagnostics.read())).toBe(atOff)
   await second.app.close()
 })
 
