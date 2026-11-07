@@ -1,5 +1,5 @@
 import { LoroDoc, VersionVector } from 'loro-crdt'
-import { contentToJSON, newId, PageDoc, writeContent, type BoxState, type PMJSON } from '@slate/core'
+import { contentToJSON, newId, PageDoc, type BoxState, type PMJSON } from '@slate/core'
 import { boxesTouched, boxMarkdown } from './conflicts'
 import { chunkPath, parseRemotePath, snapshotPath } from './paths'
 import type { LocalStore, RemoteDrive, SyncReport, SyncStatus } from './types'
@@ -302,10 +302,8 @@ export class SyncEngine {
     // A new local change (fresh box ids), so it goes out with this device's next push.
     const from = state.doc.oplogVersion()
     for (const { box, content } of missing) {
-      const id = page.addBox({ x: box.x, y: box.y, width: box.width })
+      const id = page.addBox({ x: box.x, y: box.y, width: box.width, content: content?.content ?? [] })
       if (box.private) page.updateBox(id, { private: true })
-      const root = page.contentMap(id)
-      if (root && content) writeContent(root, content.content ?? [])
     }
     state.doc.commit()
     await this.local.appendRemote(docId, state.doc.export({ mode: 'update', from }))

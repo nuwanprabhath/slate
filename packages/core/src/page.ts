@@ -67,7 +67,12 @@ export class PageDoc {
     return value instanceof LoroMap ? value : undefined
   }
 
-  addBox(init: { x: number; y: number; width: number }): string {
+  /**
+   * A box and its content in one commit: `content`'s blocks, else (none, or an empty list) one empty paragraph.
+   * Never an empty content map or an empty doc, even for a moment: the editor fills either with its own doc, so a
+   * device that synced the box first would write one too, and the two writes to the same keys hide one side's text.
+   */
+  addBox(init: { x: number; y: number; width: number; content?: PMJSON[] }): string {
     const id = newId()
     const z = this.maxZ() + 1
     const box = this.boxes.setContainer(id, new LoroMap())
@@ -76,7 +81,7 @@ export class PageDoc {
     box.set('width', init.width)
     box.set('private', false)
     box.set('z', z)
-    box.setContainer('content', new LoroMap())
+    writeContent(box.setContainer('content', new LoroMap()), init.content?.length ? init.content : [{ type: 'paragraph' }], this.doc)
     this.doc.commit()
     return id
   }
@@ -91,7 +96,7 @@ export class PageDoc {
       width: box.width,
       ...(box.height !== undefined ? { height: box.height } : {}),
       private: box.private,
-      content: contentToJSON(content)?.content ?? [],
+      content: blocksOf(content),
     }
   }
 
@@ -107,8 +112,8 @@ export class PageDoc {
       if (copy.height !== undefined) box.set('height', copy.height)
       box.set('private', copy.private)
       box.set('z', ++z)
-      const content = box.setContainer('content', new LoroMap())
-      if (copy.content.length > 0) writeContent(content, copy.content, this.doc)
+      // An empty copy gets the empty paragraph a new box has, in this commit (see addBox).
+      writeContent(box.setContainer('content', new LoroMap()), copy.content.length > 0 ? copy.content : [{ type: 'paragraph' }], this.doc)
       return id
     })
     this.doc.commit(origin === undefined ? undefined : { origin })
@@ -195,4 +200,11 @@ export class PageDoc {
     this.boxes.delete(id)
     this.doc.commit(origin === undefined ? undefined : { origin })
   }
+}
+
+/** A box's blocks, with the one empty paragraph a new box starts with counted as no content. */
+function blocksOf(content: LoroMap): PMJSON[] {
+  const blocks = contentToJSON(content)?.content ?? []
+  const only = blocks.length === 1 ? blocks[0]! : undefined
+  return only?.type === 'paragraph' && only.content === undefined && only.attrs === undefined ? [] : blocks
 }

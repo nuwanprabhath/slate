@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { Editor } from '@tiptap/core'
+import { contentToJSON, PageDoc } from '@slate/core'
 import { LoroDoc } from 'loro-crdt'
 import { afterEach, expect, it } from 'vitest'
 import { buildExtensions } from '../src/extensions'
@@ -60,3 +61,40 @@ it("typing on one device keeps another device's concurrent alignment of the same
   b.import(a.export({ mode: 'update', from: b.oplogVersion() }))
   for (const doc of [a, b]) expect(JSON.stringify(doc.getMap('box').toJSON())).toContain('"textAlign":"center"')
 })
+
+/** An editor bound to one box's content container, as the canvas mounts it. */
+function mountBox(doc: LoroDoc, containerId: ReturnType<LoroDoc['getMap']>['id']): Editor {
+  const editor = new Editor({ extensions: [...buildExtensions(), LoroBinding.configure({ doc, containerId })] })
+  editors.push(editor)
+  return editor
+}
+
+// The second device's editor must find the box's content already there and write nothing: if it wrote its own
+// doc, the two devices' writes to the same keys would hide whichever lost, with the text typed into it.
+for (const peers of [
+  [1n, 2n],
+  [2n, 1n],
+] as const) {
+  it(`a box made on one device and opened on another keeps the first device's typing (peers ${peers.join(', ')})`, async () => {
+    const a = new PageDoc()
+    a.doc.setPeerId(peers[0])
+    const id = a.addBox({ x: 0, y: 0, width: 100 })
+    const b = new PageDoc(new LoroDoc())
+    b.doc.setPeerId(peers[1])
+    b.doc.import(a.doc.export({ mode: 'snapshot' }))
+    const before = b.doc.oplogVersion()
+    const onA = mountBox(a.doc, a.getBox(id)!.contentId)
+    mountBox(b.doc, b.getBox(id)!.contentId)
+    await new Promise((r) => setTimeout(r, 0))
+    a.doc.commit()
+    b.doc.commit()
+    expect(b.doc.exportJsonUpdates(before).changes).toEqual([])
+
+    onA.commands.focus('end')
+    onA.commands.insertContent('hello over git')
+    a.doc.commit()
+    b.doc.import(a.doc.export({ mode: 'update', from: b.doc.oplogVersion() }))
+    a.doc.import(b.doc.export({ mode: 'update', from: a.doc.oplogVersion() }))
+    for (const page of [a, b]) expect(JSON.stringify(contentToJSON(page.contentMap(id)!))).toContain('hello over git')
+  })
+}

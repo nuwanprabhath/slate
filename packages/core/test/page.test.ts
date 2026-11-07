@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LoroDoc, LoroMap } from 'loro-crdt'
 import { PageDoc } from '../src/page'
-import { writeContent } from '../src/content'
+import { contentToJSON, writeContent } from '../src/content'
 
 function recordUpdates(doc: LoroDoc): Uint8Array[] {
   const updates: Uint8Array[] = []
@@ -17,6 +17,34 @@ describe('PageDoc', () => {
     expect(box).toMatchObject({ id, x: 10, y: 20, width: 300, private: false })
     expect(typeof box.contentId).toBe('string')
     expect(page.contentMap(id)?.id).toBe(box.contentId)
+  })
+
+  it('a new box carries its empty paragraph in the same update, so a device that receives it never writes one of its own', () => {
+    // The editor fills an empty content map with its own doc; two devices doing so for one box set the same keys
+    // concurrently, and the losing side's text (typed on the device that made the box) disappears.
+    const page = new PageDoc()
+    const updates = recordUpdates(page.doc)
+    const id = page.addBox({ x: 0, y: 0, width: 100 })
+    expect(updates).toHaveLength(1)
+    const other = PageDoc.fromUpdates(updates)
+    expect(contentToJSON(other.contentMap(id)!)).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] })
+  })
+
+  it('a box added with an empty list of blocks gets the empty paragraph too, never a doc with no blocks', () => {
+    const page = new PageDoc()
+    const id = page.addBox({ x: 0, y: 0, width: 100, content: [] })
+    expect(contentToJSON(page.contentMap(id)!)).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] })
+  })
+
+  it('a box added with content holds it in the same update', () => {
+    const page = new PageDoc()
+    const updates = recordUpdates(page.doc)
+    const id = page.addBox({ x: 0, y: 0, width: 100, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'from an agent' }] }] })
+    expect(updates).toHaveLength(1)
+    expect(contentToJSON(PageDoc.fromUpdates(updates).contentMap(id)!)).toEqual({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'from an agent' }] }],
+    })
   })
 
   it('patches box fields', () => {

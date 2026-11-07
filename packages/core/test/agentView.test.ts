@@ -46,8 +46,12 @@ describe('agent view', () => {
   })
 
   it('returns null content for an empty box', () => {
+    // addBox always writes a paragraph; an empty content map comes from a box an earlier version made.
     const page = new PageDoc()
     const id = page.addBox({ x: 0, y: 0, width: 100 })
+    const box = page.doc.getMap('boxes').get(id) as LoroMap
+    box.setContainer('content', new LoroMap())
+    page.doc.commit()
     expect(contentToJSON(page.contentMap(id)!)).toBeNull()
   })
 })

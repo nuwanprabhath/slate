@@ -1,6 +1,5 @@
 import { UndoManager, type LoroDoc } from 'loro-crdt'
 import { PageDoc, arrangeBoxes, computePush, hasOverlaps, contentToJSON, settleOverlaps, type BoxCopy, type BoxPatch, type BoxRect, type BoxState, type PMJSON } from '@slate/core'
-import { writeContent } from './content'
 import { isEmptyContent } from './emptyBox'
 import { schema } from './extensions'
 import { findInPage, replaceInPageDoc, type FindMatch, type FindOptions, type ReplaceChoice } from './find'
@@ -109,10 +108,7 @@ export class PageSession {
   }
 
   createBoxWithContent(x: number, y: number, blocks: PMJSON[], width = DEFAULT_BOX_WIDTH): string {
-    const id = this.page.addBox({ x, y, width })
-    writeContent(this.page.contentMap(id)!, blocks, this.doc)
-    this.doc.commit()
-    return id
+    return this.page.addBox({ x, y, width, content: blocks })
   }
 
   /** Boxes as data, back to front, so copies layer as the originals do. */
