@@ -1,7 +1,7 @@
 {
   "darwin-arm64": {
-    "provider": "764447fb568f6e7c5bc5833cca673caef4faa4889918eff80beb1b50e493bff4",
-    "config": "d3fc1e378f25a289372155a02d5eb3828f23489044066a9fa93e33017e2bb6c6"
+    "provider": "33463d3305e67b16622174d7726917c96ba3394ba5d299ebf3f64c809f4932bc",
+    "config": "f935c024643eb363bcc807feed3d98b57585388cfc91ac323743b5398fc6b965"
   },
   "darwin-x64": {
     "provider": "c87b32f69fcf0dcdd7e4d797be0642e461104b8062ec33848e89918f1becfff2",
