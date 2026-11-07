@@ -187,9 +187,19 @@ test.describe.serial('C9: key rotation and FIPS conversion across two devices', 
   test('R-2: A replaces the sync history; B keeps syncing on a fresh clone', async () => {
     test.setTimeout(120_000)
     await openSecurity(a)
+    const before = inBare('rev-list', 'main').trim().split('\n')
     a.once('dialog', (d) => void d.accept())
     await a.getByTestId('security-replace-history').click({ timeout: 30_000 })
-    await expect.poll(() => inBare('rev-list', '--count', 'main').trim(), { timeout: 60_000 }).toBe('1')
+    // Replaced: no commit from before is reachable, and the branch has one root, the replacement. Both devices keep
+    // syncing on top of it every 500 ms, so the commit count is 1 only until the next sync and is not what is checked.
+    await expect
+      .poll(() => {
+        const now = new Set(inBare('rev-list', 'main').trim().split('\n'))
+        const roots = inBare('rev-list', '--max-parents=0', 'main').trim().split('\n')
+        const rootSubject = inBare('log', '-1', '--format=%s', roots[0]!).trim()
+        return { oldReachable: before.filter((c) => now.has(c)).length, roots: roots.length, rootSubject }
+      }, { timeout: 60_000 })
+      .toEqual({ oldReachable: 0, roots: 1, rootSubject: 'slate: encrypted (history replaced)' })
     await expect(a.getByTestId('canvas')).toContainText(MARKER, { timeout: 15_000 })
     await createBoxAt(b, 320, 460)
     await b.keyboard.type('AFTER-HISTORY-REPLACED')
