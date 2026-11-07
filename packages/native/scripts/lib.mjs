@@ -29,7 +29,10 @@ export function hostTarget(platform = process.platform, arch = process.arch) {
   return `${platform}-${arch}`
 }
 
-/** Electron 45 runs on macOS 12 and later; without this clang targets the build machine's macOS. */
+/**
+ * Without this clang targets the build machine's macOS. 12.0 is below Electron 45's own minimum (13.0, its
+ * LSMinimumSystemVersion), so the native module never raises the app's.
+ */
 export const MACOS_MIN = '12.0'
 
 /**

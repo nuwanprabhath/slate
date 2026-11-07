@@ -6,7 +6,16 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.6.3] - 2026-11-04
+## [0.6.4] - 2026-11-07
+
+Carries 0.6.3's changes, which were never published.
+
+### Changed
+
+- The macOS arm64 build and tests run on GitHub's macOS 15 runners: the macOS 14 image was retired and
+  cancelled the 0.6.3 release before it built. The minimum macOS is unchanged: 13, Electron 45's.
+
+## [0.6.3] - 2026-11-04 (not released: the macOS 14 build runner was retired; shipped in 0.6.4)
 
 ### Fixed
 

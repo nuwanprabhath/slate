@@ -6,8 +6,10 @@ before you tag `v0.2.0`.
 - [x] **Linux CI is green** (2026-10-27, run 40405028144 on 6d2d1cd): memory evidence (T-ZERO-04/06), Linux e2e, the
   native builds for linux-x64, darwin-arm64 and darwin-x64, unit, main-process and guard tests all pass.
 - [x] **FIPS provider pins committed from CI** for darwin-arm64, darwin-x64 and linux-x64. The release builds on the same
-  runners (macos-14, ubuntu-24.04), so it reproduces them. A local build on another toolchain gives a different
-  darwin-arm64 digest: build release artefacts only in CI.
+  runners (macos-15, ubuntu-24.04), so it reproduces them. A local build on another toolchain gives a different
+  darwin-arm64 digest: build release artefacts only in CI. A runner image change moves it too: the darwin-arm64 pin was
+  re-measured on macos-15 (2026-11-07, CI run 42356676531) when macos-14 was retired, and must be again on the next
+  change of the release's runner.
 - [x] **`SLATE_UPDATE_SIGNING_KEY` is set** as a secret of the `release` environment of `nuwanprabhath/slate` (the
   Ed25519 private key the lead generated outside the repository). The environment allows only `v*` tags to deploy,
   and `release.yml`'s publish job names it; a repository secret would also work but reaches every workflow. Without it the release cannot sign the update feeds, and no running 0.2.x app will accept
