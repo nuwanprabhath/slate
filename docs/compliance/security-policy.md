@@ -116,7 +116,7 @@ device record reports version 0.2.0 or newer.
   Sync files of earlier epochs are re-pushed under the new epoch, swept, and the history entry is pruned once no file of
   that epoch remains (R-2). Replacing the sync history (Settings) is the way to remove old ciphertext from a remote.
 - **Crash safety.** The remote header is written first (compare-and-swap), then the local database is copied and
-  rekeyed under a fresh LK, then swapped; `migration.json` resumes at the next unlock (T-ROT tests in `rekey.test.ts`).
+  rekeyed under a fresh LK, then swapped; `migration.json` resumes at the next unlock (the C9 tests in `vault/rekey*.test.ts`).
 - **Due date.** A `fips-140-3` vault shows "Keys are due for rotation" 730 days after its master key was made (R-4).
 - **Events.** `vault.key.rotated` and `vault.profile.changed` are logged without secrets.
 - **Residual (review C9 L6, POAM-15).** Deleting `vault.seen.json` re-enables an overwrite within the same epoch

@@ -17,7 +17,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "test": "cross-env ELECTRON_RUN_AS_NODE=1 electron ../../node_modules/vitest/vitest.mjs run --config vitest.main.config.ts",
-    "e2e": "electron-vite build && playwright test",
+    "e2e": "electron-vite build && node scripts/e2e.mjs",
     "dist": "electron-vite build && electron-builder --publish never",
     "dist:dir": "electron-vite build && electron-builder --dir --publish never",
     "dist:e2e": "electron-vite build --mode e2e && electron-builder --dir --publish never --config electron-builder.e2e.cjs",

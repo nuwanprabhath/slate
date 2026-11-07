@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
@@ -11,6 +11,10 @@ const REPORTS = join(homedir(), 'Library', 'Logs', 'DiagnosticReports')
 
 /** macOS writes `Electron-<date>.ips` for a crashed Electron process, but drops repeats, so the exit status is checked too. */
 const crashReports = (): string[] => (process.platform === 'darwin' ? readdirSync(REPORTS).filter((f) => f.startsWith('Electron')) : [])
+
+/** Whether a report is of one of these apps: its main process, or a helper whose parent is one. Other specs' apps run beside this one. */
+const fromApps = (report: string, pids: Set<number>): boolean =>
+  [...readFileSync(join(REPORTS, report), 'utf8').matchAll(/"(?:pid|parentPid)"\s*:\s*(\d+)/g)].some((m) => pids.has(Number(m[1])))
 
 async function lockScreen(app: ElectronApplication): Promise<Page> {
   let found: Page | undefined
@@ -41,8 +45,10 @@ test('unlock, AI access, lock, unlock and quit ten times, half of them mid-lock,
   const before = new Set(crashReports())
   const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
   const exits: string[] = []
+  const pids = new Set<number>()
   for (let i = 0; i < 10; i++) {
     const { app } = await launchApp(userData, { SLATE_TEST_ENCRYPT_PASSWORD: PASSWORD })
+    pids.add(app.process().pid!)
     const mcp = await connectMcp(userData)
     const listTree = async () => textOf(await mcp.client.callTool({ name: 'list_tree', arguments: {} }))
     try {
@@ -65,5 +71,5 @@ test('unlock, AI access, lock, unlock and quit ten times, half of them mid-lock,
   expect(exits).toEqual(Array(10).fill('code 0 signal null'))
   // ReportCrash writes a report a moment after the process dies.
   await new Promise((r) => setTimeout(r, 3000))
-  expect(crashReports().filter((f) => !before.has(f))).toEqual([])
+  expect(crashReports().filter((f) => !before.has(f) && fromApps(f, pids))).toEqual([])
 })
