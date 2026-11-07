@@ -6,6 +6,19 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-11-07
+
+### Changed
+
+- Loro, the document library under every note, is updated to 1.17.1. Notes, sync and encryption behave
+  as before.
+
+### Security
+
+- The build's packaging tools use minimatch 11.0.3, which fixes GHSA-g3hv-75wg-m249 (the advisory now
+  covers versions 7 to 11.0.0). It is used only to build the app and does not ship in it; the
+  packaged files are the same.
+
 ## [0.6.4] - 2026-11-07
 
 Carries 0.6.3's changes, which were never published.

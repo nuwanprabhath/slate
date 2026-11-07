@@ -1,6 +1,6 @@
 {
   "name": "slate",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "license": "Apache-2.0",
   "author": "Nuwan Munasinghe <nuwanprabhath@gmail.com>",
   "homepage": "https://github.com/nuwanprabhath/slate",
@@ -44,5 +44,10 @@
     "fast-check": "4.10.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
+  },
+  "overrides": {
+    "minimatch@^9": "11.0.3",
+    "minimatch@^10": "11.0.3",
+    "@isaacs/nonrecursive-glob-match": "1.0.3"
   }
 }

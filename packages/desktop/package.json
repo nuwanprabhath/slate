@@ -1,6 +1,6 @@
 {
   "name": "@slate/desktop",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "license": "Apache-2.0",
   "private": true,
   "productName": "Slate",
@@ -35,7 +35,7 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/source-serif-4": "^5.3.1",
     "electron-updater": "6.8.11",
-    "loro-crdt": "^1.16.4",
+    "loro-crdt": "^1.17.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

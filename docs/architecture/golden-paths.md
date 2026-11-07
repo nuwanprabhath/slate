@@ -120,6 +120,10 @@ reason to `tools/guards/allowlists/dependencies.json` (`tools/guards/dependencie
 maintainer approves it in review; a lockfile entry without an integrity hash or from outside the npm
 registry fails the guard.
 
+An `overrides` entry (forcing a version on a package something else depends on, usually for an
+advisory) is approved the same way: an exact `x.y.z` version, and a line keyed `override:<selector>`
+with the reason and when to drop it.
+
 ## Opening a URL
 
 Main: `openExternalSafe(url)` (`src/main/openExternal.ts`), which allows `https:` and `mailto:` only
