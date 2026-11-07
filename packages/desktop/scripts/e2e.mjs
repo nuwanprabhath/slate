@@ -9,14 +9,24 @@ const args = process.argv.slice(2)
 const projectArgs = (projects) => projects.map((p) => `--project=${p}`) // `--project a b` would take the filters as project names
 const playwright = (extra, options) => spawnSync('npx', ['playwright', 'test', ...extra, ...args], options)
 
-/** How many tests these projects hold under the run's filters. */
+/** How many tests these projects hold under the run's filters. Only "No tests found" counts as none: any other
+ * listing error (a spec that fails to load, a duplicate title) would empty the phase, so it stops the run. */
 function count(projects) {
-  const listed = playwright([...projectArgs(projects), '--list', '--reporter=list'], { encoding: 'utf8' })
-  const total = /^Total: (\d+) tests?/m.exec(listed.stdout ?? '')
-  if (total) return Number(total[1])
-  if (/No tests found/.test(`${listed.stdout}${listed.stderr}`)) return 0
-  process.stderr.write(listed.stdout + listed.stderr)
-  throw new Error(`e2e: could not list the tests of ${projects.join(', ') || 'the named projects'}`)
+  const listed = playwright([...projectArgs(projects), '--list', '--reporter=json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+  let report
+  try {
+    report = JSON.parse(listed.stdout)
+  } catch {
+    process.stderr.write(`${listed.stdout ?? ''}${listed.stderr ?? ''}`)
+    throw new Error(`e2e: could not list the tests of ${projects.join(', ') || 'the named projects'}`)
+  }
+  const errors = (report.errors ?? []).filter((e) => !/^Error: No tests found/.test(e.message ?? ''))
+  if (errors.length > 0) {
+    for (const e of errors) process.stderr.write(`${e.message ?? JSON.stringify(e)}\n`)
+    process.exit(1)
+  }
+  const tests = (suite) => (suite.specs ?? []).reduce((n, s) => n + s.tests.length, 0) + (suite.suites ?? []).reduce((n, s) => n + tests(s), 0)
+  return (report.suites ?? []).reduce((n, s) => n + tests(s), 0)
 }
 
 const phases = args.some((a) => a === '--project' || a.startsWith('--project=')) ? [[]] : [['parallel', 'os-shared'], ['perf']]
