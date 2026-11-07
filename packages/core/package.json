@@ -5,6 +5,6 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "loro-crdt": "^1.16.4"
+    "loro-crdt": "^1.17.1"
   }
 }

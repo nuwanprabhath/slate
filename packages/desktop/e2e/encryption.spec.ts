@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { LoroDoc } from 'loro-crdt'
 import { createBoxAt, expect, launchApp, test, unlockWith } from './fixtures'
 import { connectMcp, textOf } from './mcpClient'
 
@@ -63,13 +64,34 @@ const synced = (page: Page) =>
       }),
   )
 
-/** Every object reachable from the branch, as git prints it (decompressed). */
+/**
+ * Every object reachable from the branch, as git prints it (decompressed), followed by what each plaintext Loro
+ * document among them says, history included. Loro does not promise typed text is one run of bytes (1.17 stores
+ * text typed a key at a time in pieces), so a byte search alone would miss a plaintext note and pass the
+ * "no plaintext" checks below for the wrong reason. A document's chunks are decoded together: each later chunk
+ * builds on the ones before it.
+ */
 function reachableContents(): string {
   const objects = execFileSync('git', ['--git-dir', bare, 'rev-list', '--objects', 'main'], { encoding: 'utf8' })
     .trim()
     .split('\n')
-    .map((l) => l.split(' ')[0]!)
-  return objects.map((sha) => execFileSync('git', ['--git-dir', bare, 'cat-file', '-p', sha]).toString('latin1')).join('\n')
+    .map((l) => {
+      const [sha, path = ''] = l.split(' ')
+      return { sha: sha!, path }
+    })
+  const docs = new Map<string, Buffer[]>()
+  const raw = objects.map(({ sha, path }) => {
+    const bytes = execFileSync('git', ['--git-dir', bare, 'cat-file', '-p', sha])
+    const docId = /^docs\/([^/]+)\//.exec(path)?.[1]
+    if (docId !== undefined && bytes.subarray(0, 4).toString('latin1') === 'loro') docs.set(docId, [...(docs.get(docId) ?? []), bytes])
+    return bytes.toString('latin1')
+  })
+  const decoded = [...docs.values()].map((chunks) => {
+    const doc = new LoroDoc()
+    doc.importBatch(chunks)
+    return JSON.stringify(doc.exportJsonUpdates())
+  })
+  return [...raw, ...decoded].join('\n')
 }
 
 async function lockWindow(app: ElectronApplication): Promise<Page> {
