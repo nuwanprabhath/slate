@@ -11,7 +11,7 @@ import { defineConfig } from '@playwright/test'
 // - `perf`: the performance budgets measure wall-clock time, so `npm run e2e` (scripts/e2e.mjs) runs them
 //   after the other two, alone.
 const E2E = join(__dirname, 'e2e')
-const CLIPBOARD = /clipboard\.(?:write|read|clear|has|availableFormats)|navigator\.clipboard|(?:Meta|Control|ControlOrMeta|\$\{MOD\}|Mod)\+(?:Shift\+)?[cvxCVX]\b|['"`](?:Copy|Cut|Paste)['"`]/
+const CLIPBOARD = /clipboard\.(?:write|read|clear|has|availableFormats)|navigator\.clipboard|webContents\.(?:copy|cut|paste)\w*\(|execCommand\(\s*['"`](?:copy|cut|paste)|(?:Meta|Control|ControlOrMeta|\$\{MOD\}|Mod)\+(?:Shift\+)?[cvxCVX]\b|['"`](?:Copy|Cut|Paste)['"`]/
 
 function usesClipboard(file: string, seen = new Set<string>()): boolean {
   if (seen.has(file) || !existsSync(file)) return false
