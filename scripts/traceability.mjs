@@ -70,7 +70,7 @@ export const SEED = {
   },
   rules: {
     'S-1..S-11': { wp: ['C6'], tests: ['T-POST-01..13'] },
-    'Z-1..Z-12': { wp: ['C1', 'C4', 'C7'], tests: ['T-ZERO-01..08', 'T-STATIC-01'] },
+    'Z-1..Z-12': { wp: ['C1', 'C4', 'C7'], tests: ['T-ZERO-01..10', 'T-STATIC-01'] },
     'B-1..B-7': { wp: ['C8', 'C12'], tests: ['T-B-01..07'] },
     'R-1..R-5': { wp: ['C9'], tests: ['C9-rotation-unit', 'C9-rotation-e2e'] },
   },
