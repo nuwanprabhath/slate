@@ -12,6 +12,8 @@ export interface LockSteps {
   stopSync(): Promise<void>
   closeWatch(): void
   closeDatabases(): void
+  /** Drops main-process state the notes window could still name: the live OneNote backup pick (C2). */
+  clearPicks?(): void
   closeKeys(): void
   /** Opens the lock window before the old one goes (§15 N6); right after the flush, so no slow step keeps notes on screen. */
   showLockWindow(): void
@@ -46,6 +48,7 @@ export async function runLock(state: VaultStateMachine, steps: LockSteps, opts: 
   await attempt('sync', () => steps.stopSync())
   await attempt('watch', () => steps.closeWatch())
   await attempt('databases', () => steps.closeDatabases())
+  await attempt('picks', () => steps.clearPicks?.())
   await attempt('keys', () => steps.closeKeys())
   state.to('locked')
   await attempt('clipboard', () => steps.clearClipboard())

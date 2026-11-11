@@ -1,6 +1,6 @@
 /* OneNote import overlay */
 .import-backdrop { position: fixed; inset: 0; z-index: 30; background: var(--overlay); display: grid; place-items: center; }
-.import-dialog { width: min(560px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; font-size: 13px; }
+.import-dialog { width: min(560px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--popover); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; font-size: 13px; }
 .import-dialog header { display: flex; align-items: center; justify-content: space-between; }
 .import-dialog h2 { margin: 0; font-size: 16px; }
 .import-dialog h3 { margin: 14px 0 6px; font-size: 13px; }
