@@ -209,6 +209,8 @@ rules:
       T-ZERO-06: [packages/desktop/e2e/coredump.linux.ts]
       T-ZERO-07: [packages/desktop/e2e/memory.spec.ts]
       T-ZERO-08: [packages/desktop/src/main/static.test.ts]
+      T-ZERO-09: [packages/desktop/e2e/memory.linux.ts]
+      T-ZERO-10: [packages/desktop/e2e/memory.spec.ts]
       T-STATIC-01: [packages/desktop/src/main/static.test.ts]
   "B-1..B-7":
     wp: [C8, C12]
