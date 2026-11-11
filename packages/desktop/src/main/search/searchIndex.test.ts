@@ -265,7 +265,7 @@ describe('SearchIndex', () => {
 
   it('refuses a pattern that backtracks exponentially instead of freezing the thread', () => {
     const { index, store, p1 } = setup()
-    writePage(store, p1.pageId, [{ lines: ['a'.repeat(5000)] }])
+    writePage(store, p1.pageId, [{ lines: [`${'a'.repeat(4999)}!`] }])
     index.docChanged(`page:${p1.pageId}`)
     index.query(q('alpha'))
     const started = Date.now()
