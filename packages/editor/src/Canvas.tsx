@@ -4,6 +4,7 @@ import { activeEditor } from './activeEditor'
 import { Box, type GroupDrag } from './Box'
 import { boxClipboard, clipMatches, copyBoxes, cutBoxes, duplicateBoxes, pasteBoxes } from './boxClipboard'
 import { CanvasMenu } from './CanvasMenu'
+import { coveringHandles } from './coveringHandles'
 import { boxContentDragged, dropInNewBox } from './dragMove'
 import { imageFilesFrom, pasteHtml } from './images'
 import { linkedTextBlocks, pastePlain } from './links'
@@ -57,21 +58,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
 
   // A handle bar stacks above every box body, so where one lies over another box it would catch
   // clicks on that box's text unseen: those handles are always drawn.
-  const coveringHandles = useMemo(() => {
-    const out = new Set<string>()
-    for (const b of boxes) {
-      const top = b.y - HANDLE_HEIGHT
-      for (const o of boxes) {
-        if (o.id === b.id) continue
-        const oh = Math.max(session.heightOf(o.id) ?? 0, o.height ?? 0)
-        if (b.x < o.x + o.width && o.x < b.x + b.width && top < o.y + oh && o.y < b.y) {
-          out.add(b.id)
-          break
-        }
-      }
-    }
-    return out
-  }, [boxes, session])
+  const covering = useMemo(() => coveringHandles(boxes, HANDLE_HEIGHT, (id) => session.heightOf(id)), [boxes, session])
 
   // Coming back to a page puts it where it was scrolled to, before the first paint.
   useLayoutEffect(() => {
@@ -401,7 +388,7 @@ export function Canvas({ session, conflicts, onConflictClick }: CanvasProps) {
               onConflictClick={onConflictClick}
               layer={layers.get(b.id) ?? 1}
               selected={selection.has(b.id)}
-              handleShown={coveringHandles.has(b.id)}
+              handleShown={covering.has(b.id)}
               onPress={onBoxPress}
               onGroupDrag={onGroupDrag}
               groupDrag={groupDrag}

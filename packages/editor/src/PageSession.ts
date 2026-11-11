@@ -41,6 +41,8 @@ export class PageSession {
   private localEdits = new Set<string>()
   private cleanup: Array<() => void> = []
   private settleTimer: ReturnType<typeof setTimeout> | undefined
+  /** A settle ran: every box had reported a height and the overlaps were resolved. */
+  private settled = false
   private readonly persistence: DocPersistence
   private undoHooks = new Map<string, UndoHook>()
   private hookCount = 0
@@ -301,6 +303,7 @@ export class PageSession {
       if (!this.page.needsLayout()) return
       const boxes = this.page.listBoxes()
       if (boxes.some((b) => !this.heights.has(b.id))) return
+      this.settled = true
       const moved = settleOverlaps(boxes.map((b) => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: this.heights.get(b.id)! })))
       // sys:* is ignored by the UndoManager, so undo never un-settles the page.
       if (moved.size > 0) this.page.moveBoxes(moved, 'sys:layout')
@@ -330,7 +333,9 @@ export class PageSession {
 
   close(): void {
     clearTimeout(this.settleTimer)
-    if (this.page.needsLayout()) this.page.setNeedsLayout(false)
+    // Only a page that actually settled is laid out: one closed before its boxes were measured
+    // keeps the flag, so its next open still settles it.
+    if (this.settled && this.page.needsLayout()) this.page.setNeedsLayout(false)
     this.cleanup.forEach((c) => c())
     this.cleanup = []
     this.listeners.clear()
