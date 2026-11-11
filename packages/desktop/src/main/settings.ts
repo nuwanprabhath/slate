@@ -1,6 +1,7 @@
 import type { Settings } from '../shared/api'
 import { mergeSettings, sanitizePatch } from '../shared/settings/schema'
 import type { DocStore } from './store'
+import { allowLocalGitRemotes } from './testHooks'
 
 type Listener = (settings: Settings) => void
 const listeners = new Set<Listener>()
@@ -15,11 +16,11 @@ export function readSettings(store: DocStore): Settings {
   // Phase 4 stored OneDrive sync as `syncEnabled`; a provider saved since takes precedence.
   const { syncEnabled, ...stored } = store.getSetting<Record<string, unknown>>('settings') ?? {}
   const migrated = stored.syncProvider === undefined && syncEnabled === true ? { syncProvider: 'onedrive' } : {}
-  return mergeSettings({ ...migrated, ...stored })
+  return mergeSettings({ ...migrated, ...stored }, { allowLocal: allowLocalGitRemotes() })
 }
 
 export function writeSettings(store: DocStore, patch: Partial<Settings>): Settings {
-  const next = { ...readSettings(store), ...sanitizePatch(patch) }
+  const next = { ...readSettings(store), ...sanitizePatch(patch, { allowLocal: allowLocalGitRemotes() }) }
   store.setSetting('settings', next)
   listeners.forEach((l) => l(next))
   return next
