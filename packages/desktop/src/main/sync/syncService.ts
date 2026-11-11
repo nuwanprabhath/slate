@@ -321,7 +321,7 @@ export class SyncService {
           ? { author: { name: 'Slate', email: 'slate@invalid' }, commitMessage: 'slate: sync' }
           : { author: { name: `Slate (${this.deviceName})`, email: `slate@${this.deviceId}.local` }, deviceName: this.deviceName }),
       })
-      local = scopedLocal(this.baseLocal, `git:${remoteUrl}#${branch}:`)
+      local = scopedLocal(this.baseLocal, `git:${remoteUrl}#${branch}:`, this.store)
     }
     if (provider === 'git') {
       const cloneDir = join(this.deps.gitDir, toHex(vaultNative().sha256(utf8(key))).slice(0, 16))

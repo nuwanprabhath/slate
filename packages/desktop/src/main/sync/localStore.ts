@@ -11,6 +11,7 @@ export function docStoreLocal(store: DocStore, blobs: BlobStore, notify: (messag
   const text = new TextDecoder()
   return {
     docIds: async () => store.list(''),
+    changedDocIds: async (sinceSeq) => (sinceSeq === null ? { ids: store.list(''), seq: store.headSeq() } : store.changedDocs(sinceSeq)),
     loadDoc: async (docId) => store.load(docId),
     appendRemote: async (docId, update) => store.append(docId, update, 'remote'),
     getMeta: async (key) => {
@@ -24,7 +25,7 @@ export function docStoreLocal(store: DocStore, blobs: BlobStore, notify: (messag
     markSeen: async (itemId, eTag) => store.markSyncSeen(itemId, eTag),
     blobNames: async () => blobs.list(),
     readBlob: async (name) => blobs.read(name),
-    blobSynced: async (name) => store.blobSynced(name),
+    unsyncedBlobNames: async () => store.unsyncedBlobs(await blobs.list()),
     markBlobSynced: async (name) => store.markBlobSynced(name),
     addConflict: async (c) => store.addConflict(c),
     notify: async (message) => {
@@ -38,7 +39,7 @@ export function docStoreLocal(store: DocStore, blobs: BlobStore, notify: (messag
  * The same device seen by another remote: what was pushed to, seen on or uploaded to one remote
  * says nothing about the next, so switching remotes pushes everything there once.
  */
-export function scopedLocal(local: LocalStore, prefix: string): LocalStore {
+export function scopedLocal(local: LocalStore, prefix: string, store: DocStore): LocalStore {
   return {
     ...local,
     getMeta: (key) => local.getMeta(prefix + key),
@@ -47,7 +48,10 @@ export function scopedLocal(local: LocalStore, prefix: string): LocalStore {
     setBytesMeta: (key, value) => local.setBytesMeta(prefix + key, value),
     seen: (itemId, eTag) => local.seen(prefix + itemId, eTag),
     markSeen: (itemId, eTag) => local.markSeen(prefix + itemId, eTag),
-    blobSynced: async (name) => (await local.getMeta(`${prefix}blob:${name}`)) === '1',
+    unsyncedBlobNames: async () => {
+      const marked = new Set(store.syncMetaKeys(`${prefix}blob:`).map((key) => key.slice(prefix.length + 'blob:'.length)))
+      return (await local.blobNames()).filter((name) => !marked.has(name))
+    },
     markBlobSynced: (name) => local.setMeta(`${prefix}blob:${name}`, '1'),
   }
 }

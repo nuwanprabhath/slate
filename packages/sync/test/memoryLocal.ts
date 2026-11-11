@@ -19,10 +19,13 @@ export function memoryLocal(): MemoryLocal {
   const seen = new Set<string>()
   const blobs = new Map<string, Uint8Array>()
   const synced = new Set<string>()
+  const heads = new Map<string, number>()
+  let seq = 0
   const append = (docId: string, update: Uint8Array) => {
     const list = docs.get(docId) ?? []
     list.push(update.slice())
     docs.set(docId, list)
+    heads.set(docId, ++seq)
   }
 
   return {
@@ -39,6 +42,11 @@ export function memoryLocal(): MemoryLocal {
     },
     async docIds() {
       return [...docs.keys()]
+    },
+    async changedDocIds(sinceSeq) {
+      if (sinceSeq === null) return { ids: [...docs.keys()], seq }
+      const ids = [...heads].filter(([, at]) => at > sinceSeq).sort((a, b) => a[1] - b[1]).map(([id]) => id)
+      return { ids, seq: Math.max(seq, sinceSeq) }
     },
     async loadDoc(docId) {
       return [...(docs.get(docId) ?? [])]
@@ -72,8 +80,8 @@ export function memoryLocal(): MemoryLocal {
       if (!bytes) throw new Error(`no blob ${name}`)
       return bytes
     },
-    async blobSynced(name) {
-      return synced.has(name)
+    async unsyncedBlobNames() {
+      return [...blobs.keys()].filter((name) => !synced.has(name))
     },
     async markBlobSynced(name) {
       synced.add(name)
