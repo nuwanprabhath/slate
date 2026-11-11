@@ -38,11 +38,15 @@ describe('git hooks and CI', () => {
   })
 
   it('CI has a lint job running npm run lint and npm run guards', () => {
-    const ci = read('.github/workflows/ci.yml')
-    expect(ci).toMatch(/^ {2}lint:/m)
-    expect(ci).toContain('npm run lint')
-    expect(ci).toContain('npm run guards')
-    expect(ci).toContain('node scripts/agents/check-guard-commits.mjs')
+    // Review F4: the jobs live in the reusable verify.yml, which ci.yml and release.yml both call, so a tag
+    // runs the same gate as a push.
+    const verify = read('.github/workflows/verify.yml')
+    expect(verify).toMatch(/^ {2}lint:/m)
+    expect(verify).toContain('npm run lint')
+    expect(verify).toContain('npm run guards')
+    expect(verify).toContain('node scripts/agents/check-guard-commits.mjs')
+    for (const caller of ['.github/workflows/ci.yml', '.github/workflows/release.yml'])
+      expect(read(caller), caller).toContain('uses: ./.github/workflows/verify.yml')
   })
 })
 
