@@ -33,7 +33,7 @@ import { DEFAULT_SETTINGS } from '../shared/settings/schema'
 import { BLOB_SCHEME, blobNameFromUrl } from './blobs'
 import { createIpc } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
-import { registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
+import { clearBackupPick, registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
 import { registerCopyIpc } from './copyHtml'
 import { electronPrintHost, registerPrintIpc } from './print'
 import { registerEditIpc, UserInputClock } from './editCommands'
@@ -578,6 +578,7 @@ void app.whenReady().then(async () => {
         stopSync: () => svc.stopSync(),
         closeWatch: () => svc.closeWatch(),
         closeDatabases: () => svc.closeDatabases(),
+        clearPicks: () => clearBackupPick(),
         // Review C9 M3: a prepared key change's new master key goes with the ring, so running it needs the password again.
         closeKeys: () => {
           migration.discard()
