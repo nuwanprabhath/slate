@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { classifyKex, NETWORK_TIMEOUT_MS, parseCurlTls, parseSshKex, PROMPT_FREE_ENV, remoteTransport, verboseSshCommand, type GitRunner, type PqLevel } from '@slate/sync'
+import { classifyKex, NETWORK_TIMEOUT_MS, parseCurlTls, parseSshKex, PROMPT_FREE_ENV, protocolEnv, remoteTransport, verboseSshCommand, type GitRunner, type PqLevel } from '@slate/sync'
 import type { DeviceCode, GitCheck } from '../../../shared/api'
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code'
@@ -113,7 +113,7 @@ export async function testConnection(run: GitRunner, url: string, env: Record<st
         : transport?.kind === 'https'
           ? { GIT_TRACE_CURL: '1', GIT_TRACE_CURL_NO_DATA: '1', GIT_TRACE_REDACT: '1' }
           : {}
-    const r = await run(['ls-remote', '--heads', '--', url], { env: { ...env, ...traceEnv }, timeoutMs: NETWORK_TIMEOUT_MS })
+    const r = await run(['ls-remote', '--heads', '--', url], { env: { ...protocolEnv(url), ...env, ...traceEnv }, timeoutMs: NETWORK_TIMEOUT_MS })
     const seen: Pick<GitConnectionCheck, 'kex' | 'pq' | 'remote'> = {}
     if (transport) {
       const kex = transport.kind === 'ssh' ? parseSshKex(r.stderr) : parseCurlTls(r.stderr)

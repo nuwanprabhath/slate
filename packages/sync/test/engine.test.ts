@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PageDoc } from '@slate/core'
-import { SyncEngine } from '../src/engine'
+import { SyncAborted, SyncEngine } from '../src/engine'
 import { parseRemotePath } from '../src/paths'
 import { memoryDrive, type MemoryDrive } from './memoryDrive'
 import { addTextBox, appendText, boxText, editPage, memoryLocal, type MemoryLocal } from './memoryLocal'
@@ -442,5 +442,32 @@ describe('SyncEngine incremental push (B3, F3)', () => {
     await a.engine.syncOnce()
     expect(read).toEqual(['two.png'])
     expect(remote.files.get('blobs/two.png')).toEqual(new Uint8Array([2]))
+  })
+})
+
+describe('SyncEngine deadlines', () => {
+  /** What the engine did within `ms`: its outcome, or 'pending' when it is still waiting. */
+  const within = (work: Promise<unknown>, ms = 200) =>
+    Promise.race([work.then((r) => r, (e: unknown) => e), new Promise((resolve) => setTimeout(() => resolve('pending'), ms))])
+
+  it('hands every drive call the running sync\u2019s signal', async () => {
+    const remote = memoryDrive({ flush: 'ok' })
+    const a = device(remote, 'A')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'hello'))
+    const controller = new AbortController()
+    await a.engine.syncOnce({ signal: controller.signal })
+    expect(remote.signals.length).toBeGreaterThan(0)
+    expect(remote.signals.every((s) => s === controller.signal)).toBe(true)
+  })
+
+  it('stops a sync whose flush never answers, instead of waiting for ever', async () => {
+    const remote = memoryDrive({ flush: 'stall' })
+    const a = device(remote, 'A')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'hello'))
+    const controller = new AbortController()
+    const run = a.engine.syncOnce({ signal: controller.signal })
+    expect(await within(run, 20)).toBe('pending')
+    controller.abort()
+    expect(await within(run)).toBeInstanceOf(SyncAborted)
   })
 })

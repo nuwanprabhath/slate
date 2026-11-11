@@ -11,6 +11,56 @@ export interface GraphClientOptions {
   maxRetries?: number
 }
 
+/** One request's own deadline: a metadata call, and a transfer of note bytes (B6/F8). */
+export const METADATA_TIMEOUT_MS = 60_000
+export const TRANSFER_TIMEOUT_MS = 10 * 60_000
+/** A server asking for longer than this is waiting for a person, not for sync; sync tries again later. */
+export const MAX_RETRY_AFTER_MS = 120_000
+/** Everything one request may spend on retries before sync gives up on this run. */
+export const RETRY_BUDGET_MS = 10 * 60_000
+
+export interface SendOptions {
+  /** The caller's signal (the sync engine's); combined with this request's own deadline. */
+  signal?: AbortSignal
+  /** Note bytes rather than metadata: the longer deadline. */
+  transfer?: boolean
+}
+
+/**
+ * The request did not finish in time, or the server kept asking Slate to wait: the same answer the
+ * engine gives an unreachable drive (`offline`), not a failure to show the user.
+ */
+export class GraphOfflineError extends Error {
+  readonly offline = true
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'GraphOfflineError'
+  }
+}
+
+/**
+ * This request's deadline as a signal. `AbortSignal.timeout` would do, but its timer is neither
+ * cancellable (a ten-minute one would outlive every finished transfer) nor one a test can drive.
+ */
+function deadline(ms: number): { signal: AbortSignal; done: () => void } {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new DOMException(`Timed out after ${ms} ms`, 'TimeoutError')), ms)
+  return { signal: controller.signal, done: () => clearTimeout(timer) }
+}
+
+/**
+ * Rejects as soon as `signal` aborts, whatever `work` does afterwards. `fetch` honours a signal, but
+ * nothing here depends on that: the deadline is kept by this process alone.
+ */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason as Error)
+    signal.addEventListener('abort', onAbort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
 /** A non-OK Graph response; `status` lets callers tell 401 (sign in again) from the rest. */
 export class GraphError extends Error {
   readonly status: number
@@ -54,32 +104,56 @@ export class GraphHttp {
     return /^https?:\/\//.test(pathOrUrl) ? pathOrUrl : this.baseUrl + pathOrUrl
   }
 
-  async json<T>(pathOrUrl: string, init: RequestInit = {}): Promise<T> {
-    const res = await this.send(pathOrUrl, init)
+  async json<T>(pathOrUrl: string, init: RequestInit = {}, opts: SendOptions = {}): Promise<T> {
+    const res = await this.send(pathOrUrl, init, opts)
     return (await res.json()) as T
   }
 
-  async bytes(pathOrUrl: string): Promise<{ bytes: Uint8Array; mime: string }> {
-    const res = await this.send(pathOrUrl, {})
+  async bytes(pathOrUrl: string, opts: SendOptions = {}): Promise<{ bytes: Uint8Array; mime: string }> {
+    const res = await this.send(pathOrUrl, {}, opts)
     const mime = (res.headers.get('content-type') ?? 'application/octet-stream').split(';')[0]!.trim()
     return { bytes: new Uint8Array(await res.arrayBuffer()), mime }
   }
 
-  async send(pathOrUrl: string, init: RequestInit): Promise<Response> {
+  /**
+   * One Graph request, retried on 429 and 503. Three things bound it: the caller's signal, this
+   * request's own deadline, and a total retry budget. A server's `Retry-After` is honoured only up
+   * to `MAX_RETRY_AFTER_MS`; past the budget the call fails as `offline` and sync tries again later.
+   */
+  async send(pathOrUrl: string, init: RequestInit, opts: SendOptions = {}): Promise<Response> {
     const url = this.url(pathOrUrl)
+    const path = new URL(url).pathname
+    const deadlineMs = opts.transfer ? TRANSFER_TIMEOUT_MS : METADATA_TIMEOUT_MS
     await this.acquire()
+    const startedAt = Date.now()
     try {
       for (let attempt = 0; ; attempt++) {
+        const timeout = deadline(deadlineMs)
+        const signal = opts.signal ? AbortSignal.any([opts.signal, timeout.signal]) : timeout.signal
         const headers = new Headers(init.headers)
         headers.set('Authorization', `Bearer ${await this.getToken()}`)
-        const res = await this.doFetch(url, { ...init, headers })
+        let res: Response
+        try {
+          res = await untilAborted(this.doFetch(url, { ...init, headers, signal }), signal)
+        } catch (err) {
+          if (opts.signal?.aborted === true) throw err
+          if (timeout.signal.aborted) throw new GraphOfflineError(`Graph ${path} did not answer within ${deadlineMs} ms`, { cause: err })
+          throw err
+        } finally {
+          timeout.done()
+        }
         if (res.ok) return res
         if ((res.status !== 429 && res.status !== 503) || attempt >= this.maxRetries) {
-          throw new GraphError(res.status, new URL(url).pathname)
+          throw new GraphError(res.status, path)
         }
         const header = res.headers.get('retry-after')
         const seconds = header === null ? NaN : Number(header)
-        await this.sleep(Number.isFinite(seconds) ? seconds * 1000 : 2 ** attempt * 1000)
+        const asked = Number.isFinite(seconds) ? seconds * 1000 : 2 ** attempt * 1000
+        const wait = Math.min(asked, MAX_RETRY_AFTER_MS)
+        if (Date.now() - startedAt + wait > RETRY_BUDGET_MS) {
+          throw new GraphOfflineError(`Graph ${path} kept asking Slate to wait for more than ${RETRY_BUDGET_MS} ms`)
+        }
+        await this.sleep(wait)
       }
     } finally {
       this.release()
@@ -146,7 +220,7 @@ export class GraphClient implements GraphSource {
   }
 
   async pageContent(pageId: string): Promise<string> {
-    const res = await this.http.send(`/me/onenote/pages/${pageId}/content?includeIDs=true`, {})
+    const res = await this.http.send(`/me/onenote/pages/${pageId}/content?includeIDs=true`, {}, { transfer: true })
     return res.text()
   }
 
@@ -155,7 +229,7 @@ export class GraphClient implements GraphSource {
     if (!url.startsWith(PUBLIC_GRAPH) && !url.startsWith(this.http.baseUrl)) {
       throw new Error(`Refusing resource outside Graph: ${new URL(url).host}`)
     }
-    return this.http.bytes(url)
+    return this.http.bytes(url, { transfer: true })
   }
 
   private async sections(base: string): Promise<OneNoteSection[]> {
