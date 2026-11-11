@@ -40,7 +40,9 @@ export default defineConfig({
   testDir: 'e2e',
   timeout: 30_000,
   workers: process.env.CI ? 2 : 4,
-  reporter: 'list',
+  // SLATE_TEST_REPORT: see vitest.config.ts at the repo root (review F9, the release's test evidence).
+  // scripts/e2e.mjs gives each of its two Playwright passes its own file, so neither overwrites the other.
+  reporter: process.env.SLATE_TEST_REPORT ? [['list'], ['json', { outputFile: process.env.SLATE_TEST_REPORT }]] : 'list',
   globalSetup: './e2e/tmpRoot.ts',
   projects: [
     { name: 'parallel', testIgnore: [...OS_SHARED, ...PERF] },

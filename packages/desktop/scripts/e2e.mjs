@@ -9,10 +9,18 @@ const args = process.argv.slice(2)
 const projectArgs = (projects) => projects.map((p) => `--project=${p}`) // `--project a b` would take the filters as project names
 const playwright = (extra, options) => spawnSync('npx', ['playwright', 'test', ...extra, ...args], options)
 
+// SLATE_TEST_REPORT (review F9): each pass writes its own report, so the second does not overwrite the first,
+// and --list below never overwrites either.
+const reportFor = (projects) => {
+  const base = process.env.SLATE_TEST_REPORT
+  if (!base) return {}
+  return { SLATE_TEST_REPORT: base.replace(/\.json$/, `-${projects.join('-') || 'named'}.json`) }
+}
+
 /** How many tests these projects hold under the run's filters. Only "No tests found" counts as none: any other
  * listing error (a spec that fails to load, a duplicate title) would empty the phase, so it stops the run. */
 function count(projects) {
-  const listed = playwright([...projectArgs(projects), '--list', '--reporter=json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+  const listed = playwright([...projectArgs(projects), '--list', '--reporter=json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...process.env, SLATE_TEST_REPORT: '' } })
   let report
   try {
     report = JSON.parse(listed.stdout)
@@ -39,5 +47,5 @@ if (runnable.length === 0) {
   process.exit(1)
 }
 let status = 0
-for (const projects of runnable) status = (playwright([...projectArgs(projects), ...output(projects)], { stdio: 'inherit' }).status ?? 1) || status
+for (const projects of runnable) status = (playwright([...projectArgs(projects), ...output(projects)], { stdio: 'inherit', env: { ...process.env, ...reportFor(projects) } }).status ?? 1) || status
 process.exit(status)

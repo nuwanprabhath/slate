@@ -215,10 +215,20 @@ jobs:
         with:
           name: sbom
           path: sbom-artifact
+      # Review F9: verify.yml's evidence job wrote it from this run's own test reports, so the release carries
+      # proof that each traced test id passed on this commit (and which ids a person had to run instead).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: traceability-evidence
+          path: evidence-artifact
       - name: Both update feeds are present
         run: test -f dist/latest-mac.yml && test -f dist/latest-linux.yml
       - name: Copy the SBOM, and nothing else, from the SBOM job
         run: cp sbom-artifact/slate-sbom.cdx.json dist/slate-sbom.cdx.json
+      - name: Copy the traceability evidence, and check it is this tag's commit
+        run: |
+          cp evidence-artifact/traceability-evidence.json dist/traceability-evidence.json
+          node -e "const e = require('./dist/traceability-evidence.json'); if (e.commit !== process.env.GITHUB_SHA) { console.error('::error::traceability-evidence.json is for ' + e.commit + ', not ' + process.env.GITHUB_SHA); process.exit(1) }"
       - name: The signing runtime has OpenSSL 3.5 or later (ML-DSA-65)
         run: |
           node -p "process.versions.node + ' OpenSSL ' + process.versions.openssl"
@@ -247,6 +257,7 @@ jobs:
             dist/latest-linux.yml
             dist/*.sig
             dist/slate-sbom.cdx.json
+            dist/traceability-evidence.json
       - name: Attach the Linux package signatures
         if: hashFiles('dist/*.asc') != ''
         env:
