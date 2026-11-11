@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { LIBRARY_VIEW_ID } from '../ids'
 import type { SlatePlugin } from '../types'
 
 /** A rounded rectangle with a divider and two short lines in the left part: a sidebar panel. */
@@ -20,7 +21,7 @@ export function createLibraryPlugin(panel: () => ReactNode): SlatePlugin {
     id: 'library',
     name: 'Notebooks',
     activate(ctx) {
-      ctx.views.register({ id: 'library', title: 'Notebooks', icon: <SidebarPanelIcon />, order: 0, shortcut: isMac ? '⌘\\' : 'Ctrl+\\', render: panel })
+      ctx.views.register({ id: LIBRARY_VIEW_ID, title: 'Notebooks', icon: <SidebarPanelIcon />, order: 0, shortcut: isMac ? '⌘\\' : 'Ctrl+\\', render: panel })
     },
   }
 }

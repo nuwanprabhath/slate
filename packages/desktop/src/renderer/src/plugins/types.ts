@@ -3,14 +3,23 @@ import type { FindOptions } from '@slate/editor'
 import type { SearchQuery, SearchResults, Settings } from '../../../shared/api'
 import type { NotesReplace, NotesReplaceResult } from '../find/notesReplace'
 
+/** Undoes one registration. Disposing twice is a no-op. */
+export interface Disposable {
+  dispose(): void
+}
+
+/** Where a plugin's failure is reported; `where` names the plugin and what it was doing. */
+export type PluginErrorReporter = (where: string, error: unknown) => void
+
 /**
- * A plugin sees only its `PluginContext`, never `window.slate`, so a future sandboxed or
- * externally installed plugin can be handed exactly the same interface.
+ * A plugin sees only its `PluginContext`, never `window.slate`. It is trusted code: it runs in the
+ * app's realm, beside the decrypted notes (see README.md). `activate` may return a `Disposable`
+ * (or a promise of one) to be run when the plugin is deactivated.
  */
 export interface SlatePlugin {
   id: string
   name: string
-  activate(ctx: PluginContext): void
+  activate(ctx: PluginContext): void | Disposable | Promise<void | Disposable>
 }
 
 /** A button on the activity bar and the panel it opens in the side pane. */
@@ -73,9 +82,14 @@ export interface AppApi {
 }
 
 export interface PluginContext {
-  views: { register(view: PluginView): void; show(viewId: string): void }
-  commands: { register(command: PluginCommand): void }
+  /** Every view and command id must start with `<plugin.id>.`; a duplicate id or keybinding is refused. */
+  views: { register(view: PluginView): Disposable; show(viewId: string): void }
+  commands: { register(command: PluginCommand): Disposable }
   settings: PluginSettings
+  /** After the app opened a page. */
+  onPageOpened(listener: (pageId: string) => void): Disposable
+  /** Before the vault locks: the last moment to put something away. */
+  onWillLock(listener: () => void): Disposable
   app: AppApi
 }
 

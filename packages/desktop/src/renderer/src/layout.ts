@@ -1,3 +1,5 @@
+import { LIBRARY_VIEW_ID } from './plugins/ids'
+
 export const COLUMN_MIN = 100
 export const COLUMN_MAX = 480
 
@@ -20,7 +22,7 @@ export const RAIL_WIDTH = 20
 /** Bumped when stored widths change meaning; layouts older than v2 reset their widths to auto. */
 const VERSION = 4
 const KEY = 'slate:layout'
-const DEFAULTS: Layout = { panelOpen: true, activeTool: 'library', sectionsWidth: null, pagesWidth: null, searchWidth: null, sectionsCollapsed: false, pagesCollapsed: false }
+const DEFAULTS: Layout = { panelOpen: true, activeTool: LIBRARY_VIEW_ID, sectionsWidth: null, pagesWidth: null, searchWidth: null, sectionsCollapsed: false, pagesCollapsed: false }
 
 export const PANE_MIN = 200
 

@@ -99,7 +99,7 @@ test('find in notes: Replace All… previews ticked matches by page and replaces
   await expect(confirm).toHaveCount(0)
   await expect(page.getByTestId('box')).toHaveText(['a Dog'])
 
-  await page.getByTestId('activity-library').click()
+  await page.getByTestId('activity-library.notebooks').click()
   await page.getByTestId('page-item').filter({ hasText: 'One' }).click()
   await expect(page.getByTestId('box')).toHaveText(['dog one'])
   await page.getByTestId('box').click()

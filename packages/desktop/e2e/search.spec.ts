@@ -28,7 +28,7 @@ test('find in notes: scopes, remembered scope, whole word, opening a result and 
   await boxWith(page, 60, 'alpha gamma')
 
   await openSearch(page)
-  await expect(page.getByTestId('activity-search')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('activity-search.panel')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('search-input').fill('alpha')
   const summary = page.getByTestId('search-summary')
   await expect(summary).toHaveText('2 results in 2 pages')
@@ -40,7 +40,7 @@ test('find in notes: scopes, remembered scope, whole word, opening a result and 
   await expect(summary).toHaveText('1 result in 1 page')
 
   // Closing the panel and reopening it with the shortcut keeps the section.
-  await page.getByTestId('activity-search').click()
+  await page.getByTestId('activity-search.panel').click()
   await expect(page.getByTestId('search-panel')).toHaveCount(0)
   await openSearch(page)
   await expect(page.getByTestId('search-scope').locator('option:checked')).toHaveText('Quick Notes')
@@ -123,14 +123,14 @@ test('the side pane keeps its width across views, and the search pane resizes an
   const first = await launchApp(userData)
   const canvasX = async (p: Page) => (await p.getByTestId('canvas').boundingBox())!.x
   const x0 = await canvasX(first.page)
-  await first.page.getByTestId('activity-search').click()
+  await first.page.getByTestId('activity-search.panel').click()
   await expect(first.page.getByTestId('search-panel')).toBeVisible()
   expect(Math.abs((await canvasX(first.page)) - x0)).toBeLessThanOrEqual(1)
-  await first.page.getByTestId('activity-library').click()
+  await first.page.getByTestId('activity-library.notebooks').click()
   await expect(first.page.getByTestId('library-panel')).toBeVisible()
   expect(Math.abs((await canvasX(first.page)) - x0)).toBeLessThanOrEqual(1)
 
-  await first.page.getByTestId('activity-search').click()
+  await first.page.getByTestId('activity-search.panel').click()
   const splitter = (await first.page.getByTestId('splitter-search').boundingBox())!
   await first.page.mouse.move(splitter.x + 0.5, splitter.y + 100)
   await first.page.mouse.down()
@@ -139,22 +139,22 @@ test('the side pane keeps its width across views, and the search pane resizes an
   await first.page.mouse.up()
   const wide = await canvasX(first.page)
   expect(wide).toBeGreaterThan(x0 + 60)
-  await first.page.getByTestId('activity-library').click()
+  await first.page.getByTestId('activity-library.notebooks').click()
   await expect(first.page.getByTestId('library-panel')).toBeVisible()
   expect(Math.abs((await canvasX(first.page)) - wide)).toBeLessThanOrEqual(1)
   await first.app.close()
 
   const second = await launchApp(userData)
   expect(Math.abs((await canvasX(second.page)) - wide)).toBeLessThanOrEqual(1)
-  await second.page.getByTestId('activity-search').click()
+  await second.page.getByTestId('activity-search.panel').click()
   await expect(second.page.getByTestId('search-panel')).toBeVisible()
   expect(Math.abs((await canvasX(second.page)) - wide)).toBeLessThanOrEqual(1)
 
   await second.page.getByTestId('splitter-search').dblclick()
-  await second.page.getByTestId('activity-library').click()
+  await second.page.getByTestId('activity-library.notebooks').click()
   await expect(second.page.getByTestId('library-panel')).toBeVisible()
   const afterReset = await canvasX(second.page)
-  await second.page.getByTestId('activity-search').click()
+  await second.page.getByTestId('activity-search.panel').click()
   await expect(second.page.getByTestId('search-panel')).toBeVisible()
   expect(Math.abs((await canvasX(second.page)) - afterReset)).toBeLessThanOrEqual(1)
   await second.app.close()

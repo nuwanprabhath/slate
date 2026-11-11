@@ -5,6 +5,7 @@ import { previewer, replaceInNotes } from '../find/notesReplace'
 import type { Library } from '../library'
 import type { Selection } from '../selection'
 import { builtinPlugins } from './builtins'
+import { SEARCH_OPEN_COMMAND } from './ids'
 import { PluginRegistry } from './registry'
 import type { AppApi, LibraryNotebook, LibrarySection, PluginView } from './types'
 
@@ -13,6 +14,8 @@ const isMac = navigator.platform.toLowerCase().includes('mac')
 interface HostState {
   library: Library
   notebookId: string
+  /** The page on screen, or null when none is selected. */
+  pageId: string | null
   setSelection: (s: Selection) => void
   libraryPanel: () => ReactNode
 }
@@ -77,6 +80,15 @@ export function usePlugins(host: HostState, onShowView: (viewId: string) => void
   showView.current = onShowView
   useEffect(() => registry.onShowView((id) => showView.current(id)), [registry])
   useEffect(() => registry.attachKeybindings(window, isMac), [registry])
-  useEffect(() => window.slate.onMenu((c) => c.cmd === 'find-in-notes' && registry.runCommand('search.open')), [registry])
+  useEffect(() => window.slate.onMenu((c) => c.cmd === 'find-in-notes' && registry.runCommand(SEARCH_OPEN_COMMAND)), [registry])
+  useEffect(() => {
+    if (host.pageId !== null) registry.pageOpened(host.pageId)
+  }, [registry, host.pageId])
+  // Locking tears this renderer down, so `pagehide` is the last moment a plugin gets either way.
+  useEffect(() => {
+    const onHide = () => registry.willLock()
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
+  }, [registry])
   return useSyncExternalStore(registry.subscribe, registry.views)
 }
