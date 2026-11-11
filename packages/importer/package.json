@@ -6,7 +6,7 @@
   "exports": "./src/index.ts",
   "dependencies": {
     "@slate/core": "*",
-    "linkedom": "^0.18.14",
+    "linkedom": "^0.18.15",
     "loro-crdt": "^1.17.1"
   }
 }
