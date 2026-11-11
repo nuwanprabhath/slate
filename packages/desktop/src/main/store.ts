@@ -39,6 +39,11 @@ const MIGRATIONS: ReadonlyArray<(db: Database.Database) => void> = [
     const columns = db.prepare('PRAGMA table_info(updates)').all() as Array<{ name: string }>
     if (!columns.some((c) => c.name === 'origin')) db.exec(`ALTER TABLE updates ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'`)
   },
+  // 2 (B3): one row per doc, carrying the append sequence of its newest update, so a sync can ask
+  // which docs changed instead of decoding every doc in the vault.
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS doc_heads (doc_id TEXT PRIMARY KEY, local_seq INTEGER NOT NULL);`)
+  },
 ]
 /**
  * Compaction rebuilds the whole doc on the main thread, which also routes the window's key presses,
@@ -303,8 +308,46 @@ export class DocStore {
     })()
   }
 
+  /**
+   * Docs appended to since `sinceSeq`, oldest change first, with the sequence to pass next time.
+   * `seq` never goes below `sinceSeq`: a caller that stores it cannot be made to rescan.
+   */
+  changedDocs(sinceSeq: number): { ids: string[]; seq: number } {
+    const rows = this.prepare('SELECT doc_id FROM doc_heads WHERE local_seq > ? ORDER BY local_seq').all(sinceSeq) as Array<{ doc_id: string }>
+    return { ids: rows.map((r) => r.doc_id), seq: Math.max(this.headSeq(), sinceSeq) }
+  }
+
+  /** The newest append sequence in the database; 0 when nothing has been appended. */
+  headSeq(): number {
+    return (this.prepare('SELECT COALESCE(MAX(local_seq), 0) AS m FROM doc_heads').get() as { m: number }).m
+  }
+
+  /** The names in `names` that this scope has not marked synced, as one query rather than one each. */
+  unsyncedBlobs(names: string[], scope = ''): string[] {
+    const synced = new Set((this.prepare('SELECT name FROM blob_synced').all() as Array<{ name: string }>).map((r) => r.name))
+    return names.filter((name) => !synced.has(scope + name))
+  }
+
+  /** The sync_meta keys under `prefix`, for a scoped store that keeps a set there. */
+  syncMetaKeys(prefix: string): string[] {
+    const like = prefix.replace(/[\\%_]/g, (c) => `\\${c}`) + '%'
+    const rows = this.prepare(`SELECT key FROM sync_meta WHERE key LIKE ? ESCAPE '\\'`).all(like) as Array<{ key: string }>
+    return rows.map((r) => r.key)
+  }
+
+  /**
+   * An append of either origin bumps the doc's head in the same transaction as the row: a restore the
+   * sync engine appends as 'remote' is a local edit that still has to be pushed, so "changed" cannot
+   * mean "origin local".
+   */
   append(docId: string, update: Uint8Array, origin: 'local' | 'remote' = 'local'): void {
-    this.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
+    this.db.transaction(() => {
+      this.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
+      this.prepare(
+        'INSERT INTO doc_heads (doc_id, local_seq) VALUES (?, (SELECT COALESCE(MAX(local_seq), 0) + 1 FROM doc_heads)) ' +
+          'ON CONFLICT(doc_id) DO UPDATE SET local_seq = excluded.local_seq',
+      ).run(docId)
+    })()
     if (this.options.compact === false) return
     const counted = this.rowCounts.get(docId)
     // The seeding count includes the row just inserted; after that the counter is kept, not read back.
@@ -357,6 +400,7 @@ export class DocStore {
     this.db.transaction(() => {
       this.prepare('DELETE FROM snapshots WHERE doc_id = ?').run(docId)
       this.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
+      this.prepare('DELETE FROM doc_heads WHERE doc_id = ?').run(docId)
     })()
   }
 

@@ -211,7 +211,7 @@ export interface DeviceRecord extends CapabilityRecord {
 export type PrepareResult = { kind: 'recovery'; recoveryKey: string } | { kind: 'join' }
 
 /** Engine bookkeeping (packages/sync engine META, unscoped for OneDrive and `git:<remote>#<branch>:` for git). */
-const ENGINE_KEYS = "key LIKE 'git:%' OR key IN ('deviceRecord', 'deltaCursor') OR " + ['pushed', 'seq', 'chunks', 'snapshot', 'stale', 'base'].map((p) => `key LIKE '${p}:%'`).join(' OR ')
+const ENGINE_KEYS = "key LIKE 'git:%' OR key IN ('deviceRecord', 'deltaCursor', 'changedSeq') OR " + ['pushed', 'seq', 'chunks', 'snapshot', 'stale', 'base'].map((p) => `key LIKE '${p}:%'`).join(' OR ')
 
 /**
  * §7.2 step 4: forgets what was pushed, seen and uploaded, so the next sync sends every doc and

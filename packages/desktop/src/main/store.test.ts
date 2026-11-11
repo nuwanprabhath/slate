@@ -498,3 +498,69 @@ describe('DocStore schema versioning and hot path (B4)', () => {
     }
   })
 })
+
+describe('DocStore change tracking (B3)', () => {
+  it('T-B3-01: changedDocs returns only the docs appended to since the cursor, oldest change first', () => {
+    const store = new DocStore(tempDb())
+    store.append('page:a', new Uint8Array([1]))
+    store.append('page:b', new Uint8Array([2]))
+    const first = store.changedDocs(0)
+    expect(first.ids).toEqual(['page:a', 'page:b'])
+    expect(store.changedDocs(first.seq).ids).toEqual([])
+    store.append('page:a', new Uint8Array([3]))
+    const second = store.changedDocs(first.seq)
+    expect(second.ids).toEqual(['page:a'])
+    expect(second.seq).toBeGreaterThan(first.seq)
+    store.close()
+  })
+
+  it('T-B3-01: a sequence never goes backwards, so a stored cursor cannot force a rescan', () => {
+    const store = new DocStore(tempDb())
+    store.append('page:a', new Uint8Array([1]))
+    const { seq } = store.changedDocs(0)
+    store.remove('page:a')
+    expect(store.changedDocs(seq)).toEqual({ ids: [], seq })
+    store.close()
+  })
+
+  it('T-B3-02: an update the sync engine appends counts as a change, because a restore must be pushed', () => {
+    const store = new DocStore(tempDb())
+    store.append('page:a', new Uint8Array([1]))
+    const { seq } = store.changedDocs(0)
+    store.append('page:a', new Uint8Array([2]), 'remote')
+    expect(store.changedDocs(seq).ids).toEqual(['page:a'])
+    store.close()
+  })
+
+  it('T-B3-03: a database upgraded from v0.6.7 reports no changed docs, so its first sync scans in full', () => {
+    const file = tempDb()
+    const old = new DocStore(file)
+    old.append('page:a', new Uint8Array([1]))
+    old.close()
+    const db = openDatabase(file, null)
+    db.exec('DROP TABLE doc_heads')
+    db.pragma('user_version = 1')
+    db.close()
+    const store = new DocStore(file)
+    expect(store.changedDocs(0)).toEqual({ ids: [], seq: 0 })
+    expect(store.list('')).toEqual(['page:a'])
+    store.close()
+  })
+
+  it('T-B3-04: unsyncedBlobs is one query and names only what the scope has not marked', () => {
+    const store = new DocStore(tempDb())
+    store.markBlobSynced('one.png')
+    store.markBlobSynced('scope:two.png')
+    expect(store.unsyncedBlobs(['one.png', 'two.png'])).toEqual(['two.png'])
+    expect(store.unsyncedBlobs(['one.png', 'two.png'], 'scope:')).toEqual(['one.png'])
+    store.close()
+  })
+
+  it('T-B3-05: syncMetaKeys lists the keys under a prefix and nothing else', () => {
+    const store = new DocStore(tempDb())
+    const bytes = new Uint8Array([1])
+    for (const key of ['git:r:blob:a.png', 'git:r:blob:b.png', 'git:r:pushed:page:a', 'other:blob:c.png']) store.setSyncMeta(key, bytes)
+    expect(store.syncMetaKeys('git:r:blob:')).toEqual(['git:r:blob:a.png', 'git:r:blob:b.png'])
+    store.close()
+  })
+})

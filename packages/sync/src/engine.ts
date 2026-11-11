@@ -63,8 +63,16 @@ const META = {
   base: (docId: string) => `base:${docId}`,
   /** The device record last written, and when. */
   device: 'deviceRecord',
-  cursor: 'deltaCursor'
+  cursor: 'deltaCursor',
+  /**
+   * The local append sequence this remote has considered. Empty means "consider every doc": set
+   * that way by `forgetPushed` and by a `selfCheck` reset, which both need a full scan next run.
+   */
+  changed: 'changedSeq'
 }
+
+/** Lets the window route a key press between documents of a long pull. */
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve))
 
 const versionMap = (vv: VersionVector) => vv.toJSON() as Map<string, number>
 
@@ -122,7 +130,10 @@ export class SyncEngine {
       // Every write below (uploads and removals alike) comes after this.
       await this.beforeUpload?.()
       const pushedAt = new Map<string, VersionVector>()
-      for (const docId of await this.local.docIds()) pushedAt.set(docId, await this.pushDoc(docId, counts))
+      const changed = await this.changedDocs()
+      for (const docId of changed.ids) pushedAt.set(docId, await this.pushDoc(docId, counts))
+      // Only after every push landed: a run that threw leaves the cursor where it was and retries.
+      await this.local.setMeta(META.changed, String(changed.seq))
       await this.pushBlobs()
       await this.writeDevice()
       await this.remote.flush?.()
@@ -133,6 +144,16 @@ export class SyncEngine {
       if (err instanceof SyncAborted || opts.signal?.aborted) throw new SyncAborted()
       return { status: statusOf(err), message: err instanceof Error ? err.message : String(err), ...counts, at: Date.now() }
     }
+  }
+
+  /**
+   * The docs this run must consider. Every doc, when no cursor is stored (the first sync against
+   * this remote, after `forgetPushed`, or after a `selfCheck` reset); otherwise only the docs
+   * appended to since the cursor. Loading every doc is what costs seconds on a large vault (F3).
+   */
+  private async changedDocs(): Promise<{ ids: string[]; seq: number }> {
+    const raw = await this.local.getMeta(META.changed)
+    return this.local.changedDocIds(raw === undefined || raw === '' ? null : Number(raw))
   }
 
   /** Rejects as soon as the signal aborts, leaving `work` to finish unobserved. */
@@ -214,8 +235,7 @@ export class SyncEngine {
   }
 
   private async pushBlobs(): Promise<void> {
-    for (const name of await this.local.blobNames()) {
-      if (await this.local.blobSynced(name)) continue
+    for (const name of await this.local.unsyncedBlobNames()) {
       const bytes = await this.local.readBlob(name)
       await this.transfer(() => this.remote.upload(`blobs/${name}`, bytes))
       await this.local.markBlobSynced(name)
@@ -229,6 +249,7 @@ export class SyncEngine {
    */
   async forgetPushed(): Promise<void> {
     for (const docId of await this.local.docIds()) await this.local.setBytesMeta(META.pushed(docId), new VersionVector(null).encode())
+    await this.local.setMeta(META.changed, '')
   }
 
   private async writeDevice(): Promise<void> {
@@ -361,6 +382,7 @@ export class SyncEngine {
       await this.local.appendRemote(parsed.docId, bytes)
       await this.local.markSeen(item.id, item.eTag)
       counts.pulled++
+      await yieldToEventLoop()
     }
     await this.local.setMeta(META.cursor, page.cursor)
     for (const [docId, state] of states) {
@@ -376,7 +398,7 @@ export class SyncEngine {
         await this.local.setBytesMeta(META.base(docId), bytes)
       }
     }
-    await this.selfCheck([...pushedAt.keys()], ownDeleted, cursor === null ? ownPresent : undefined)
+    await this.selfCheck(ownDeleted, cursor === null ? ownPresent : undefined)
     if (unverified > 0) await this.local.notify(unverifiedMessage(unverified))
   }
 
@@ -384,13 +406,16 @@ export class SyncEngine {
    * §5.5: a file of ours that the remote lost (deleted, or absent from a full listing) is pushed
    * again by forgetting what was pushed, so the next push uploads the whole doc.
    */
-  private async selfCheck(docIds: string[], deleted: Set<string>, present: Set<string> | undefined): Promise<void> {
+  private async selfCheck(deleted: Set<string>, present: Set<string> | undefined): Promise<void> {
     if (deleted.size === 0 && present === undefined) return
-    for (const docId of docIds) {
+    // Rare, and it must see every doc: a doc this run never loaded can still be the one the remote lost.
+    for (const docId of await this.local.docIds()) {
       const snapshot = await this.local.getMeta(META.snapshot(docId))
       const believed = [...(await this.jsonMeta<string[]>(META.chunks(docId), [])), ...(snapshot ? [snapshot] : [])]
       if (!believed.some((p) => deleted.has(p) || (present !== undefined && !present.has(p)))) continue
       await this.local.setBytesMeta(META.pushed(docId), new VersionVector(null).encode())
+      // The reset doc is not necessarily one that was appended to, so the next run scans in full.
+      await this.local.setMeta(META.changed, '')
     }
   }
 

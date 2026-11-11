@@ -348,3 +348,99 @@ describe('SyncEngine hardening', () => {
     expect(boxText(new PageDoc(fresh.local.doc(PAGE)), id)).toBe('one two')
   })
 })
+
+describe('SyncEngine incremental push (B3, F3)', () => {
+  /** Counts the docs a run decodes: on `main` every sync loads the whole vault. */
+  function counting(local: MemoryLocal) {
+    const loaded: string[] = []
+    const loadDoc = local.loadDoc.bind(local)
+    local.loadDoc = async (docId) => {
+      loaded.push(docId)
+      return loadDoc(docId)
+    }
+    return loaded
+  }
+
+  it('a second sync of a 2,000-page vault loads only the page that was edited', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    const ids = Array.from({ length: 2_000 }, (_, i) => `page:${String(i).padStart(8, '0')}-1111-4111-8111-111111111111`)
+    for (const id of ids) editPage(a.local, id, (p) => addTextBox(p, 'seed'))
+    expect((await a.engine.syncOnce()).pushed).toBe(2_000)
+    const loaded = counting(a.local)
+    const edited = ids[1_234]!
+    editPage(a.local, edited, (p) => addTextBox(p, 'typed', { x: 0, y: 300 }))
+    expect((await a.engine.syncOnce()).pushed).toBe(1)
+    expect(loaded).toEqual([edited])
+    // Seeding and pushing 2,000 real Loro docs is the slow part, and it is the point of the test.
+  }, 60_000)
+
+  it('an untouched vault is not decoded at all by a later sync', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'seed'))
+    await a.engine.syncOnce()
+    const loaded = counting(a.local)
+    expect((await a.engine.syncOnce()).pushed).toBe(0)
+    expect(loaded).toEqual([])
+  })
+
+  it('the first sync against a remote still scans docs no append of this session touched', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    // What a restarted process has: rows on disk, and no record of having appended them.
+    const stored = device(remote, 'seed')
+    editPage(stored.local, PAGE, (p) => addTextBox(p, 'from an earlier session'))
+    a.local.docs.set(PAGE, stored.local.docs.get(PAGE)!)
+    const loaded = counting(a.local)
+    expect((await a.engine.syncOnce()).pushed).toBe(1)
+    expect(loaded).toEqual([PAGE])
+  })
+
+  it('forgetPushed makes the next sync scan every doc, appended to this session or not', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'one'))
+    await a.engine.syncOnce()
+    const other = 'page:33333333-3333-4333-8333-333333333333'
+    const stored = device(remote, 'seed')
+    editPage(stored.local, other, (p) => addTextBox(p, 'two'))
+    a.local.docs.set(other, stored.local.docs.get(other)!)
+    expect((await a.engine.syncOnce()).pushed).toBe(0)
+    await a.engine.forgetPushed()
+    const loaded = counting(a.local)
+    expect((await a.engine.syncOnce()).pushed).toBe(2)
+    expect([...loaded].sort()).toEqual([PAGE, other].sort())
+  })
+
+  it('a selfCheck reset re-pushes a doc the remote lost although nothing edited it', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    editPage(a.local, PAGE, (p) => addTextBox(p, 'lost'))
+    await a.engine.syncOnce()
+    const chunk = filesOf(remote, 'A', 'chunk')[0]!
+    await remote.remove(chunk)
+    // This run's delta reports our own file gone, so selfCheck forgets what was pushed...
+    expect((await a.engine.syncOnce()).pushed).toBe(0)
+    // ...and the next run pushes the doc whole again, though no edit marked it changed.
+    expect((await a.engine.syncOnce()).pushed).toBe(1)
+    expect(filesOf(remote, 'A', 'chunk')).toHaveLength(1)
+    const c = device(remote, 'C')
+    await c.engine.syncOnce()
+    expect(json(c.local)).toEqual(json(a.local))
+  })
+
+  it('pushes the blobs a remote lacks with one set difference, and each blob once', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    a.local.blobs.set('one.png', new Uint8Array([1]))
+    await a.engine.syncOnce()
+    a.local.blobs.set('two.png', new Uint8Array([2]))
+    const read: string[] = []
+    const readBlob = a.local.readBlob.bind(a.local)
+    a.local.readBlob = async (name) => (read.push(name), readBlob(name))
+    await a.engine.syncOnce()
+    expect(read).toEqual(['two.png'])
+    expect(remote.files.get('blobs/two.png')).toEqual(new Uint8Array([2]))
+  })
+})
