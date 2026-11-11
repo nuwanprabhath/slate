@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { extname, join, sep } from 'node:path'
+import { PRODUCTION_CSP, TRUSTED_TYPES_REPORT_ONLY } from '../shared/csp'
 
 /**
  * The packaged renderer is served from `app://slate/` instead of `file://` (audit B-6), so the
@@ -121,7 +122,15 @@ export async function appResponse(root: string, url: string): Promise<Response> 
   try {
     // readFile alone, no stat first: it refuses a directory (EISDIR) and leaves no gap between a check and
     // the read, and it is the path Electron's asar integrity check (the embedded-asar fuse) covers.
-    return new Response(await readFile(path), { headers: { 'Content-Type': contentTypeOf(path), 'X-Content-Type-Options': 'nosniff' } })
+    const type = contentTypeOf(path)
+    const headers: Record<string, string> = { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff' }
+    // C5: a document's policy, as a header, so it covers every app://slate/ page and not only the one with the
+    // meta tag. A subresource takes the policy of the document that loaded it, so it gets none of its own.
+    if (type.startsWith('text/html')) {
+      headers['Content-Security-Policy'] = PRODUCTION_CSP
+      headers['Content-Security-Policy-Report-Only'] = TRUSTED_TYPES_REPORT_ONLY
+    }
+    return new Response(await readFile(path), { headers })
   } catch {
     return notFound()
   }

@@ -17,7 +17,8 @@ export const PRODUCTION_CSP = [
   "img-src 'self' data: blob: slate-blob:",
   "font-src 'self'",
   "connect-src 'self'",
-  "worker-src 'self' blob:",
+  // The renderer creates no worker; a pasted node that tried to would be refused (C5).
+  "worker-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
   "object-src 'none'",
@@ -30,3 +31,11 @@ export function withProductionCsp(html: string): string {
   if (!META.test(html)) throw new Error('index.html has no Content-Security-Policy meta tag to replace')
   return html.replace(META, `$1${PRODUCTION_CSP}$2`)
 }
+
+/**
+ * C5: Trusted Types, report-only for now. `DOMParser.parseFromString` in the paste sanitiser and
+ * ProseMirror's own DOM writing are the sinks that must go through a named policy first; until they do,
+ * enforcing this would break pasting in a packaged build, where nobody sees the console. The full e2e run's
+ * violation list is in `.agent-reports/rel-0.7.0/report-C5.md`.
+ */
+export const TRUSTED_TYPES_REPORT_ONLY = "require-trusted-types-for 'script'"
