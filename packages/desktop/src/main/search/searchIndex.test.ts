@@ -211,4 +211,92 @@ describe('SearchIndex', () => {
     expect(again.ensureBuilt()).toBe(true)
     expect(again.query(q('alpha')).total).toBe(2)
   })
+
+  it('builds in slices that never hold the thread, and a query mid-build still sees every page', () => {
+    const store = new DocStore(tempDb())
+    const nb = NotebookDoc.create('Work')
+    const section = nb.addSection('One')
+    for (let i = 0; i < 2000; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
+    store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
+    let clock = 0
+    const queue: Array<() => void> = []
+    const index = new SearchIndex(store, { debounceMs: 10_000, sliceMs: 8, now: () => (clock += 5), schedule: (run) => void queue.push(run) })
+    open.push(index, store)
+    expect(index.ensureBuilt()).toBe(true)
+    const spans: number[] = []
+    for (let i = 0; i < 10 && queue.length > 0; i++) {
+      const before = clock
+      queue.shift()!()
+      spans.push(clock - before)
+    }
+    expect(spans.length).toBe(10)
+    expect(Math.max(...spans)).toBeLessThanOrEqual(20)
+    // Still mid-build: the slices so far indexed a fraction of the pages.
+    expect(store.searchRows(null, null).length).toBeLessThan(200)
+    expect(index.query(q('row 1999')).total).toBe(1)
+    expect(index.query(q('row 0')).total).toBe(1)
+  })
+
+  it('carries an interrupted build on from where it stopped', () => {
+    const file = tempDb()
+    const store = new DocStore(file)
+    const nb = NotebookDoc.create('Work')
+    const section = nb.addSection('One')
+    for (let i = 0; i < 40; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
+    store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
+    const queue: Array<() => void> = []
+    const index = new SearchIndex(store, { debounceMs: 10_000, sliceMs: 0, schedule: (run) => void queue.push(run) })
+    open.push(index, store)
+    index.ensureBuilt()
+    queue.shift()!()
+    const indexed = store.searchRows(null, null).length
+    expect(indexed).toBeGreaterThan(0)
+    index.close()
+    store.close()
+    const again = new DocStore(file)
+    const resumed = new SearchIndex(again, { debounceMs: 10_000, sliceMs: 0, schedule: (run) => void queue.push(run) })
+    open.push(resumed, again)
+    const cleared = vi.spyOn(again, 'clearSearch')
+    expect(resumed.ensureBuilt()).toBe(true)
+    expect(cleared).not.toHaveBeenCalled()
+    expect(resumed.query(q('row 39')).total).toBe(1)
+    expect(resumed.query(q('row 0')).total).toBe(1)
+  })
+
+  it('refuses a pattern that backtracks exponentially instead of freezing the thread', () => {
+    const { index, store, p1 } = setup()
+    writePage(store, p1.pageId, [{ lines: ['a'.repeat(5000)] }])
+    index.docChanged(`page:${p1.pageId}`)
+    index.query(q('alpha'))
+    const started = Date.now()
+    const r = index.query(q('(a+)+$', { regex: true }))
+    expect(Date.now() - started).toBeLessThan(300)
+    expect(r.total).toBe(0)
+    expect(r.truncated).toBe(true)
+  })
+
+  it('hands a regex at most 20,000 characters of a row and says it truncated', () => {
+    const { index, store, p1 } = setup()
+    writePage(store, p1.pageId, [{ lines: [`${'b'.repeat(20_000)}needle` ] }])
+    index.docChanged(`page:${p1.pageId}`)
+    const r = index.query(q('needle'))
+    expect(r.total).toBe(0)
+    expect(r.truncated).toBe(true)
+  })
+
+  it('stops a scan the trigram index cannot narrow once it runs out of time', () => {
+    const { file, index, store, p1 } = setup()
+    writePage(store, p1.pageId, [{ lines: Array.from({ length: 20 }, (_, i) => `ab line ${i}`) }])
+    index.docChanged(`page:${p1.pageId}`)
+    index.query(q('alpha'))
+    index.close()
+    store.close()
+    const slow = new DocStore(file)
+    let clock = 0
+    const budgeted = new SearchIndex(slow, { debounceMs: 10_000, now: () => (clock += 100) })
+    open.push(budgeted, slow)
+    const r = budgeted.query(q('ab'))
+    expect(r.truncated).toBe(true)
+    expect(r.total).toBeLessThan(20)
+  })
 })
