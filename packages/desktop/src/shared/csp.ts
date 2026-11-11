@@ -33,9 +33,12 @@ export function withProductionCsp(html: string): string {
 }
 
 /**
- * C5: Trusted Types, report-only for now. `DOMParser.parseFromString` in the paste sanitiser and
- * ProseMirror's own DOM writing are the sinks that must go through a named policy first; until they do,
- * enforcing this would break pasting in a packaged build, where nobody sees the console. The full e2e run's
- * violation list is in `.agent-reports/rel-0.7.0/report-C5.md`.
+ * C5: Trusted Types, report-only. One full e2e run reported 990 violations, all from two sinks inside TipTap
+ * itself: `createStyleTag` (`styleNode.innerHTML = style`) and `elementFromString`
+ * (`DOMParser().parseFromString`), both run whenever an editor or a box is made. A named policy in Slate's own
+ * paste sanitiser cannot cover a library's internal sinks, so enforcing now would break the editor in a
+ * packaged build, where nobody sees the console. Report-only still carries the directive, so the next run
+ * measures the same two sinks and a third would show up. The run's numbers are in
+ * `.agent-reports/rel-0.7.0/report-C5.md`.
  */
 export const TRUSTED_TYPES_REPORT_ONLY = "require-trusted-types-for 'script'"

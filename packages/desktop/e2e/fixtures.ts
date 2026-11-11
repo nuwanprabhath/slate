@@ -12,7 +12,7 @@ export const NO_WINDOW_RESTORE: string[] = process.platform === 'darwin' ? ['-Ap
  * C5: with SLATE_CSP_REPORT set to a file, every window's Content-Security-Policy complaints (the report-only
  * Trusted Types directive among them) are appended to it, so one full e2e run lists what enforcing would break.
  */
-const POLICY_MESSAGE = /Content Security Policy|Trusted ?Type|require-trusted-types/i
+const POLICY_MESSAGE = /Content Security Policy|Trusted|require-trusted-types/i
 
 function watchPolicyViolations(app: ElectronApplication): void {
   const file = process.env.SLATE_CSP_REPORT

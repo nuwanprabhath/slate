@@ -151,3 +151,15 @@ test('POAM-16: a fips-140-3 vault refuses to unlock without the renderer sandbox
     await app.close()
   }
 })
+
+// C5: the policy is a response header on the real app://slate/ document, not only the meta tag, so it covers
+// every document the protocol serves and can carry require-trusted-types-for, which a meta tag cannot report.
+test('C5: app://slate/index.html is served with the production policy as a header', async ({ page }) => {
+  const headers = await page.evaluate(async () => {
+    const r = await fetch('app://slate/index.html')
+    return { csp: r.headers.get('content-security-policy'), reportOnly: r.headers.get('content-security-policy-report-only') }
+  })
+  expect(headers.csp).toContain("default-src 'none'")
+  expect(headers.csp).toContain("worker-src 'none'")
+  expect(headers.reportOnly).toContain("require-trusted-types-for 'script'")
+})
