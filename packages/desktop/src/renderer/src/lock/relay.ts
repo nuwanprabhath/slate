@@ -1,3 +1,5 @@
+import { allSavesIdle } from '@slate/editor'
+
 /** Pointer and wheel input reach the main process's idle timer at most this often. */
 const ACTIVITY_THROTTLE_MS = 5000
 
@@ -33,5 +35,8 @@ export function installVaultRelay(): void {
     // appends are sent before this resolves, so they reach the main process ahead of the reply.
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     await new Promise((r) => setTimeout(r, 0))
+    // Those appends are queued, not in flight: wait until every open document's queue has written
+    // what it holds, so the lock never cuts an edit off mid-flush.
+    await allSavesIdle()
   })
 }

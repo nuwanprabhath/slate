@@ -29,3 +29,7 @@
 .toolbar .align-menu .align-keys { color: var(--muted); font-size: 12px; }
 .toolbar .align-menu .menu-icon { display: inline-flex; justify-content: center; min-width: 20px; }
 .toolbar .style-menu.open-left { left: auto; right: 0; }
+/* Only drawn while a write is failing (Toolbar.tsx): the label is --text so it reads in every theme,
+   and the triangle alone carries the warning colour. */
+.toolbar .save-status { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 6px; color: var(--text); font-size: 12px; white-space: nowrap; }
+.toolbar .save-status svg { flex: none; color: var(--warning); }

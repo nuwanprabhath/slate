@@ -1,5 +1,5 @@
 import { NotebookDoc, newId } from '@slate/core'
-import { pageDocId } from '@slate/editor'
+import { SaveQueue, pageDocId } from '@slate/editor'
 import { dropPageSessions } from './find/notesReplace'
 import type { SlateApi, SyncState } from '../../shared/api'
 
@@ -116,9 +116,11 @@ export class Library {
   }
 
   private attach(id: string, doc: NotebookDoc): NotebookEntry {
-    const offUpdates = doc.doc.subscribeLocalUpdates((u) => void this.api.docs.append(notebookDocId(id), u))
+    // Acknowledged writes, as for a page (F1): a rejected append is retried, never dropped, so a
+    // later notebook update never depends on one the store does not have.
+    const saves = new SaveQueue(notebookDocId(id), doc.doc, this.api.docs)
     const offChanges = doc.doc.subscribe(() => this.bump())
-    const entry = { id, doc, detach: () => (offUpdates(), offChanges()) }
+    const entry = { id, doc, detach: () => (offChanges(), saves.close()) }
     this.entries.push(entry)
     return entry
   }
