@@ -311,6 +311,12 @@ async function openMk(header: VaultHeader, secret: MigrationSecret, opts: WeakKd
 export class Migration {
   /** The vault made by `prepare`, kept until `run` hands its MK on or `discard` destroys it. */
   private prepared: { header: VaultHeader; mk: KeyHandle; confirmed: boolean } | undefined
+  /**
+   * C4: the recovery key this process just generated, kept so `vault:save-recovery` writes the file
+   * from it. The page shows the same text, but never hands it back: a secret the renderer returns is
+   * a secret main has to trust. Dropped by `discard()`, so a lock or a quit takes it with them.
+   */
+  private pendingRecovery: string | null = null
 
   constructor(private readonly deps: MigrationDeps) {}
 
@@ -339,7 +345,10 @@ export class Migration {
     const headerVersion = (await pqGateBlocking(this.deps)) === null ? 3 : 2
     const { header, mk, recoveryKey } = await createVault({ password, profile, kdf, headerVersion }, this.opts)
     this.prepared = { header, mk, confirmed: false }
-    return { kind: 'recovery', recoveryKey: recoveryKey! }
+    // `createVault` always makes one for a new vault; a header with no recovery slot cannot be created here.
+    if (recoveryKey === null || recoveryKey === undefined) throw new Error('The new vault has no recovery key')
+    this.pendingRecovery = recoveryKey
+    return { kind: 'recovery', recoveryKey }
   }
 
   /** Wizard step 5: a real unlock round trip with the key the user typed back. */
@@ -358,7 +367,13 @@ export class Migration {
     return ok
   }
 
+  /** The recovery key this process last generated and has not discarded; null when there is none to save. */
+  pendingRecoveryKey(): string | null {
+    return this.pendingRecovery
+  }
+
   discard(): void {
+    this.pendingRecovery = null
     destroyKey(this.rekeyPrepared?.mk)
     this.rekeyPrepared = undefined
     destroyKey(this.prepared?.mk)
@@ -609,6 +624,7 @@ export class Migration {
       const headerVersion = kind === 'upgrade' && (await pqGateBlocking(this.deps)) === null ? 3 : 2
       const made = await rekeyHeader({ kind, base, mk, proof, password: nextPassword, kdf, profile, headerVersion }, this.opts)
       this.rekeyPrepared = { kind, base, header: made.header, mk: made.mk, confirmed: false }
+      this.pendingRecovery = made.recoveryKey
       return { recoveryKey: made.recoveryKey }
     } finally {
       destroyProof(proof)
@@ -1015,6 +1031,7 @@ export class Migration {
     } finally {
       destroyProof(proof)
     }
+    this.pendingRecovery = recoveryKey
     return recoveryKey
   }
 }

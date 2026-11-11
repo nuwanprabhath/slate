@@ -235,7 +235,8 @@ export interface VaultApi {
    * Save dialog for the recovery key (defaults to Documents, refuses the data folder). Text, not bytes: the key was
    * just made and is on screen, so this adds no copy that `prepareEncryption`/`newRecoveryKey` did not (Z-11 residual).
    */
-  saveRecoveryKey(recoveryKey: string): Promise<{ saved: boolean; message?: string }>
+  /** Writes the recovery key main generated and still holds (C4): the page never sends a secret back. */
+  saveRecoveryKey(): Promise<{ saved: boolean; message?: string }>
   /** Claims the remote (if syncing) and migrates; `join` means another device's vault is there. */
   encrypt(): Promise<{ kind: 'done' } | { kind: 'join' }>
   /** Forgets a prepared, unconfirmed vault. */

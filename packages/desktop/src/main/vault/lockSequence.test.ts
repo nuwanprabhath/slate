@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { SCHEDULE_V1 } from './suite'
 import { importKey } from '../../../test/vaultKeys'
 import { KeyRing, Locked } from './keyring'
-import { runLock, shouldClearClipboard } from './lockSequence'
+import { runLock, runShutdown, shouldClearClipboard } from './lockSequence'
 import { VaultStateMachine } from './vaultState'
 
 describe('lock sequence (§6.4, §15 N6)', () => {
@@ -111,5 +111,84 @@ describe('lock sequence (§6.4, §15 N6)', () => {
     expect(shouldClearClipboard({ at: now - 121_000, text: 'secret' }, 'secret', now)).toBe(false)
     expect(shouldClearClipboard({ at: now - 1000, text: 'secret' }, 'something else', now)).toBe(false)
     expect(shouldClearClipboard(null, 'secret', now)).toBe(false)
+  })
+
+  // C4: quitting used to close the services without asking the windows to write what they held,
+  // so an edit still queued in the renderer reached a closed store and was lost.
+  describe('shutdown (C4)', () => {
+    /** A renderer holding one unwritten edit, and a store that refuses writes once it is closed. */
+    function quitFakes() {
+      const stored: string[] = []
+      let closed = false
+      let pending: string | null = 'the last sentence'
+      const append = () => {
+        if (closed || pending === null) return
+        stored.push(pending)
+        pending = null
+      }
+      const steps = {
+        flushRenderer: async () => {
+          await new Promise((r) => setTimeout(r, 1))
+          append()
+        },
+        stopEvents: () => {},
+        stopSync: async () => {
+          await new Promise((r) => setTimeout(r, 5))
+        },
+        closeServices: () => {
+          closed = true
+        },
+      }
+      return { stored, steps, closed: () => closed }
+    }
+
+    it('writes an edit the window still held before the services close', async () => {
+      const { stored, steps } = quitFakes()
+      await runShutdown(steps)
+      expect(stored).toEqual(['the last sentence'])
+    })
+
+    it('lets note writes through only while the window flushes', async () => {
+      const seen: boolean[] = []
+      let writes = false
+      const { steps } = quitFakes()
+      const flush = steps.flushRenderer
+      await runShutdown({ ...steps, flushRenderer: async () => {
+        seen.push(writes)
+        await flush()
+      }, allowWrites: (on: boolean) => void (writes = on) })
+      expect(seen).toEqual([true])
+      expect(writes).toBe(false)
+    })
+
+    it('closes the services even when the window never answers the flush', async () => {
+      const { steps, closed } = quitFakes()
+      const started = Date.now()
+      await runShutdown({ ...steps, flushRenderer: () => new Promise<void>(() => {}) }, { flushTimeoutMs: 30 })
+      expect(Date.now() - started).toBeLessThan(1000)
+      expect(closed()).toBe(true)
+    })
+
+    it('runs every later step when one throws', async () => {
+      const { steps, closed } = quitFakes()
+      const errors: string[] = []
+      await runShutdown(
+        { ...steps, stopSync: async () => { throw new Error('sync broke') } },
+        { onError: (step) => void errors.push(step) },
+      )
+      expect(errors).toEqual(['sync'])
+      expect(closed()).toBe(true)
+    })
+
+    it('closes the MCP socket before the services close', async () => {
+      const calls: string[] = []
+      const { steps } = quitFakes()
+      await runShutdown({
+        ...steps,
+        closeMcp: async () => void calls.push('closeMcp'),
+        closeServices: () => void calls.push('closeServices'),
+      })
+      expect(calls).toEqual(['closeMcp', 'closeServices'])
+    })
   })
 })
