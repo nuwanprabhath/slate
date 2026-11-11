@@ -14,6 +14,11 @@ export interface AgentBox {
   markdown: string | null
 }
 
+/** A page as agent-facing code sees it: the redacted projection and nothing else. */
+export interface AgentPage {
+  boxes: AgentBox[]
+}
+
 /** The only way agent-facing code reads a page. Private boxes are filtered before any content is read. */
 export function agentBoxes(page: PageDoc): AgentBox[] {
   return page
@@ -26,11 +31,16 @@ export function agentBoxes(page: PageDoc): AgentBox[] {
     })
 }
 
-export function agentPageMarkdown(page: PageDoc): string {
-  return agentBoxes(page)
+/** The Markdown an agent sees, from the redacted projection alone: no page is in reach here. */
+export function agentMarkdown(boxes: AgentBox[]): string {
+  return boxes
     .map((b) => (b.private ? PRIVATE_PLACEHOLDER : b.markdown))
     .filter((md) => md !== '')
     .join('\n\n---\n\n')
+}
+
+export function agentPageMarkdown(page: PageDoc): string {
+  return agentMarkdown(agentBoxes(page))
 }
 
 const LINE_PX = 24
