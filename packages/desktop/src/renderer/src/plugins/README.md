@@ -52,5 +52,5 @@ from disk or a marketplace.
 The contribution model would have to change before third-party code could run here: views are
 `render: () => ReactNode`, a live React node, which cannot cross an isolation boundary. A
 serialisable model — a declarative manifest plus a sandboxed frame talking over a `MessagePort` —
-is the open question, recorded as a decision record (see `docs/decisions/`); it is not built, and
+is the open question, recorded as a decision record (`docs/architecture/adr/0002-plugin-isolation.md`); it is not built, and
 this README makes no claim that today's interface could be handed to a sandboxed plugin.
