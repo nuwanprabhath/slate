@@ -119,10 +119,16 @@ export class DocStore {
     })()
   }
 
-  /** Both tables are diagnostics nobody reads past the recent end, and nothing else ever deletes a row. */
+  /**
+   * Both tables are diagnostics nobody reads past the recent end, and nothing else ever deletes a row.
+   * Each count comes first so that the usual open, with both tables under their cap, takes no write
+   * lock at all: several connections (the app, sync, an import) open the same file while it is in use.
+   */
   private prune(): void {
-    this.prepare('DELETE FROM audit WHERE id <= (SELECT MAX(id) FROM audit) - ?').run(AUDIT_KEEP)
-    this.prepare('DELETE FROM notices WHERE id <= (SELECT MAX(id) FROM notices) - ?').run(NOTICES_KEEP)
+    if ((this.prepare('SELECT COUNT(*) AS n FROM audit').get() as { n: number }).n > AUDIT_KEEP)
+      this.prepare('DELETE FROM audit WHERE id <= (SELECT MAX(id) FROM audit) - ?').run(AUDIT_KEEP)
+    if ((this.prepare('SELECT COUNT(*) AS n FROM notices').get() as { n: number }).n > NOTICES_KEEP)
+      this.prepare('DELETE FROM notices WHERE id <= (SELECT MAX(id) FROM notices) - ?').run(NOTICES_KEEP)
   }
 
   /**
