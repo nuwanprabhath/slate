@@ -197,11 +197,11 @@ async function installProbes(page: Page): Promise<void> {
 
 /** The last run's report, as the renderer sees it: how many documents that run pushed and pulled. */
 export async function syncCounts(page: Page): Promise<Run> {
-  return page.evaluate(() => window.slate.sync.status().then((s) => ({ pushed: s.pushed, pulled: s.pulled, status: s.status, at: s.at })))
+  return page.evaluate(() => window.slate.sync.status().then((s) => ({ pushed: s.pushed, pulled: s.pulled, status: s.status, at: s.at, ...(s.message ? { message: s.message } : {}) })))
 }
 
 /** One sync run as the main process reported it. `at` is main's own `Date.now()` when the run finished. */
-export type Run = { pushed: number; pulled: number; status: string; at: number }
+export type Run = { pushed: number; pulled: number; status: string; at: number; message?: string }
 
 /**
  * The heaviest run that FINISHED inside the measurement window.
@@ -258,6 +258,12 @@ export async function measureDuringSync(page: Page, start: Start): Promise<Measu
   console.log(`settled: idle-task p95 ${quiet.p95.toFixed(1)} ms after ${quiet.waitedMs} ms`)
   if (start === 'click') await installProbes(page)
 
+  // A box to type into. Appending thousands of documents sends the renderer an external update for each one,
+  // and that flood can leave the open page without a box, so one is seeded back rather than waited for.
+  if ((await page.getByTestId('box').count()) === 0) {
+    await page.evaluate(() => (window as unknown as ProbeWindow).slateTest.seedBoxes(1))
+    await expect(page.getByTestId('box-editor').first()).toBeVisible({ timeout: 30_000 })
+  }
   await page.getByTestId('box-editor').first().click()
   // Both clocks are this machine's `Date.now()`, so the run's own finish time can be compared with them.
   const armedAt = Date.now()
@@ -271,6 +277,7 @@ export async function measureDuringSync(page: Page, start: Start): Promise<Measu
   // required to succeed - a run that fails has still stalled main, and the assertions report the outcome.
   const outcome = await runEnded(page, 900_000)
   const last = await syncCounts(page)
+  if (last.message) console.log(`the last sync run reported: ${last.message}`)
 
   const raw = await page.evaluate(() => {
     const w = window as unknown as ProbeWindow
