@@ -28,6 +28,19 @@ function edits(n: number): { doc: LoroDoc; updates: Uint8Array[] } {
   return { doc, updates }
 }
 
+/** `n` text appends to one doc, each exportable on its own, so a test can withhold one. */
+function textEdits(words: string[]): Uint8Array[] {
+  const doc = new LoroDoc()
+  const updates: Uint8Array[] = []
+  for (const word of words) {
+    const from = doc.oplogVersion()
+    doc.getText('t').insert(doc.getText('t').length, word)
+    doc.commit()
+    updates.push(doc.export({ mode: 'update', from }))
+  }
+  return updates
+}
+
 describe('DocStore', () => {
   it('appends and loads updates in order', () => {
     const store = new DocStore(tempDb())
@@ -220,6 +233,33 @@ describe('DocStore', () => {
     store.replaceSearchPage({ ...scope, sectionId: 's2' }, rows(current))
     expect(store.searchRows({ column: 'section_id', id: 's2' }, null)).toHaveLength(current.length)
     store.close()
+  })
+
+  it('never compacts a doc whose updates could not all be applied', () => {
+    const store = new DocStore(tempDb())
+    const [one, two, three, four] = textEdits(['one ', 'two ', 'three ', 'four '])
+    // The second row has not arrived yet, so Loro keeps the third and fourth pending.
+    for (const u of [one!, three!, four!]) store.append('page:gap', u)
+    store.compact('page:gap')
+    store.append('page:gap', two!)
+    const doc = new LoroDoc()
+    doc.importBatch(store.load('page:gap'))
+    expect(doc.getText('t').toString()).toBe('one two three four ')
+    store.close()
+  })
+
+  it('runs beforeCompact so another connection\'s rows arrive before they are deleted', () => {
+    const file = tempDb()
+    const [first, late] = textEdits(['first ', 'late '])
+    const other = new DocStore(file, { compact: false })
+    const store = new DocStore(file, { beforeCompact: () => other.append('page:h', late!) })
+    store.append('page:h', first!)
+    store.compact('page:h')
+    const doc = new LoroDoc()
+    doc.importBatch(store.load('page:h'))
+    expect(doc.getText('t').toString()).toBe('first late ')
+    store.close()
+    other.close()
   })
 
   it('never compacts when compact is false', () => {
