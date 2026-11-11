@@ -9,7 +9,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
  * requests still waiting for their response, so the app can let them finish before it locks.
  */
 /** A client that never sends a newline would grow the buffer without end; 8 MiB is past any real message. */
-const MAX_LINE_BYTES = 8 * 1024 * 1024
+export const MAX_LINE_BYTES = 8 * 1024 * 1024
 
 export class LineTransport implements Transport {
   onclose?: () => void

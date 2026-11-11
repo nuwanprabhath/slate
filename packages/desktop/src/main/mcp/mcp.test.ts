@@ -9,7 +9,7 @@ import { search } from '@slate/mcp'
 import { NotebookDoc, PageDoc, writeContent } from '@slate/core'
 import { DocStore } from '../store'
 import { storeDocSource } from './docSource'
-import { LineTransport } from './lineTransport'
+import { LineTransport, MAX_LINE_BYTES } from './lineTransport'
 import { LOCKED_MESSAGE, runProxy } from './proxy'
 import { checkSocketDir, mcpSocketPath, prepareSocketDir, socketEnv } from './socketPath'
 import { startMcpSocketServer, type McpSocketServer } from './socketServer'
@@ -239,6 +239,11 @@ describe('slate-mcp proxy (§15 N5)', () => {
 })
 
 describe('MCP limits (A2)', () => {
+  // The 8 MiB is the behaviour, not a fixture: the transport only destroys the socket once a line passes the real
+  // MAX_LINE_BYTES, and getting there means pushing that many bytes through a socket and through ReadBuffer's append.
+  // A small injected cap would prove the arithmetic but not that the shipped constant is the one that fires, so the
+  // cost is honest. Measured over three runs of this file alone at load average 33: 2.5-4.5 s, against vitest's 5 s
+  // default: 1.1x, which is why it timed out. 20 s is 4.4x the measured worst case.
   it('drops a connection whose line passes 8 MiB before its newline', async () => {
     const dir = dataDir()
     const { store } = seededStore(dir)
@@ -247,11 +252,12 @@ describe('MCP limits (A2)', () => {
     cleanups.push(() => server.close(100))
     const sock = await socketConnect(path)
     const closed = new Promise<void>((r) => sock.once('close', () => r()))
-    // One unterminated line, written in chunks, past the cap.
-    for (let i = 0; i < 9 && !sock.destroyed; i++) sock.write('x'.repeat(1024 * 1024))
+    // One unterminated line, written in 1 MiB chunks, one byte past the real cap.
+    const chunks = Math.ceil((MAX_LINE_BYTES + 1) / (1024 * 1024))
+    for (let i = 0; i < chunks && !sock.destroyed; i++) sock.write('x'.repeat(1024 * 1024))
     await closed
     expect(sock.destroyed).toBe(true)
-  })
+  }, 20_000)
 
   it('accepts eight concurrent clients and refuses a ninth', async () => {
     const dir = dataDir()
