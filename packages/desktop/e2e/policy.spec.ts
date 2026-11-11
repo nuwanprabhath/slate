@@ -126,3 +126,40 @@ test('T-POL-08: a remote image is blocked by the page policy and nothing answers
     await app.close()
   }
 })
+
+/**
+ * POAM-16 (maintainer decision, review C5): a fips-140-3 vault stays shut while the renderer that holds the
+ * typed password runs outside Chromium's sandbox, and says why rather than failing as a wrong password. The
+ * sandboxed fips unlock is T-POL-02 above; a standard vault unsandboxed still unlocks (settings.spec.ts,
+ * "POAM-16: without Chromium's sandbox…"), so the refusal is this profile's alone.
+ */
+test('POAM-16: a fips-140-3 vault refuses to unlock without the renderer sandbox, and the lock screen says so', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const { app, page } = await launchApp(userData, FIPS, ['--no-sandbox'])
+  try {
+    await expect(page.getByTestId('lock-screen')).toBeVisible()
+    const note = page.getByTestId('lock-sandbox-note')
+    await expect(note).toContainText('will not unlock')
+    await expect(note).toContainText('FIPS 140-3')
+    await expect(note).toContainText('.deb')
+    // The right password: still refused, and the reason is the notice's, not "that didn't work".
+    await attempt(page, PASSWORD, /will not unlock while Slate runs without Chromium.s sandbox/)
+    await expect(page.getByTestId('lock-screen')).toBeVisible()
+    // Refused before any key was derived, so it is not counted as a wrong password (AC-7).
+    expect(existsSync(join(userData, 'unlock-throttle.json'))).toBe(false)
+  } finally {
+    await app.close()
+  }
+})
+
+// C5: the policy is a response header on the real app://slate/ document, not only the meta tag, so it covers
+// every document the protocol serves and can carry require-trusted-types-for, which a meta tag cannot report.
+test('C5: app://slate/index.html is served with the production policy as a header', async ({ page }) => {
+  const headers = await page.evaluate(async () => {
+    const r = await fetch('app://slate/index.html')
+    return { csp: r.headers.get('content-security-policy'), reportOnly: r.headers.get('content-security-policy-report-only') }
+  })
+  expect(headers.csp).toContain("default-src 'none'")
+  expect(headers.csp).toContain("worker-src 'none'")
+  expect(headers.reportOnly).toContain("require-trusted-types-for 'script'")
+})

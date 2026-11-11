@@ -8,7 +8,7 @@ import { mcpSocketPath, prepareSocketDir, socketEnv } from './mcp/socketPath'
 import { startMcpSocketServer, type McpSocketServer } from './mcp/socketServer'
 import { readJsonCapped } from './vault/atomic'
 import { destroyProof, parseHeader, proveSecret, rotationDueSince, type WrapProof } from './vault/header'
-import { FipsModuleRequired, isProfileId, ProfileLatched, PROFILES, effectiveIdleMinutes, locksOnScreenLock, locksOnSleep, type ProfileId, type ProfilePolicy } from './vault/profile'
+import { checkRendererSandbox, FipsModuleRequired, isProfileId, ProfileLatched, PROFILES, RendererUnsandboxed, effectiveIdleMinutes, locksOnScreenLock, locksOnSleep, type ProfileId, type ProfilePolicy } from './vault/profile'
 import { vaultNative } from './vault/native'
 import { securityEvent, type LockTrigger, type SelftestPhase, type UnlockMethod } from './log/securityEvents'
 import { RefusalCoalescer, THROTTLE_FILE, ThrottleGate } from './vault/unlockThrottle'
@@ -439,6 +439,15 @@ void app.whenReady().then(async () => {
     return win
   }
 
+  // POAM-16: probed at each status call, so the lock screen's own renderer is live when it asks.
+  const rendererSandbox = createSandboxMonitor({
+    platform: process.platform,
+    hasNoSandboxSwitch: () => app.commandLine.hasSwitch('no-sandbox'),
+    readStatus: (path) => readFileSync(path, 'utf8'),
+    rendererPids: () => BrowserWindow.getAllWindows().flatMap((w) => (w.isDestroyed() ? [] : [w.webContents.getOSProcessId()])),
+    onUnsandboxed: (reason) => securityEvent.rendererUnsandboxed({ reason }),
+  })
+
   async function unlock(secret: UnlockSecret): Promise<UnlockResult> {
     // The lock screen is up while the lock still closes things behind it.
     await locking?.catch(() => {})
@@ -463,6 +472,9 @@ void app.whenReady().then(async () => {
     }
     let opened: Awaited<ReturnType<typeof unlockVault>> | undefined
     try {
+      // POAM-16: before any key is derived. A fips-140-3 vault does not open into a renderer that any program of
+      // the session can read; the lock screen already says the same thing (lockSandboxNote).
+      checkRendererSandbox(attemptPolicy.id, rendererSandbox.check().sandboxed)
       opened = await unlockVault(dataDir, secret, kdfOpts)
       // A migration that stopped after the switch (§7.4): only the clean-up is left, best effort.
       const clean = await finishMigrationAtUnlock(dataDir, log.scoped('app'))
@@ -497,14 +509,15 @@ void app.whenReady().then(async () => {
       if (servicesOpen()) closeServices()
       opened?.keyRing.close()
       // Recorded and written before the vault is `locked` again, so the next attempt sees it (three guesses, not four).
-      const countsAsGuess = method === 'password' && existsSync(join(dataDir, LOCAL_KEYS_FILE)) && !(e instanceof FipsModuleRequired || e instanceof ProfileLatched || e instanceof HeaderRefused)
+      const countsAsGuess = method === 'password' && existsSync(join(dataDir, LOCAL_KEYS_FILE)) && !(e instanceof FipsModuleRequired || e instanceof ProfileLatched || e instanceof HeaderRefused || e instanceof RendererUnsandboxed)
       if (countsAsGuess) await throttleGate.recordFailure(attemptPolicy)
       vault.to('locked')
       failures++
       // Not about the secret: the file that holds this computer's database key is gone.
       if (!existsSync(join(dataDir, LOCAL_KEYS_FILE))) return { ok: false, message: KEY_FILE_MISSING_MESSAGE, failures }
       // Not about the secret either, and decided before any key existed: the build, the session or the header.
-      if (e instanceof FipsModuleRequired || e instanceof ProfileLatched || e instanceof HeaderRefused || e instanceof AdoptWithOldSecret) return { ok: false, message: e.message, failures }
+      if (e instanceof FipsModuleRequired || e instanceof ProfileLatched || e instanceof HeaderRefused || e instanceof AdoptWithOldSecret || e instanceof RendererUnsandboxed)
+        return { ok: false, message: e.message, failures }
       return { ok: false, message: UNLOCK_FAILED_MESSAGE, failures }
     }
     failures = 0
@@ -723,14 +736,6 @@ void app.whenReady().then(async () => {
       return 0
     }
   }
-  // POAM-16: probed at each status call, so the lock screen's own renderer is live when it asks.
-  const rendererSandbox = createSandboxMonitor({
-    platform: process.platform,
-    hasNoSandboxSwitch: () => app.commandLine.hasSwitch('no-sandbox'),
-    readStatus: (path) => readFileSync(path, 'utf8'),
-    rendererPids: () => BrowserWindow.getAllWindows().flatMap((w) => (w.isDestroyed() ? [] : [w.webContents.getOSProcessId()])),
-    onUnsandboxed: (reason) => securityEvent.rendererUnsandboxed({ reason }),
-  })
   const status = async (): Promise<VaultStatus> => {
     const quickUnlock = vault.state === 'locked' || vault.state === 'locking' ? await quickKind() : null
     // S-2: after a failed self-test vault.json is not read at all.

@@ -59,8 +59,7 @@ describe('renderer CSP (src/renderer/index.html)', () => {
     'img-src slate-blob:',
     "font-src 'self'",
     "connect-src 'self'",
-    "worker-src 'self'",
-    'worker-src blob:',
+    "worker-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
     "object-src 'none'",
@@ -76,7 +75,16 @@ describe('renderer CSP (src/renderer/index.html)', () => {
   })
 
   it('the pinned list itself refuses the loose sources (self-test)', () => {
-    for (const loose of ["script-src 'unsafe-inline'", 'img-src https:', 'img-src http:', "default-src 'self'", 'connect-src ws:']) expect(PROD_PINNED).not.toContain(loose)
+    for (const loose of ["script-src 'unsafe-inline'", 'img-src https:', 'img-src http:', "default-src 'self'", 'connect-src ws:', "worker-src 'self'", 'worker-src blob:']) expect(PROD_PINNED).not.toContain(loose)
+  })
+
+  // C5: the policy is a response header as well as a meta tag, so it covers every app://slate/ document.
+  it('appResponse sends the production policy as a header on every document', async () => {
+    const { PRODUCTION_CSP, TRUSTED_TYPES_REPORT_ONLY } = await import('../../packages/desktop/src/shared/csp')
+    expect(TRUSTED_TYPES_REPORT_ONLY).toContain("require-trusted-types-for 'script'")
+    const src = read('packages/desktop/src/main/appProtocol.ts')
+    expect(src).toMatch(/'Content-Security-Policy'\]\s*=\s*PRODUCTION_CSP/)
+    expect(PRODUCTION_CSP).toContain("worker-src 'none'")
   })
 })
 

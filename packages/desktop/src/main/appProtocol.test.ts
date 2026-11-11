@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { PRODUCTION_CSP, TRUSTED_TYPES_REPORT_ONLY } from '../shared/csp'
 import { APP_ENTRY, appResponse, appUrl, contentTypeOf, devServerOrigin, isAppEntry, isAppUrl, resolveAppPath } from './appProtocol'
 
 const root = mkdtempSync(join(tmpdir(), 'slate-app-'))
@@ -53,6 +54,23 @@ describe('app://slate/ (B-6)', () => {
     expect((await appResponse(root, 'app://slate/%2e%2e/x')).status).toBe(404)
     expect(contentTypeOf('a.js')).toBe('text/javascript')
     expect(contentTypeOf('a.unknown')).toBe('application/octet-stream')
+  })
+})
+
+describe('the page policy travels as a header too (C5)', () => {
+  it('every app://slate/ document carries PRODUCTION_CSP as a response header', async () => {
+    for (const url of ['app://slate/', 'app://slate/index.html', 'app://slate/index.html?lock=1']) {
+      const r = await appResponse(root, url)
+      expect(r.status, url).toBe(200)
+      expect(r.headers.get('Content-Security-Policy'), url).toBe(PRODUCTION_CSP)
+      // Report-only while the Trusted Types violations of the renderer's own libraries are being worked through (C5).
+      expect(r.headers.get('Content-Security-Policy-Report-Only'), url).toBe(TRUSTED_TYPES_REPORT_ONLY)
+    }
+  })
+
+  it('a non-document carries no policy of its own: it is governed by the document that loaded it', async () => {
+    const wasm = await appResponse(root, 'app://slate/assets/loro.wasm')
+    expect(wasm.headers.get('Content-Security-Policy')).toBeNull()
   })
 })
 

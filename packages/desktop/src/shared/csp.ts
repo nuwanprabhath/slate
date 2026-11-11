@@ -17,7 +17,8 @@ export const PRODUCTION_CSP = [
   "img-src 'self' data: blob: slate-blob:",
   "font-src 'self'",
   "connect-src 'self'",
-  "worker-src 'self' blob:",
+  // The renderer creates no worker; a pasted node that tried to would be refused (C5).
+  "worker-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
   "object-src 'none'",
@@ -30,3 +31,14 @@ export function withProductionCsp(html: string): string {
   if (!META.test(html)) throw new Error('index.html has no Content-Security-Policy meta tag to replace')
   return html.replace(META, `$1${PRODUCTION_CSP}$2`)
 }
+
+/**
+ * C5: Trusted Types, report-only. One full e2e run reported 990 violations, all from two sinks inside TipTap
+ * itself: `createStyleTag` (`styleNode.innerHTML = style`) and `elementFromString`
+ * (`DOMParser().parseFromString`), both run whenever an editor or a box is made. A named policy in Slate's own
+ * paste sanitiser cannot cover a library's internal sinks, so enforcing now would break the editor in a
+ * packaged build, where nobody sees the console. Report-only still carries the directive, so the next run
+ * measures the same two sinks and a third would show up. The run's numbers are in
+ * `.agent-reports/rel-0.7.0/report-C5.md`.
+ */
+export const TRUSTED_TYPES_REPORT_ONLY = "require-trusted-types-for 'script'"
