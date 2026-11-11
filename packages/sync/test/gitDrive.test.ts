@@ -10,7 +10,11 @@ import { PAGE, bareRepo, device, drive, log, removeTemps, run, temp } from './gi
 
 afterEach(removeTemps)
 
-describe('GitDrive', { timeout: 30_000 }, () => {
+// Every case here runs real git: clone, commit, push, fetch, rebase, in child processes against a bare repo in a temp
+// folder. Measured over four runs of this file on a 10-core Mac at load average 23-27, the cases cost 1.3-23.1 s (the
+// file as a whole 70-100 s, which is where the "two-minute file" comes from; there is no sleeping or polling in it to
+// remove). 30 s left the slowest case 1.3x. 90 s is 3.9x the measured worst case.
+describe('GitDrive', { timeout: 90_000 }, () => {
   it('gives an empty remote a README commit', async () => {
     const url = bareRepo()
     const d = drive(url, 'A')

@@ -196,7 +196,11 @@ describe('three devices over a faulty drive', () => {
     vi.useRealTimers()
   })
 
-  it(`converge with no edit lost, over ${RUNS} generated fault plans`, { timeout: Math.max(55_000, RUNS * 120) }, async () => {
+  // 500 fast-check plans, each a whole three-device convergence; the seed is fixed, so what varies is the machine.
+  // Measured over four runs at load average 23-27: 37.3, 39.6 and 51.5 s, and a fourth that hit the old
+  // max(55 s, RUNS x 120 ms) = 60 s budget and failed. 480 ms per plan is 4x the per-plan cost at the quiet end and
+  // ~2.4x at the loaded end of what completed; the floor keeps a smaller SLATE_SIM_RUNS honest too.
+  it(`converge with no edit lost, over ${RUNS} generated fault plans`, { timeout: Math.max(110_000, RUNS * 480) }, async () => {
     await fc.assert(
       fc.asyncProperty(scenario, (s) => run(s)),
       { numRuns: RUNS, seed: SEED }
