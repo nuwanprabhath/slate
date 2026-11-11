@@ -6,6 +6,81 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-12
+
+This release implements the architecture, performance and security review in
+`docs/reviews/2026-11-10-architecture_review.md`. Two of its findings were data loss.
+
+### Fixed
+
+- An edit is no longer lost when the store refuses a write. Slate retries until it sticks, and says
+  "Not saved, retrying" in the toolbar meanwhile. Before this, one rejected write (a full disk, a busy
+  database, a vault being re-keyed) silently made every later edit of that session unloadable.
+- Tidying a page's history no longer discards edits that could not yet be applied. A page that arrived
+  from another device before the edit it depends on could be destroyed permanently by the next tidy-up.
+- Quitting Slate now writes the edit you just typed instead of losing it, and your recovery key is
+  never sent back from the page to be saved.
+- Sync now looks only at the pages that changed. On a 2,000-page vault a routine sync froze the app
+  for over a minute; it is now under 35 ms. The first sync against a new remote still pauses the app
+  (about 4 s for 500 pages, 36 s for 2,000) — that one is measured and tracked, not yet fixed.
+- A large vault can now be put on a git remote at all. Git's command deadlines were far too short for
+  thousands of files, so the first sync failed and reported "Offline" forever. Deadlines now scale
+  with the number of files, a stalled transfer is told apart from a slow one, and a timeout says it
+  timed out instead of claiming you are offline.
+- Searching no longer freezes the app: the first index is built in slices and resumes after a restart,
+  and a slow or runaway search pattern stops early and says the results are partial. A hostile pattern
+  could previously hold the whole app, idle lock included, for over a minute.
+- Opening a page with many boxes, and typing on one, no longer slows down as the page grows. An
+  imported page closed before it finished loading is tidied up the next time it is opened.
+- A plugin panel that fails now shows a "Try again" fallback instead of blanking the app, and plugins
+  can no longer clash over a command id, a shortcut or a settings write.
+- Note saving is faster: the store prepares each statement once and counts a page's pending updates in
+  memory instead of on every edit.
+
+### Security
+
+- The AI tool layer can no longer see a private box's content at all. It was previously handed the
+  whole page and trusted by convention not to look; it now receives a redacted projection, and a
+  property test calls every registered tool looking for a leak.
+- Main checks every value the window sends it before acting on it, and refuses anything malformed.
+- Slate remembers in the main process which OneNote backup files you chose, so only the file dialog —
+  never the page — decides what an import reads.
+- Slate refuses a git remote URL, branch or repository name that git would read as an option or a
+  remote helper.
+- The page security policy is now sent as a response header as well as a meta tag, and workers are
+  forbidden outright. Trusted Types is enabled in report-only mode: enforcing it would break the
+  editor, because the violations come from inside the TipTap library, not from Slate.
+- A FIPS 140-3 vault refuses to unlock when the renderer is not sandboxed (the AppImage case), instead
+  of only warning. The standard profile keeps the warning.
+- Network calls during sync have deadlines and are cancelled when a sync is abandoned; a retry can no
+  longer be told to wait a day; and two operations can no longer collide on one git clone.
+
+### Changed
+
+- Releases now run the full CI gate — lint, guards, traceability, unit, main-process, e2e and the
+  memory evidence — and refuse a tag that is not on `main`. Version 0.6.7 was published from a commit
+  whose end-to-end tests were failing; that is no longer possible.
+- The release carries `traceability-evidence.json`: proof that every traced compliance test actually
+  ran and passed on the released commit, with the manual checks listed separately. The matrix
+  previously proved only that a test existed.
+- Architecture guards: each package is held to its declared imports, module cycles are refused, the
+  AI tool layer cannot hold a page, and every IPC handler must check its arguments.
+- The main-process and unit test suites no longer fail on a busy machine: every slow case now declares
+  a budget measured from what it actually does.
+- The vault's parse-cost bound is now relative to a benign parse rather than a fixed number of
+  milliseconds, so it measures the code instead of the machine. The old bound would not have noticed
+  a 400-fold slowdown.
+- Two decision records are added under `docs/architecture/adr/`: one on moving the vault out of the
+  main process (recommends deferring, with measurements), one on plugin isolation (recommends keeping
+  plugins built-in only). Both await the maintainer's decision.
+- `linkedom` 0.18.15 in the importer; `eslint` 10.14.0 and `globals` 17.14.0 in the lint toolchain.
+
+### Internal
+
+- New test coverage the review asked for: a sync fault-injection harness (dropped, stalled, duplicated
+  and reordered calls, and a crash mid-sync), a private-box canary across every AI tool, a vault-scale
+  responsiveness probe, and a memory-evidence check that a generated recovery key is gone after a lock.
+
 ## [0.6.7] - 2026-11-08
 
 ### Changed
