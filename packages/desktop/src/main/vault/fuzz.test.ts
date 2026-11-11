@@ -62,34 +62,85 @@ const throwsOnly = (fn: () => unknown, Err: new (...a: never[]) => Error): void 
 }
 
 /**
- * The parse-time bound of T-FUZZ-01 (< 5 ms a parse) as an average over every run, with a generous ceiling on any
- * one: at the soak's 200,000 runs on a shared runner, a GC pause or a preemption would trip a strict per-run bound
- * with no bug behind it, while a parser that is slow on some input class still moves the average or the ceiling.
+ * The parse-time bound of T-FUZZ-01, relative to a benign parse measured in the same run. The property is that a
+ * hostile input cannot cost disproportionately more than a well-formed header of the same shape through the same two
+ * parsers, which is what a parse-time denial of service would mean. The old absolute ceilings (mean < 5 ms, worst
+ * < 50 ms) measured the machine instead: on a 10-core Mac the worst parse reached 52-76 ms at load average 25-40 with
+ * no bug behind it, while a benign parse costs about 0.01 ms, so `mean < 5 ms` would have sat still through a 400x
+ * parse regression. `calibrate` times `benign` CALIBRATION_RUNS times and drops the first CALIBRATION_WARMUP, so JIT
+ * warm-up cannot inflate the baseline - an inflated baseline would loosen the guard.
+ *
+ * Measured mean-over-benign, 10 samples on a quiet 10-core Mac: 2.20, 1.83, 2.92, 2.86, 2.36, 2.25, 1.99, 2.81,
+ * 2.75, 0.64; 8 samples under 12 CPU spinners (load average 19-22): 2.95, 5.49, 4.79, 2.86, 2.31, 2.73, 6.42, 3.11.
+ * Load does not cancel entirely - it roughly doubles the spread, because the hostile phase draws 2000 samples and the
+ * baseline is one mean - so MEAN_OVER_BENIGN is 20, about 3x the observed 6.42 and still some 25x tighter than the
+ * 5 ms it replaces. That is loose enough to survive a loaded machine and tight enough to catch a super-linear parse:
+ * a well-formedness pass quadratic in string length and nesting depth measures 97 (see the commit message).
+ *
+ * P99_OVER_BENIGN bounds the slow tail, for a parser slow on one input class rather than on average: observed
+ * 1.6-16.8 over the runs above and 59.1 once on a machine shared with other agents, so 150. The single slowest parse
+ * gets no relative bound, because it is one sample and the scheduler owns it - the benign maximum alone ranged from
+ * 13x to 1286x the benign mean across these runs, so any multiple honest about that noise would assert nothing.
+ * ABSOLUTE_CEILING_MS is its deliberately generous bound, kept so the guard still fails if the calibration itself
+ * degrades (both parsers slowing together keeps every ratio flat).
  */
-function parseCost(): { time(fn: () => void): void; check(): void } {
+const CALIBRATION_RUNS = 2000
+const CALIBRATION_WARMUP = 20
+const MEAN_OVER_BENIGN = 20
+const P99_OVER_BENIGN = 150
+const MEAN_CEILING_MS = 5
+const ABSOLUTE_CEILING_MS = 500
+
+function parseCost(benign: () => void): { time(fn: () => void): void; check(): void } {
   let total = 0
-  let runs = 0
   let worst = 0
+  const each: number[] = []
+  const time = (fn: () => void): number => {
+    const t = performance.now()
+    fn()
+    return performance.now() - t
+  }
+  /** The mean cost of one benign parse on this machine, under this run's load, through the same code path. */
+  const calibrate = (): number => {
+    let sum = 0
+    let n = 0
+    for (let i = 0; i < CALIBRATION_RUNS; i++) {
+      const ms = time(benign)
+      if (i < CALIBRATION_WARMUP) continue
+      sum += ms
+      n++
+    }
+    return Math.max(sum / n, Number.EPSILON)
+  }
   return {
     time(fn) {
-      const t = performance.now()
-      fn()
-      const ms = performance.now() - t
+      const ms = time(fn)
+      each.push(ms)
       total += ms
-      runs++
       worst = Math.max(worst, ms)
     },
     check() {
-      expect(runs).toBeGreaterThan(0)
-      expect(total / runs, 'mean ms a parse').toBeLessThan(5)
-      expect(worst, 'slowest parse, ms').toBeLessThan(50)
+      expect(each.length).toBeGreaterThan(0)
+      const unit = calibrate()
+      const sorted = [...each].sort((a, b) => a - b)
+      const p99 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))]!
+      expect(total / each.length / unit, 'mean parse / benign parse').toBeLessThan(MEAN_OVER_BENIGN)
+      expect(p99 / unit, 'p99 parse / benign parse').toBeLessThan(P99_OVER_BENIGN)
+      expect(total / each.length, 'mean ms a parse (absolute sanity ceiling)').toBeLessThan(MEAN_CEILING_MS)
+      expect(worst, 'slowest parse, ms (absolute sanity ceiling)').toBeLessThan(ABSOLUTE_CEILING_MS)
     },
   }
 }
 
+/** The benign baseline: a valid v2 header through the same two parsers, timed the same way. */
+const benignParse = (): void => {
+  throwsOnly(() => parseHeader(VALID_V2), BadHeader)
+  throwsOnly(() => parseHeaderV2(VALID_V2), BadHeader)
+}
+
 describe('T-FUZZ-01: arbitrary JSON', () => {
   it('parseHeader (v1 and v2) throws only BadHeader, 5 ms a parse on average and none over 50 ms', () => {
-    const cost = parseCost()
+    const cost = parseCost(benignParse)
     forAll('T-FUZZ-01', (rng) => {
       const json = rng.bool() ? jsonValue(rng) : apply({ ...VALID_V2 }, { op: 'replace', at: rng.int(0, 99), value: jsonValue(rng, 3) }, rng)
       cost.time(() => {
@@ -265,7 +316,7 @@ describe('T-FUZZ (fast-check): shrinking properties over the same parsers', () =
   const hostileJson = fc.oneof(fc.jsonValue({ maxDepth: 6 }), fc.constantFrom<unknown>(-0, 2 ** 53, 1e21, 0.5, '', '\u0000', 'A'.repeat(70_000)))
 
   it('T-FUZZ-01: arbitrary JSON (fc.jsonValue, maxDepth 6): parseHeader and parseHeaderV2 throw only BadHeader, 5 ms a parse on average', () => {
-    const cost = parseCost()
+    const cost = parseCost(benignParse)
     fc.assert(
       fc.property(hostileJson, (json) => {
         cost.time(() => {
