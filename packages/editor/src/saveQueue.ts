@@ -110,6 +110,13 @@ export class SaveQueue {
       await this.flushAll()
     })().finally(() => {
       this.running = null
+      // A commit that arrived while this flush was finishing must not be left unscheduled: `start`
+      // declines while `running` is set, so the restart has to happen here. Losing it would be the
+      // very defect this queue exists to close (F1).
+      if (this.pending && !this.closed) {
+        this.start()
+        return
+      }
       this.releaseIdle()
     })
   }
