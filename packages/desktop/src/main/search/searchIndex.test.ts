@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { NotebookDoc, PageDoc, writeContent, type PMJSON } from '@slate/core'
 import type { SearchQuery } from '../../shared/api'
 import { COMPACT_IDLE_MS, DocStore } from '../store'
-import { SearchIndex } from './searchIndex'
+import { SEARCH_INDEX_VERSION, SearchIndex } from './searchIndex'
 
 const dirs: string[] = []
 const open: Array<{ close(): void }> = []
@@ -216,25 +216,38 @@ describe('SearchIndex', () => {
     const store = new DocStore(tempDb())
     const nb = NotebookDoc.create('Work')
     const section = nb.addSection('One')
-    for (let i = 0; i < 2000; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
+    const PAGES = 60
+    for (let i = 0; i < PAGES; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
     store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
+    // Nothing here waits on real time: the clock moves 5 ms per reading and slices run when pumped.
     let clock = 0
     const queue: Array<() => void> = []
     const index = new SearchIndex(store, { debounceMs: 10_000, sliceMs: 8, now: () => (clock += 5), schedule: (run) => void queue.push(run) })
     open.push(index, store)
+    const rows = () => store.searchRows(null, null).length
     expect(index.ensureBuilt()).toBe(true)
+    // Sliced, not one long pass: the first slice stopped short and asked for another turn.
+    expect(queue.length).toBe(1)
+    expect(rows()).toBeLessThan(PAGES)
     const spans: number[] = []
-    for (let i = 0; i < 10 && queue.length > 0; i++) {
+    for (let i = 0; i < 5 && queue.length > 0; i++) {
       const before = clock
       queue.shift()!()
       spans.push(clock - before)
     }
-    expect(spans.length).toBe(10)
-    expect(Math.max(...spans)).toBeLessThanOrEqual(20)
-    // Still mid-build: the slices so far indexed a fraction of the pages.
-    expect(store.searchRows(null, null).length).toBeLessThan(200)
-    expect(index.query(q('row 1999')).total).toBe(1)
+    expect(spans.length).toBe(5)
+    // A slice reads the clock between pages and gives the thread back well inside a keystroke.
+    expect(Math.max(...spans)).toBeLessThanOrEqual(16)
+    const built = rows()
+    expect(built).toBeGreaterThan(0)
+    expect(built).toBeLessThan(PAGES)
+    // The place it reached is on disk, so a restart carries on from it (one row per page here).
+    const docs = store.list('page:')
+    expect(new TextDecoder().decode(store.getSyncMeta('search.progress')!)).toBe(`${SEARCH_INDEX_VERSION}\n${docs[built - 1]}`)
+    // A query arriving mid-build finishes the rest first, so it sees the last page as well as the first.
+    expect(index.query(q('row 59')).total).toBe(1)
     expect(index.query(q('row 0')).total).toBe(1)
+    expect(rows()).toBe(PAGES)
   })
 
   it('carries an interrupted build on from where it stopped', () => {
@@ -242,7 +255,7 @@ describe('SearchIndex', () => {
     const store = new DocStore(file)
     const nb = NotebookDoc.create('Work')
     const section = nb.addSection('One')
-    for (let i = 0; i < 40; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
+    for (let i = 0; i < 24; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
     store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
     const queue: Array<() => void> = []
     const index = new SearchIndex(store, { debounceMs: 10_000, sliceMs: 0, schedule: (run) => void queue.push(run) })
@@ -259,7 +272,7 @@ describe('SearchIndex', () => {
     const cleared = vi.spyOn(again, 'clearSearch')
     expect(resumed.ensureBuilt()).toBe(true)
     expect(cleared).not.toHaveBeenCalled()
-    expect(resumed.query(q('row 39')).total).toBe(1)
+    expect(resumed.query(q('row 23')).total).toBe(1)
     expect(resumed.query(q('row 0')).total).toBe(1)
   })
 
