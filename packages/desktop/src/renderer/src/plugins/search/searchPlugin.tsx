@@ -3,6 +3,7 @@ import { compileQuery, expandReplacement, type FindOptions } from '@slate/editor
 import type { SearchMatch, SearchPageResult, SearchResults } from '../../../../shared/api'
 import { PRESERVE_CASE, ReplaceField, ReplaceToggle, TOGGLES } from '../../find/FindBar'
 import { previewKey } from '../../find/notesReplace'
+import { SEARCH_OPEN_COMMAND, SEARCH_VIEW_ID } from '../ids'
 import type { PluginContext, SlatePlugin } from '../types'
 import { confirmText, replaceNotice, replaceRequest, sameMatches, tickKey } from './replacePlan'
 import { effectiveScope, resolveScope, summaryText, type StoredScope } from './scope'
@@ -86,13 +87,13 @@ export function createSearchPlugin(): SlatePlugin {
       void ctx.settings.get<StoredScope>('scope').then((scope) => {
         if (scope && store.get().scope === undefined) store.update({ scope })
       })
-      ctx.views.register({ id: 'search', title: 'Search', icon: <SearchIcon />, order: 10, shortcut: isMac ? '⇧⌘F' : 'Ctrl+Shift+F', render: () => <SearchPanel ctx={ctx} store={store} /> })
+      ctx.views.register({ id: SEARCH_VIEW_ID, title: 'Search', icon: <SearchIcon />, order: 10, shortcut: isMac ? '⇧⌘F' : 'Ctrl+Shift+F', render: () => <SearchPanel ctx={ctx} store={store} /> })
       ctx.commands.register({
-        id: 'search.open',
+        id: SEARCH_OPEN_COMMAND,
         title: 'Find in Notes',
         keybinding: 'Mod+Shift+F',
         run: () => {
-          ctx.views.show('search')
+          ctx.views.show(SEARCH_VIEW_ID)
           store.update({ focusCount: store.get().focusCount + 1 })
         },
       })
