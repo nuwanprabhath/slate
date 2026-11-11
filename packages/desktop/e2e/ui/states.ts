@@ -36,6 +36,16 @@ export async function stubInvoke(app: ElectronApplication, channel: string, valu
   }, { channel, value })
 }
 
+/** Main rejects every call on `channel` with `message` from now on, for every window. */
+export async function stubInvokeError(app: ElectronApplication, channel: string, message: string): Promise<void> {
+  await app.evaluate(({ ipcMain }, { channel: ch, message: m }) => {
+    ipcMain.removeHandler(ch)
+    ipcMain.handle(ch, () => {
+      throw new Error(m)
+    })
+  }, { channel, message })
+}
+
 /**
  * Main sends `payload` on event `channel` now and in place of every later payload on it, for every open
  * window: the state holds even when main's own code sends the real one afterwards (a settings write makes

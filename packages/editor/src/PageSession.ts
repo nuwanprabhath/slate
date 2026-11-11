@@ -3,11 +3,17 @@ import { PageDoc, arrangeBoxes, computePush, hasOverlaps, contentToJSON, settleO
 import { isEmptyContent } from './emptyBox'
 import { schema } from './extensions'
 import { findInPage, replaceInPageDoc, type FindMatch, type FindOptions, type ReplaceChoice } from './find'
+import { SaveQueue, type SaveSink } from './saveQueue'
 
-export interface DocPersistence {
+export interface DocPersistence extends SaveSink {
   load(docId: string): Promise<Uint8Array[]>
-  append(docId: string, update: Uint8Array): Promise<void>
 }
+
+/**
+ * How long `editStoredPage` waits for the other page's writes. Longer than the lock handshake's:
+ * nothing is blocked on it but the replace that asked, and giving up loses the edit.
+ */
+const STORE_TIMEOUT_MS = 30_000
 
 /** Work an undo step does outside this page's doc (a box moved here from another page). */
 export interface UndoHook {
@@ -26,6 +32,8 @@ const SETTLE_DEBOUNCE_MS = 150
 export class PageSession {
   readonly page: PageDoc
   readonly undoManager: UndoManager
+  /** This page's writes, acknowledged: a rejected append is retried, never dropped. */
+  readonly saves: SaveQueue
   private snapshot: BoxState[]
   private listeners = new Set<() => void>()
   private heights = new Map<string, number>()
@@ -54,7 +62,8 @@ export class PageSession {
       void (isUndo ? hook.undo() : hook.redo())
     })
     this.snapshot = page.listBoxes()
-    this.cleanup.push(page.doc.subscribeLocalUpdates((update) => void persistence.append(pageDocId(pageId), update)))
+    this.saves = new SaveQueue(pageDocId(pageId), page.doc, persistence)
+    this.cleanup.push(() => this.saves.close())
     this.cleanup.push(
       page.doc.subscribe((batch) => {
         // Event paths are absolute: ['boxes'] or ['boxes', id] is a box added, removed, moved or
@@ -156,13 +165,12 @@ export class PageSession {
     const updates = await this.persistence.load(pageDocId(pageId))
     if (updates.length === 0) return undefined
     const page = PageDoc.fromUpdates(updates)
-    const writes: Array<Promise<void>> = []
-    const off = page.doc.subscribeLocalUpdates((update) => void writes.push(this.persistence.append(pageDocId(pageId), update)))
+    const saves = new SaveQueue(pageDocId(pageId), page.doc, this.persistence)
     try {
       return edit(page)
     } finally {
-      off()
-      await Promise.all(writes)
+      await saves.idle(STORE_TIMEOUT_MS)
+      saves.close()
     }
   }
 

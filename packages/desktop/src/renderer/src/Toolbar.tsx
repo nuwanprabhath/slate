@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
-import { activeEditor, formatPainter, inTodoItem, type TextAlign } from '@slate/editor'
+import { activeEditor, formatPainter, inTodoItem, saveStatus, type TextAlign } from '@slate/editor'
 import { SyncStatus } from './sync/SyncStatus'
 import { ColorPalette } from './ColorPalette'
 import { AlignIcon, BulletListIcon, ChevronIcon, ClearFormattingIcon, CodeBlockIcon, FormatPainterIcon, HighlightIcon, InlineCodeIcon, LockIcon, NumberedListIcon, ScriptIcon, StrikeIcon, TableIcon, TextColorIcon, TodoListIcon } from './toolbarIcons'
@@ -296,6 +296,26 @@ function useRowStarts(groupCount: number): RefObject<HTMLDivElement | null> {
   return ref
 }
 
+/**
+ * Says so when the store has refused a write: the queue keeps retrying, but until it succeeds what
+ * is on screen is not on disk, and only the person can decide to stop typing. Nothing is drawn while
+ * saves are keeping up, so the toolbar stays as it is in normal use.
+ */
+function SaveStatus() {
+  const state = useSyncExternalStore(saveStatus.subscribe, saveStatus.state)
+  const error = state === 'unsaved' ? saveStatus.error() : undefined
+  if (state !== 'unsaved') return null
+  return (
+    <span className="save-status" role="status" data-testid="save-status" title={error ? `Not saved: ${error}` : 'Not saved'}>
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M8 2.5 1.8 13.2h12.4L8 2.5Z" />
+        <path d="M8 6.4v3M8 11.3h.01" />
+      </svg>
+      Not saved, retrying
+    </span>
+  )
+}
+
 export function Toolbar() {
   const editor = useActiveEditor()
   const vaultUnlocked = useVaultUnlocked()
@@ -422,6 +442,7 @@ export function Toolbar() {
             </span>
           )}
           <span className="tb-group tb-status">
+            <SaveStatus />
             {vaultUnlocked && (
               <button
                 type="button"
