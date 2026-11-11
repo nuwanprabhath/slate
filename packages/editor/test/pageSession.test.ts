@@ -231,7 +231,7 @@ describe('PageSession layout settle', () => {
     const persistence = memoryPersistence()
     persistence.data.set(pageDocId('p'), [seed.doc.export({ mode: 'update' })])
     const session = await PageSession.open('p', persistence)
-    return { session, a, b }
+    return { session, a, b, persistence }
   }
 
   it('settles a flagged page once every box has reported a height', async () => {
@@ -255,10 +255,28 @@ describe('PageSession layout settle', () => {
     session.close()
   })
 
-  it('clears the flag when the session closes', async () => {
-    const { session } = await openOverlapping(true)
+  it('clears the flag when a settled session closes', async () => {
+    const { session, a, b } = await openOverlapping(true)
+    session.reportHeight(a, 100)
+    session.reportHeight(b, 50)
+    await wait(300)
     session.close()
     expect(session.page.needsLayout()).toBe(false)
+  })
+
+  it('settles an imported page on its next open when the first one closed before it was measured', async () => {
+    const { session, a, b, persistence } = await openOverlapping(true)
+    session.reportHeight(a, 100) // b was never measured, so no settle ran
+    session.close()
+    expect(session.page.needsLayout()).toBe(true)
+
+    const reopened = await PageSession.open('p', persistence)
+    expect(reopened.page.needsLayout()).toBe(true)
+    reopened.reportHeight(a, 100)
+    reopened.reportHeight(b, 50)
+    await wait(300)
+    expect(reopened.page.getBox(b)!.y).toBe(112)
+    reopened.close()
   })
 
   it('does not undo a settle', async () => {
