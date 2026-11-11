@@ -10,9 +10,6 @@
     }
   },
   "packages/desktop/src/main/vault/migration.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
     "slate/vault-writes-through-atomic": {
       "count": 1
     }

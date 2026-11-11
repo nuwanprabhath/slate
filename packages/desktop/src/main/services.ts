@@ -72,9 +72,12 @@ export function openServices(keyRing: KeyRing | null, dbFile: string, ctx: Servi
   // LK is the key ring's handle (C4: it was unwrapped inside the module and never existed as bytes);
   // every connection opens with it, and the ring destroys it at lock.
   const lk = keyRing?.get('lk') ?? null
+  // B2: the watch is made below, from what `opened` returns; the store only ever calls it later.
+  let watch: ReturnType<typeof createExternalWatch> | undefined
   const opened = (handle: KeyHandle | null) => {
     const key = () => handle
-    const store = new DocStore(dbFile, { key: key() })
+    // B2: another connection's rows are delivered before a compaction can delete them.
+    const store = new DocStore(dbFile, { key: key(), beforeCompact: () => { watch?.check() } })
     let blobDb: Database.Database | null = null
     let blobs: BlobStore
     if (keyRing) {
@@ -103,7 +106,7 @@ export function openServices(keyRing: KeyRing | null, dbFile: string, ctx: Servi
     return { store, blobDb, blobs, search, themes, importer, sync }
   }
   const { store, blobDb, blobs, search, themes, importer, sync } = opened(lk)
-  const watch = createExternalWatch(
+  watch = createExternalWatch(
     store,
     (batches) => {
       // Agents and sync write through other connections; their page and notebook edits re-index here.
@@ -114,7 +117,7 @@ export function openServices(keyRing: KeyRing | null, dbFile: string, ctx: Servi
   )
   let watching = true
   const closeWatch = () => {
-    if (watching) watch.stop()
+    if (watching) watch?.stop()
     watching = false
   }
   let syncStopped = false
@@ -126,7 +129,7 @@ export function openServices(keyRing: KeyRing | null, dbFile: string, ctx: Servi
     importer,
     themes,
     keyRing,
-    checkExternal: () => watch.check(),
+    checkExternal: () => watch?.check(),
     muteEvents: () => {
       muted = true
     },

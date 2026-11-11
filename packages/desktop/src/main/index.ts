@@ -57,7 +57,7 @@ import { registerChromeIpc } from './windowChromeIpc'
 import { createWindow, isSlateWindow, loadPage, pinErrorPage } from './windows'
 import { chromeOptions, titleBarColors, windowChromeFor } from '../shared/windowChrome/chrome'
 import { IdleTimer } from './vault/idle'
-import { runLock, shouldClearClipboard } from './vault/lockSequence'
+import { runLock, runShutdown, shouldClearClipboard } from './vault/lockSequence'
 import type { PreunlockContent } from './vault/preunlock'
 import { checkPreunlock, lockScreenPrefs, savePreunlock } from './vault/preunlockSync'
 import { startScreenLockMonitor, type ScreenLockMonitor } from './vault/screenLock'
@@ -897,8 +897,11 @@ void app.whenReady().then(async () => {
   }
 
   ipc.handle(CH.vaultDiscard, busy.guard(() => migration.discard()))
-  ipc.handle(CH.vaultSaveRecovery, async (e, key: unknown) => {
-    const text = recoveryFileText(typeof key === 'string' ? key : '')
+  // C4: the key is the one this process generated and still holds; the page never sends it back.
+  ipc.handle(CH.vaultSaveRecovery, async (e) => {
+    const key = migration.pendingRecoveryKey()
+    if (key === null) return { saved: false, message: 'There is no recovery key to save. Make a new one in Settings \u2192 Security.' }
+    const text = recoveryFileText(key)
     const win = BrowserWindow.fromWebContents(e.sender)
     const opts = recoverySaveDialog(app.getPath('documents'))
     const picked = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
@@ -1059,16 +1062,26 @@ void app.whenReady().then(async () => {
   // app.exit then closes the windows without another round of quit events.
   async function shutdown(): Promise<void> {
     await locking?.catch(() => {})
-    await stopMcp().catch(() => {})
     idle.stop()
+    const keyRing = servicesOpen() ? services().keyRing : null
+    // C4: the same bounded handshake the lock uses. Quitting used to close the services without
+    // asking the windows to write what they still held, so the last edit never reached the store.
+    await runShutdown(
+      {
+        flushRenderer: () => flushWindows(),
+        allowWrites: (on) => {
+          flushing = on
+        },
+        stopEvents: () => servicesOpen() && services().muteEvents(),
+        closeMcp: () => stopMcp(),
+        stopSync: () => (servicesOpen() ? services().stopSync() : Promise.resolve()),
+        closeServices: () => servicesOpen() && closeServices(),
+      },
+      { onError: (step, e) => log.error('app', 'shutdown step failed', { step, error: e instanceof Error ? e.message : String(e) }) },
+    )
     screenLock.stop()
     updates?.stop()
     throttledRefusals.ended()
-    const keyRing = servicesOpen() ? services().keyRing : null
-    if (servicesOpen()) {
-      await services().stopSync().catch(() => {})
-      closeServices()
-    }
     const handlesBefore = liveHandles()
     keyRing?.close()
     migration.discard()

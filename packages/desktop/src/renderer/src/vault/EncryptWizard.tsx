@@ -118,7 +118,7 @@ export function EncryptWizard() {
   }
   const save = () =>
     guard(async () => {
-      const r = await window.slate.vault.saveRecoveryKey(recoveryKey)
+      const r = await window.slate.vault.saveRecoveryKey()
       if (r.message) throw new Error(r.message)
       if (r.saved) setNote('Saved.')
     })

@@ -35,11 +35,10 @@ const SECRET_NAME = /password|passphrase|recovery|secret|^pw$|^current$|^next$/i
 const SECRET_TYPES = new Set(['SecretBytes', 'VaultSecret'])
 
 /**
- * The one secret-named parameter left as text, with why: the recovery key that main just made and the
- * renderer shows (prepareEncryption, newRecoveryKey return it), written to the file the user picks. It adds no
- * copy that did not exist (audit Z-11 residual of a new key).
+ * Secret-named parameters left as text. Empty since C4: `saveRecoveryKey` takes no argument at all -
+ * main writes the file from the recovery key it generated and still holds (`Migration.pendingRecoveryKey`).
  */
-const TEXT_RESIDUAL = new Set(['saveRecoveryKey.recoveryKey'])
+const TEXT_RESIDUAL = new Set<string>()
 
 /** The parameters that break the rule. */
 export function secretParamsNotBytes(params: Param[]): string[] {

@@ -87,7 +87,7 @@ function RekeyFlow({ kind, onDone }: { kind: RekeyKind; onDone: (message: string
             ))}
           </div>
           <div className="security-row">
-            <button type="button" onClick={() => void window.slate.vault.saveRecoveryKey(key).then((r) => setMessage(r.message ?? (r.saved ? 'Saved.' : '')))}>
+            <button type="button" onClick={() => void window.slate.vault.saveRecoveryKey().then((r) => setMessage(r.message ?? (r.saved ? 'Saved.' : '')))}>
               Save as text…
             </button>
             <button type="button" onClick={() => window.print()}>Print…</button>
