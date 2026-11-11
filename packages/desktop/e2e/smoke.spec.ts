@@ -2,10 +2,11 @@ import { expect, test } from './fixtures'
 
 test('boots and round-trips a document through IPC', async ({ page }) => {
   await expect(page).toHaveTitle('Slate')
-  const bytes = await page.evaluate(async () => {
-    await window.slate.docs.append('test:1', new Uint8Array([1, 2, 3]))
-    return Array.from((await window.slate.docs.load('test:1'))[0]!)
-  })
+  // A docId main accepts: a kind and an id as `newId` makes it (src/shared/ipcValidators.ts).
+  const bytes = await page.evaluate(async (docId) => {
+    await window.slate.docs.append(docId, new Uint8Array([1, 2, 3]))
+    return Array.from((await window.slate.docs.load(docId))[0]!)
+  }, 'page:3f2504e0-4f89-41d3-9a0c-0305e82c3301')
   expect(bytes).toEqual([1, 2, 3])
 })
 

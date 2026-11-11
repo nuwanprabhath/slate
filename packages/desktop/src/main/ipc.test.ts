@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { CH } from '../shared/ipc'
 import type { SearchQuery } from '../shared/api'
-import { isSearchQuery, registerSearchIpc } from './ipc'
+import { MAX_UPDATE_BYTES } from '../shared/ipcValidators'
+import { isSearchQuery, registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
+import { registerCopyIpc, type CopyClipboard } from './copyHtml'
+import { registerThemeIpc } from './theme/ipc'
+import type { ThemeStore } from './theme/themeStore'
+import type { BlobStore } from './blobs'
+import type { AuthService } from './onenote/auth'
+import type { ImportService } from './onenote/importService'
 import type { Handler, IpcRegistrar } from './ipcGuard'
 import type { SearchIndex } from './search/searchIndex'
+import type { DocStore } from './store'
+import type { SyncService } from './sync/syncService'
 
 // The golden-path example for a handler (docs/architecture/golden-paths.md#ipc): it checks every
 // argument from the untrusted renderer before main acts on it, and is tested with a fake registrar.
@@ -39,4 +48,146 @@ describe('registerSearchIpc', () => {
     expect(isSearchQuery({ ...good, scope: { kind: 'section', id: 's1' } })).toBe(true)
     expect(isSearchQuery({ ...good, scope: { kind: 'elsewhere' } })).toBe(false)
   })
+})
+
+// C1 (review F7): every `invoke` channel checks its arguments before main acts on them. The table
+// sends each one a wrong type, an oversized value and a missing argument, and asserts the channel's
+// fixed refusal and that no service was reached.
+const uuid = '3f2504e0-4f89-41d3-9a0c-0305e82c3301'
+const docId = `page:${uuid}`
+const git = { remoteUrl: 'https://example.invalid/notes.git', branch: 'main', auth: 'system' }
+
+/** Any method call on a service means the arguments got past the validator. */
+function tracingServices() {
+  const reached: string[] = []
+  const service = <T>(name: string): T =>
+    new Proxy(
+      {},
+      {
+        get:
+          (_target, key) =>
+          (...args: unknown[]) => {
+            reached.push(`${name}.${String(key)}(${args.length})`)
+            return undefined
+          },
+      },
+    ) as T
+  return { reached, service }
+}
+
+function allHandlers() {
+  const { ipc, handlers } = fakeRegistrar()
+  const { reached, service } = tracingServices()
+  registerIpc(
+    ipc,
+    () => service<DocStore>('store'),
+    () => service<BlobStore>('blobs'),
+    () => reached.push('onAppend'),
+    () => reached.push('onRemove'),
+  )
+  registerSyncIpc(ipc, () => service<SyncService>('sync'))
+  registerOneNoteIpc(ipc, service<AuthService>('auth'), () => service<ImportService>('importer'), () => reached.push('setClientId'))
+  registerCopyIpc(ipc, () => service<BlobStore>('blobs'), service<CopyClipboard>('clipboard'), () => reached.push('onCopied'))
+  registerThemeIpc(ipc, { open: () => ({ db: service<DocStore>('db'), themes: service<ThemeStore>('themes') }), preunlock: () => null }, false)
+  return { handlers, reached }
+}
+
+const malformed: Array<[channel: string, args: unknown[]]> = [
+  [CH.docsList, ['page']],
+  [CH.docsList, [`page:${'x'.repeat(10_000)}`]],
+  [CH.docsList, []],
+  [CH.docsLoad, [5]],
+  [CH.docsLoad, ['test:1']],
+  [CH.docsLoad, [`page:${'a'.repeat(20_000)}`]],
+  [CH.docsLoad, []],
+  [CH.docsAppend, [docId, 'bytes']],
+  [CH.docsAppend, [docId, new Uint8Array(MAX_UPDATE_BYTES + 1)]],
+  [CH.docsAppend, [docId]],
+  [CH.docsAppend, ['test:1', new Uint8Array(1)]],
+  [CH.docsRemove, [5]],
+  [CH.docsRemove, [`section:${uuid}`]],
+  [CH.docsRemove, []],
+  [CH.blobsPut, ['not bytes', 'image/png']],
+  [CH.blobsPut, [new Uint8Array(1), 'text/html']],
+  [CH.blobsPut, [new Uint8Array(1)]],
+  [CH.settingsSet, [5]],
+  [CH.settingsSet, [null]],
+  [CH.settingsSet, []],
+  [CH.auditList, ['200']],
+  [CH.auditList, [0]],
+  [CH.auditList, [1001]],
+  [CH.auditList, [1.5]],
+  [CH.syncSetEnabled, ['yes']],
+  [CH.syncSetEnabled, []],
+  [CH.syncConfigure, [null]],
+  [CH.syncConfigure, [{ provider: 'dropbox' }]],
+  [CH.syncConfigure, []],
+  [CH.syncTestGit, [null]],
+  [CH.syncTestGit, [{ ...git, auth: 'sudo' }]],
+  [CH.syncTestGit, [git, 't'.repeat(501)]],
+  [CH.syncTestGit, []],
+  [CH.syncCreateRepo, ['notes']],
+  [CH.syncCreateRepo, ['notes', 'sudo']],
+  [CH.syncCreateRepo, [5, 'system']],
+  [CH.syncCreateRepo, ['n'.repeat(201), 'system']],
+  [CH.syncConflicts, ['page:1']],
+  [CH.syncConflicts, [5]],
+  [CH.syncResolve, [uuid]],
+  [CH.syncResolve, [uuid, 'whatever']],
+  [CH.syncResolve, [5, 'mine']],
+  [CH.syncResolve, ['i'.repeat(201), 'mine']],
+  [CH.syncOpened, [5]],
+  [CH.syncOpened, ['nope']],
+  [CH.syncOpened, []],
+  [CH.onenoteStartBackup, [['/tmp/a.one'], 'ids']],
+  [CH.onenoteStartBackup, [[`/${'p'.repeat(4096)}`], []]],
+  [CH.onenoteStartBackup, [['/tmp/a.one']]],
+  [CH.onenoteStart, ['id']],
+  [CH.onenoteStart, [['i'.repeat(10_001)]]],
+  [CH.onenoteStart, []],
+  [CH.onenoteSetClientId, [5]],
+  [CH.onenoteSetClientId, ['x'.repeat(201)]],
+  [CH.onenoteSetClientId, []],
+  [CH.blobsCopyRich, [1, '']],
+  [CH.blobsCopyRich, ['x'.repeat(16 * 1024 * 1024 + 1), '']],
+  [CH.blobsCopyRich, ['text']],
+  [CH.blobsCopyImage, [5]],
+  [CH.blobsCopyImage, ['u'.repeat(4097)]],
+  [CH.blobsCopyImage, []],
+  [CH.themesSave, ['not a spec']],
+  [CH.themesSave, [{ name: 'x' }, 'p'.repeat(2001)]],
+  [CH.themesSave, []],
+  [CH.themesRename, [`user:${uuid}`]],
+  [CH.themesRename, [uuid, 'Name']],
+  [CH.themesRename, [`user:${uuid}`, 'n'.repeat(201)]],
+  [CH.themesRemove, ['builtin:dark']],
+  [CH.themesRemove, []],
+  [CH.themesGenerate, [5, null]],
+  [CH.themesGenerate, ['r'.repeat(10_001), null]],
+  [CH.themesGenerate, ['make it blue', 'spec']],
+  [CH.themesGenerate, []],
+]
+
+describe('every invoke handler validates its arguments first (C1)', () => {
+  it('refuses a wrong type, an oversized value and a missing argument on each channel', async () => {
+    const { handlers, reached } = allHandlers()
+    for (const [channel, args] of malformed) {
+      const label = `${channel} ${JSON.stringify(args, (_k, v: unknown) => (v instanceof Uint8Array ? `Uint8Array(${v.byteLength})` : v))?.slice(0, 60)}`
+      await expect(Promise.resolve().then(() => handlers.get(channel)!({} as never, ...args)), label).rejects.toThrow(`Refused a malformed ${channel} request`)
+    }
+    expect(reached, `services reached: ${reached.join(', ')}`).toEqual([])
+  })
+
+  it('still passes a well-formed request through to the service', async () => {
+    const { handlers, reached } = allHandlers()
+    handlers.get(CH.docsAppend)!({} as never, docId, new Uint8Array([1, 2, 3]))
+    handlers.get(CH.docsList)!({} as never, 'notebook:')
+    handlers.get(CH.auditList)!({} as never, undefined)
+    handlers.get(CH.syncConflicts)!({} as never, docId)
+    handlers.get(CH.syncResolve)!({} as never, uuid, 'mine')
+    handlers.get(CH.onenoteStart)!({} as never, [uuid])
+    await handlers.get(CH.themesRename)!({} as never, `user:${uuid}`, 'Midnight')
+    expect(reached).toEqual(['store.append(2)', 'onAppend', 'store.list(1)', 'store.listAudit(1)', 'sync.conflicts(1)', 'sync.resolve(2)', 'importer.start(1)', 'themes.rename(2)'])
+  })
+
 })
