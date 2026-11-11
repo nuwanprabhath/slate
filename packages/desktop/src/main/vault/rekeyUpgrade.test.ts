@@ -224,8 +224,12 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
     expect(await remoteHeader(remote)).toMatchObject({ version: 3, keyEpoch: 1 })
   })
 
+  // One case, one scenario per crash step, each a whole vault lifecycle: the harness's 30 s is a budget for one
+  // scenario, so this case needs its own, or a loaded machine times it out mid-list. Measured under load average 18:
+  // 1.1-3.3 s per scenario, so 15 s each leaves ~4x headroom and still fails fast on a real hang.
+  const B4_05_STEPS = [undefined, ...(REKEY_STEPS.slice(0, 7) as RekeyStep[])]
   it('T-PQ-B4-05: a v3 vault rotated with sync keeps v3 and pq on both sides, and a crash before each step loses no note', async () => {
-    for (const step of [undefined, ...(REKEY_STEPS.slice(0, 7) as RekeyStep[])]) {
+    for (const step of B4_05_STEPS) {
       closeOpened()
       rmSync(dataDir, { recursive: true, force: true })
       setBare(join(dir, `remote-${step ?? 'none'}.git`))
@@ -256,5 +260,5 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
         opts: weak,
       })
     }
-  })
+  }, B4_05_STEPS.length * 15_000)
 })
