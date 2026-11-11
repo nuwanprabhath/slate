@@ -51,7 +51,7 @@ const seconds = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min`
 const text = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8')
 const fields = (bytes: Uint8Array) => text(bytes).split('\0').filter((s) => s !== '')
 
-/** A git failure as the sync engine understands it: offline, signed out, or an error. */
+/** A git failure as the sync engine understands it: offline, timed out, signed out, or an error. */
 function gitError(args: string[], r: GitResult): Error {
   const detail = detailOf(r.stderr)
   const message = `git ${args[0]} failed: ${detail}`
