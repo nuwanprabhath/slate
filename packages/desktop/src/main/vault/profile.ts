@@ -1,5 +1,6 @@
 // The two crypto profiles (audit §4.1, listing B.14). Data, not branches: a profile is chosen when a vault
 // is created, stored in its authenticated header v2, and only ever raised (`profileRank`).
+import { SANDBOX_FIPS_REFUSAL } from '../../shared/sandboxNotice'
 import { vaultNative } from './native'
 import { SUITE, type KeySchedule, type SuiteId } from './suite'
 
@@ -26,6 +27,8 @@ export interface ProfilePolicy {
   remoteImages: boolean
   /** Update packages must carry a valid detached signature from the pinned release key (C12). */
   signedUpdatesOnly: boolean
+  /** POAM-16: the renderer holding the typed password must be sandboxed, or the vault does not open at all. */
+  requireSandboxedRenderer: boolean
 }
 
 export const PROFILES: Readonly<Record<ProfileId, ProfilePolicy>> = {
@@ -43,6 +46,7 @@ export const PROFILES: Readonly<Record<ProfileId, ProfilePolicy>> = {
     unlockThrottle: null,
     remoteImages: false,
     signedUpdatesOnly: true,
+    requireSandboxedRenderer: false,
   },
   'fips-140-3': {
     id: 'fips-140-3',
@@ -60,6 +64,7 @@ export const PROFILES: Readonly<Record<ProfileId, ProfilePolicy>> = {
     unlockThrottle: { maxFailures: 3, windowMinutes: 15, lockoutMinutes: 180 },
     remoteImages: false,
     signedUpdatesOnly: true,
+    requireSandboxedRenderer: true,
   },
 }
 
@@ -106,6 +111,23 @@ export class ProfileLatched extends Error {
   constructor() {
     super('Slate opened a FIPS 140-3 vault in this session. Quit and reopen Slate to open a standard vault')
   }
+}
+
+/**
+ * POAM-16's residual, closed for fips-140-3 by the maintainer's decision (2026-11-11): an unsandboxed renderer
+ * holds the typed password in memory any program of the session can read, so the vault stays shut instead of
+ * only warning. The message is the notice's own, because nothing else here is actionable.
+ */
+export class RendererUnsandboxed extends Error {
+  override name = 'RendererUnsandboxed'
+  constructor() {
+    super(SANDBOX_FIPS_REFUSAL)
+  }
+}
+
+/** Refuses only, before any key is derived; `sandboxed` is `rendererSandbox.check().sandboxed`. */
+export function checkRendererSandbox(id: ProfileId, sandboxed: boolean): void {
+  if (!sandboxed && PROFILES[id].requireSandboxedRenderer) throw new RendererUnsandboxed()
 }
 
 /** Whether this build runs the approved module, so the wizard may offer the FIPS 140-3 profile (decisions.md). */

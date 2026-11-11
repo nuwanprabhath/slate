@@ -1,5 +1,5 @@
 import { test as base, _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync } from 'node:fs'
+import { appendFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +7,24 @@ export const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
 
 /** Cocoa defaults: a test launch never saves or restores window state, so a crashed run cannot make later launches ask to reopen windows. */
 export const NO_WINDOW_RESTORE: string[] = process.platform === 'darwin' ? ['-ApplePersistenceIgnoreState', 'YES'] : []
+
+/**
+ * C5: with SLATE_CSP_REPORT set to a file, every window's Content-Security-Policy complaints (the report-only
+ * Trusted Types directive among them) are appended to it, so one full e2e run lists what enforcing would break.
+ */
+const POLICY_MESSAGE = /Content Security Policy|Trusted ?Type|require-trusted-types/i
+
+function watchPolicyViolations(app: ElectronApplication): void {
+  const file = process.env.SLATE_CSP_REPORT
+  if (!file) return
+  const watch = (p: Page): void => {
+    p.on('console', (m) => {
+      if (POLICY_MESSAGE.test(m.text())) appendFileSync(file, `${m.text().replace(/\s+/g, ' ')}\n`)
+    })
+  }
+  app.windows().forEach(watch)
+  app.on('window', watch)
+}
 
 /** `switches` go on the app's real command line (e.g. `--no-sandbox` for the POAM-16 notice). */
 export async function launchApp(userData: string, env: Record<string, string> = {}, switches: string[] = []): Promise<{ app: ElectronApplication; page: Page }> {
@@ -20,6 +38,7 @@ export async function launchApp(userData: string, env: Record<string, string> = 
     args: [join(__dirname, '..', 'out', 'main', 'index.js'), ...NO_WINDOW_RESTORE, ...switches],
     env: { ...(inherited as Record<string, string>), ...env, SLATE_E2E: '1', SLATE_USER_DATA: userData },
   })
+  watchPolicyViolations(app)
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   return { app, page }
