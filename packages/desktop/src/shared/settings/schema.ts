@@ -5,6 +5,7 @@
  * is a field there, an entry here, and its control in `renderer/src/settings/sections/`.
  */
 import type { GitAuthMode, GitSettings, Settings, SyncProvider } from '../api'
+import { isAllowedBranch, isAllowedRemote, type RemoteOptions } from '../gitRemote'
 import { DEFAULT_THEME_ID } from '../theme/builtins'
 import { sanitizeFontOverrides } from '../theme/fonts'
 import type { MotionSetting } from '../theme/motion'
@@ -12,8 +13,11 @@ import type { MotionSetting } from '../theme/motion'
 export interface SettingDef<T> {
   default: T
   /** A valid value for anything that passes, `undefined` for anything that does not. */
-  sanitize: (value: unknown) => T | undefined
+  sanitize: (value: unknown, options: RemoteOptions) => T | undefined
 }
+
+/** Local git remotes are refused unless the caller (main, from the e2e/test hook) allows them. */
+const STRICT: RemoteOptions = { allowLocal: false }
 
 const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined)
 const stringOrNull = (v: unknown): string | null | undefined => (v === null || typeof v === 'string' ? v : undefined)
@@ -22,11 +26,11 @@ const PROVIDERS: readonly SyncProvider[] = ['onedrive', 'git']
 const AUTH_MODES: readonly GitAuthMode[] = ['system', 'token', 'gh', 'device']
 const MOTIONS: readonly MotionSetting[] = ['auto', 'full', 'reduced']
 
-function gitSettings(v: unknown): GitSettings | null | undefined {
+function gitSettings(v: unknown, options: RemoteOptions): GitSettings | null | undefined {
   if (v === null) return null
   if (typeof v !== 'object') return undefined
   const { remoteUrl, branch, auth } = v as Record<string, unknown>
-  if (typeof remoteUrl !== 'string' || typeof branch !== 'string' || !AUTH_MODES.some((m) => m === auth)) return undefined
+  if (!isAllowedRemote(remoteUrl, options) || !isAllowedBranch(branch) || !AUTH_MODES.some((m) => m === auth)) return undefined
   return { remoteUrl, branch, auth: auth as GitAuthMode }
 }
 
@@ -61,19 +65,19 @@ const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>
 export const DEFAULT_SETTINGS: Settings = Object.fromEntries(KEYS.map((k) => [k, SCHEMA[k].default])) as unknown as Settings
 
 /** The known keys of `patch` whose values are valid; everything else is dropped. */
-export function sanitizePatch(patch: Record<string, unknown>): Partial<Settings> {
+export function sanitizePatch(patch: Record<string, unknown>, options: RemoteOptions = STRICT): Partial<Settings> {
   const out: Record<string, unknown> = {}
   for (const k of KEYS) {
     if (!(k in patch)) continue
-    const value = SCHEMA[k].sanitize(patch[k])
+    const value = SCHEMA[k].sanitize(patch[k], options)
     if (value !== undefined) out[k] = value
   }
   return out as Partial<Settings>
 }
 
 /** Stored values over the defaults; a bad stored value falls back to its default. */
-export function mergeSettings(stored: Record<string, unknown>): Settings {
-  return { ...DEFAULT_SETTINGS, ...sanitizePatch(stored) }
+export function mergeSettings(stored: Record<string, unknown>, options: RemoteOptions = STRICT): Settings {
+  return { ...DEFAULT_SETTINGS, ...sanitizePatch(stored, options) }
 }
 
 /**

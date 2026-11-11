@@ -84,6 +84,14 @@ export function env(name: EnvVar): string | undefined {
   return process.env[name]
 }
 
+/**
+ * Whether main accepts a git remote on this machine (`file://`, a path): the sync unit tests and the
+ * e2e specs push to a local repository, and nothing else may. Decided here, where `process.env` lives.
+ */
+export function allowLocalGitRemotes(): boolean {
+  return env('SLATE_E2E') === '1' || env('VITEST') !== undefined
+}
+
 /** A copy of the documented variables only, for a pure function that takes an `env` record. */
 export function envSnapshot(): Readonly<Partial<Record<EnvVar, string>>> {
   const out: Partial<Record<EnvVar, string>> = {}

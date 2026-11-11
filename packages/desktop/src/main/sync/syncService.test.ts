@@ -352,6 +352,15 @@ describe('SyncService over git', { timeout: 60_000 }, () => {
     expect((await a.service.testGit({ ...gitSettings(), remoteUrl: 'file:///does/not/exist' })).ok).toBe(false)
   })
 
+  it('C3: refuses a remote or branch that git would read as an option or a helper', async () => {
+    const a = await device('A', { enabled: false })
+    for (const remoteUrl of ['--upload-pack=x', '-oProxyCommand=x', 'ext::sh -c id']) {
+      expect(await a.service.testGit({ ...gitSettings(), remoteUrl }), remoteUrl).toMatchObject({ ok: false, message: 'That is not a git remote Slate will use' })
+    }
+    expect(await a.service.testGit({ ...gitSettings(), branch: '--force' })).toMatchObject({ ok: false, message: 'That is not a branch name git accepts' })
+    expect(await a.service.createRepo('--upload-pack=x', 'token', 'ghp_x')).toMatchObject({ ok: false })
+  })
+
   it('turns off through configure', async () => {
     const a = await device('A', { enabled: false })
     await a.service.configure({ provider: 'git', git: gitSettings() })

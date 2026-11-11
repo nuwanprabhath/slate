@@ -172,8 +172,11 @@ describe('release gate (review F4)', () => {
     // Called, never triggered on its own: a push or pull_request trigger here would double every CI run.
     expect(verify).toMatch(/\non:\n {2}workflow_call:/)
     expect(verify).not.toMatch(/\n {2}(push|pull_request):/)
-    // The full gate: nothing that used to run on a push may be missing from it.
-    expect([...jobsOf('verify.yml').keys()]).toEqual(['lint', 'test-linux', 'test-mac', 'native'])
+    // The full gate: nothing that used to run on a push may be missing from it. Containment, not
+    // equality, because the gate is meant to grow -- the evidence job (review F9) was added after
+    // this test, and an exact list would have made every honest addition look like a regression.
+    const gate = [...jobsOf('verify.yml').keys()]
+    for (const job of ['lint', 'test-linux', 'test-mac', 'native']) expect(gate, job).toContain(job)
   })
 
   it('the reusable workflow runs lint, guards, traceability, unit, main-process, e2e and the memory evidence', () => {

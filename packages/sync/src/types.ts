@@ -84,8 +84,20 @@ export interface ConflictRecord {
   at: number
 }
 
+/** What `changedDocIds` returns: the docs to consider, and the cursor to pass next time. */
+export interface ChangedDocs {
+  ids: string[]
+  seq: number
+}
+
 export interface LocalStore {
   docIds(): Promise<string[]>
+  /**
+   * The docs appended to since `sinceSeq`, so a sync decodes only those. `null` means the caller has
+   * no cursor (a first sync, or one told to start over) and wants every doc. `seq` never goes
+   * backwards, so a doc edited while the sync runs is picked up by the next one, not skipped.
+   */
+  changedDocIds(sinceSeq: number | null): Promise<ChangedDocs>
   loadDoc(docId: string): Promise<Uint8Array[]>
   /**
    * Appends updates the sync engine made: other devices' files, and restored boxes. What gets
@@ -100,7 +112,8 @@ export interface LocalStore {
   markSeen(itemId: string, eTag: string): Promise<void>
   blobNames(): Promise<string[]>
   readBlob(name: string): Promise<Uint8Array>
-  blobSynced(name: string): Promise<boolean>
+  /** The blobs not yet pushed to this remote, as one set difference rather than a query per blob. */
+  unsyncedBlobNames(): Promise<string[]>
   markBlobSynced(name: string): Promise<void>
   addConflict(c: ConflictRecord): Promise<void>
   notify(message: string): Promise<void>
