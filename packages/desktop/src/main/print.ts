@@ -3,6 +3,7 @@ import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { PrintRequest, PrintResult } from '../shared/api'
 import { CH } from '../shared/ipc'
+import { refuse } from '../shared/ipcValidators'
 import type { IpcRegistrar } from './ipcGuard'
 import { insideDataDir } from './vault/recoveryFile'
 
@@ -135,7 +136,7 @@ export function registerPrintIpc(ipc: IpcRegistrar, host: PrintHost): void {
     }
   }
   ipc.handle(CH.pagePrint, async (e, request: unknown): Promise<PrintResult> => {
-    if (!isPrintRequest(request)) throw new Error('Refused a malformed print request')
+    if (!isPrintRequest(request)) refuse(CH.pagePrint)
     const sender = e.sender
     if (inFlight.has(sender.id)) return { done: false }
     inFlight.add(sender.id)

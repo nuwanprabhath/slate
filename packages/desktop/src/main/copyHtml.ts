@@ -1,4 +1,5 @@
 import { CH } from '../shared/ipc'
+import { isText, MAX_PATH, refuse } from '../shared/ipcValidators'
 import type { BlobStore } from './blobs'
 import type { IpcRegistrar } from './ipcGuard'
 
@@ -65,12 +66,13 @@ export function embedNoteImages(html: string, read: BlobStore['readForUrl'], bud
  */
 export function registerCopyIpc(ipc: IpcRegistrar, blobs: () => Pick<BlobStore, 'readForUrl'>, clipboard: CopyClipboard, onCopied: (text: string) => void): void {
   ipc.handle(CH.blobsCopyRich, async (_e, text: unknown, html: unknown) => {
-    if (typeof text !== 'string' || typeof html !== 'string' || text.length > MAX_COPY_LENGTH || html.length > MAX_COPY_LENGTH) throw new Error('copy: expected the text and HTML of a selection')
+    if (!isText(text, MAX_COPY_LENGTH) || !isText(html, MAX_COPY_LENGTH)) refuse(CH.blobsCopyRich)
     await clipboard.writeRich({ 'text/plain': text, 'text/html': embedNoteImages(html, (url) => blobs().readForUrl(url)) })
     onCopied(text)
   })
   ipc.handle(CH.blobsCopyImage, async (_e, url: unknown) => {
-    const found = typeof url === 'string' ? blobs().readForUrl(url) : null
+    if (!isText(url, MAX_PATH)) refuse(CH.blobsCopyImage)
+    const found = blobs().readForUrl(url)
     if (!found || !(await clipboard.writeImage(found.bytes))) return false
     onCopied('')
     return true

@@ -1,5 +1,6 @@
 import type { EditCommand } from '../shared/api'
 import { CH } from '../shared/ipc'
+import { refuse } from '../shared/ipcValidators'
 import type { IpcRegistrar } from './ipcGuard'
 
 const COMMANDS: readonly EditCommand[] = ['cut', 'copy', 'paste']
@@ -41,7 +42,7 @@ export class UserInputClock {
  */
 export function registerEditIpc(ipc: IpcRegistrar, input: UserInputClock): void {
   ipc.handle(CH.editCommand, (e, command: unknown) => {
-    if (!isEditCommand(command)) throw new Error('Refused an unknown edit command')
+    if (!isEditCommand(command)) refuse(CH.editCommand)
     if (!input.recent(e.sender)) throw new Error('Refused an edit command with no recent user input on its window')
     e.sender[command]()
   })

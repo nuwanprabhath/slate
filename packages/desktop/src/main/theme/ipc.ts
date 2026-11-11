@@ -3,6 +3,7 @@ import { app, nativeTheme } from 'electron'
 import type { IpcRegistrar } from '../ipcGuard'
 import type { ThemesApi } from '../../shared/api'
 import { CH } from '../../shared/ipc'
+import { isObject, isSavedThemeId, isText, optional, refuse } from '../../shared/ipcValidators'
 import { builtinTheme } from '../../shared/theme/builtins'
 import { resolveTheme } from '../../shared/theme/resolve'
 import type { ThemeSpec } from '../../shared/theme/spec'
@@ -16,6 +17,13 @@ import type { ThemeStore } from './themeStore'
 
 /** `SLATE_SAFE_THEME=1`: Dark for this run, whatever is saved; the way back from a broken theme. */
 export const safeTheme = env('SLATE_SAFE_THEME') === '1'
+
+/** `themeStore.save` keeps 2000 characters of the prompt; a longer one is the renderer misbehaving. */
+const MAX_PROMPT = 2000
+const MAX_THEME_NAME = 200
+const MAX_REQUEST = 10_000
+const isPrompt = (v: unknown): v is string | null => v === null || isText(v, MAX_PROMPT)
+const isSpec = (v: unknown): v is ThemeSpec | null => v === null || isObject(v)
 
 function gpuCompositing(): boolean {
   const status = app.getGPUFeatureStatus() as unknown as Record<string, string>
@@ -54,11 +62,24 @@ export function registerThemeIpc(ipc: IpcRegistrar, source: ThemeSource, isE2E: 
     e.returnValue = initial
   })
   ipc.handle(CH.themesList, () => notes().themes.list())
-  ipc.handle(CH.themesSave, (_e, spec: unknown, prompt?: string | null) => notes().themes.save(spec, prompt ?? null))
-  ipc.handle(CH.themesRename, (_e, id: string, name: string) => notes().themes.rename(id, name))
-  ipc.handle(CH.themesRemove, (_e, id: string) => notes().themes.remove(id))
+  // `validateTheme` decides every field of the spec; this channel checks it is an object at all.
+  ipc.handle(CH.themesSave, (_e, spec: unknown, prompt: unknown) => {
+    if (!isObject(spec) || !optional(prompt, isPrompt)) refuse(CH.themesSave)
+    return notes().themes.save(spec, prompt ?? null)
+  })
+  ipc.handle(CH.themesRename, (_e, id: unknown, name: unknown) => {
+    if (!isSavedThemeId(id) || !isText(name, MAX_THEME_NAME)) refuse(CH.themesRename)
+    return notes().themes.rename(id, name)
+  })
+  ipc.handle(CH.themesRemove, (_e, id: unknown) => {
+    if (!isSavedThemeId(id)) refuse(CH.themesRemove)
+    return notes().themes.remove(id)
+  })
   ipc.handle(CH.themesClaude, async () => fake || (await findClaude()) !== null)
-  ipc.handle(CH.themesGenerate, (_e, request: string, current: ThemeSpec | null) => generator.generate({ request, current }))
+  ipc.handle(CH.themesGenerate, (_e, request: unknown, current: unknown) => {
+    if (!isText(request, MAX_REQUEST) || !isSpec(current)) refuse(CH.themesGenerate)
+    return generator.generate({ request, current })
+  })
   ipc.handle(CH.themesCancel, () => generator.cancel())
 }
 

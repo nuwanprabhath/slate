@@ -78,7 +78,7 @@ describe('registerEditIpc', () => {
     const { run, ran, sender, input } = setup()
     input.note(sender, 'mouseUp')
     for (const command of ['reload', 'selectAll', 'pasteAndMatchStyle', 'constructor', '__proto__', 'toString', '', null, 1, ['paste'], { toString: () => 'paste' }]) {
-      expect(() => run(command)).toThrow(/edit command/)
+      expect(() => run(command)).toThrow(/Refused a malformed edit:command request/)
     }
     expect(ran).toEqual([])
   })

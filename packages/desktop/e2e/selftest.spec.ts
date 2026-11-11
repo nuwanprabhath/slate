@@ -68,7 +68,7 @@ test.describe('power-up self-test', () => {
 
   test('T-POST-10 a plaintext folder gets the same error screen (D-2, S-11), and Copy diagnostic report names no path', async ({ userData }) => {
     const seed = await launchApp(userData)
-    await seed.page.evaluate(() => window.slate.docs.append('test:1', new Uint8Array([1, 2, 3])))
+    await seed.page.evaluate((docId) => window.slate.docs.append(docId, new Uint8Array([1, 2, 3])), 'page:3f2504e0-4f89-41d3-9a0c-0305e82c3301')
     await seed.app.close()
     const before = snapshot(userData)
     expect([...before.keys()]).toContain('slate.db')
