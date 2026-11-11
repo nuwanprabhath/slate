@@ -70,6 +70,49 @@ module.exports = {
       from: { path: '^packages/desktop/src/shared', pathNot: '\\.test\\.ts$' },
       to: NODE,
     },
+    // Each node package may import only @slate/core and what its own package.json declares. `sync -> importer`
+    // is the one allowed cross edge (OneNote pages arrive through the importer during a sync); everything else
+    // goes through @slate/core, so a package stays replaceable on its own.
+    {
+      name: 'sync-imports-core-and-importer',
+      comment: 'packages/sync: only @slate/core and @slate/importer (its declared dependencies).',
+      severity: 'error',
+      from: { path: '^packages/sync/src' },
+      to: { path: '^packages/(?!(sync|core|importer)/)' },
+    },
+    {
+      name: 'mcp-imports-core',
+      comment: 'packages/mcp: only @slate/core; the desktop side talks to it through a DocSource.',
+      severity: 'error',
+      from: { path: '^packages/mcp/src' },
+      to: { path: '^packages/(?!(mcp|core)/)' },
+    },
+    {
+      name: 'importer-imports-core',
+      comment: 'packages/importer: only @slate/core.',
+      severity: 'error',
+      from: { path: '^packages/importer/src' },
+      to: { path: '^packages/(?!(importer|core)/)' },
+    },
+    {
+      name: 'native-imports-nothing',
+      comment: 'packages/native is the bottom layer: it imports no other @slate package.',
+      severity: 'error',
+      // The module the app loads, not the build and KAT scripts: scripts/kat.mjs imports the desktop
+      // side's fipsConfig.ts on purpose, so the provider config it tests is the text the app writes.
+      from: { path: '^packages/native/', pathNot: '^packages/native/scripts/' },
+      to: { path: '^packages/(?!native/)' },
+    },
+    {
+      name: 'no-circular',
+      comment: 'A cycle of modules has no order to load it in: break it by moving what both need into its own module.',
+      severity: 'error',
+      from: {},
+      // Runtime cycles only. `import type` is erased, so a type cycle has no load order to get wrong;
+      // the review counted zero runtime cycles across the graph, and four type-only ones
+      // (settings/registry, vault/suite, update/verifier) that say nothing about load order.
+      to: { circular: true, viaOnly: { dependencyTypesNot: ['type-only'] } },
+    },
     {
       name: 'preload-electron-and-shared',
       comment: 'The preload imports electron and src/shared/ only (types from anywhere).',

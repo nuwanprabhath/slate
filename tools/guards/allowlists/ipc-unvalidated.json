@@ -1,0 +1,4 @@
+{
+  "$": "C1 (review F7): invoke handlers whose arguments tools/guards/ipcValidation.test.ts cannot see checked, each with why. Ratcheted by ratchet.test.ts: it only shrinks. Only the maintainer grows it.",
+  "openExternal": "The argument is checked inside openExternalSafe (main/openExternal.ts), which refuses anything but a canonical https or mailto URL, so the check cannot move to the handler's first statement without duplicating it."
+}

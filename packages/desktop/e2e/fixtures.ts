@@ -1,7 +1,9 @@
 import { test as base, _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { spawn } from 'node:child_process'
 import { appendFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Readable } from 'node:stream'
 
 export const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
 
@@ -79,7 +81,59 @@ export async function createBoxAt(page: Page, x: number, y: number): Promise<voi
   await page.getByTestId('canvas').dblclick({ position: { x, y } })
 }
 
-export const test = base.extend<{ userData: string; app: ElectronApplication; page: Page }>({
+/**
+ * One X display per Playwright worker, on Linux. Two apps on one display take the X pointer grab
+ * that backs Chromium's pointer capture from each other mid-drag, and share one X selection for the
+ * clipboard; a display per worker removes both at the source, so playwright.config.ts does not have
+ * to find the specs that drag or copy. `-displayfd` lets Xvfb pick a free display and report it, so
+ * two workers (or a surrounding `xvfb-run`) never pick the same number.
+ *
+ * macOS has one window server and one clipboard per machine and no Xvfb, so there the specs that
+ * share them stay in the serial `os-shared` project.
+ */
+async function startXvfb(): Promise<{ display: string; stop: () => Promise<void> }> {
+  const child = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1920x1080x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'inherit', 'pipe'] })
+  const number = await new Promise<string>((resolve, reject) => {
+    let reported = ''
+    ;(child.stdio[3] as Readable).on('data', (chunk: Buffer) => {
+      reported += chunk.toString()
+      if (reported.includes('\n')) resolve(reported.trim())
+    })
+    child.once('error', reject)
+    child.once('exit', (code) => reject(new Error(`Xvfb exited with ${String(code)} before reporting a display`)))
+    setTimeout(() => reject(new Error('Xvfb reported no display within 15s')), 15_000).unref()
+  })
+  return {
+    display: `:${number}`,
+    stop: () =>
+      new Promise<void>((resolve) => {
+        child.once('exit', () => resolve())
+        child.kill('SIGTERM')
+      }),
+  }
+}
+
+export const test = base.extend<{ userData: string; app: ElectronApplication; page: Page }, { display: void }>({
+  /** The worker's own display, set on the environment every launch inherits (see `launchApp`). */
+  display: [
+    async ({}, use) => {
+      if (process.platform !== 'linux') {
+        await use()
+        return
+      }
+      const xvfb = await startXvfb()
+      const outer = process.env.DISPLAY
+      process.env.DISPLAY = xvfb.display
+      try {
+        await use()
+      } finally {
+        if (outer === undefined) delete process.env.DISPLAY
+        else process.env.DISPLAY = outer
+        await xvfb.stop()
+      }
+    },
+    { scope: 'worker', auto: true },
+  ],
   userData: async ({}, use) => {
     await use(mkdtempSync(join(tmpdir(), 'slate-e2e-')))
   },

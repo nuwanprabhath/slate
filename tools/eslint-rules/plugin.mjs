@@ -9,6 +9,7 @@ import skipNeedsReason from './skip-needs-reason.mjs'
 import testsRegisteredUnconditionally from './tests-registered-unconditionally.mjs'
 import sqlTextIsLiteral from './sql-text-is-literal.mjs'
 import noKeyText from './no-key-text.mjs'
+import mcpPagesThroughDocSource from './mcp-pages-through-docsource.mjs'
 
 /**
  * The `slate/*` ESLint rules: "there is one sanctioned way to do X here", one rule per X.
@@ -70,6 +71,13 @@ export const CUSTOM = [
     files: ['packages/desktop/src/{main,preload,renderer,shared}/**/*.{ts,tsx}'],
     ignores: TESTS,
     allow: ['packages/desktop/src/main/vault/password.ts'],
+  },
+  {
+    // A2's request: the MCP tool layer holds an AgentPage, never a PageDoc. The DocSource
+    // implementations and core/src/agentView.ts are the sanctioned holders, outside `files`.
+    name: 'mcp-pages-through-docsource',
+    rule: mcpPagesThroughDocSource,
+    files: ['packages/mcp/src/tools.ts', 'packages/mcp/src/server.ts'],
   },
   {
     name: 'skip-needs-reason',

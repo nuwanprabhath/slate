@@ -3,7 +3,7 @@
 // renderer is untrusted (audit B-2), and the registrar only proves the sender and the vault state.
 // Hand-written in the style of `isSearchQuery`, so no dependency decides what main accepts.
 
-import type { GitSettings, Settings, SyncConfig } from './api'
+import type { GitSettings, RendererErrorReport, Settings, SyncConfig } from './api'
 
 /** The most bytes one CRDT update may carry; a page's whole history arrives as many of these. */
 export const MAX_UPDATE_BYTES = 16 * 1024 * 1024
@@ -79,6 +79,21 @@ export const isTextList = (value: unknown, each = MAX_STRING, max = MAX_LIST): v
 
 /** An argument the renderer may leave out: `undefined` only, never `null` or a wrong type. */
 export const optional = <T>(value: unknown, check: (v: unknown) => v is T): value is T | undefined => value === undefined || check(value)
+
+/** The longest `name` and the most frames a renderer error report may carry; `rendererError` trims further. */
+const MAX_ERROR_NAME = 200
+const MAX_FRAMES = 100
+const ERROR_KINDS = ['error', 'unhandledrejection'] as const
+
+/**
+ * What the renderer may report about its own crash (`diagnostics:renderer-error`): a kind, an error
+ * name and stack frames, and nothing else. Exactly these three keys, so a message or any other field
+ * the renderer adds never reaches the log.
+ */
+export function isRendererErrorReport(value: unknown): value is RendererErrorReport {
+  if (!isObject(value) || Object.keys(value).length !== 3) return false
+  return isOneOf(ERROR_KINDS, value.kind) && isText(value.name, MAX_ERROR_NAME) && isTextList(value.frames, MAX_PATH, MAX_FRAMES)
+}
 
 /** `sanitizePatch` (shared/settings/schema.ts) decides every field; a patch is checked only for its shape. */
 export const isSettingsPatch = (value: unknown): value is Partial<Settings> => isObject(value)
