@@ -309,6 +309,8 @@ describe('transport observations (PQ-B5)', () => {
     first.close()
     const db = openDatabase(file, key)
     db.exec('DROP TABLE transport_observations')
+    // 0.3.0 predates the schema version, so the migrations have to run on it (B4).
+    db.pragma('user_version = 0')
     db.close()
   }
 
@@ -320,6 +322,7 @@ describe('transport observations (PQ-B5)', () => {
     legacyRows(file, key)
     const before = openDatabase(file, key)
     before.exec('DROP TABLE IF EXISTS transport_observations')
+    before.pragma('user_version = 0')
     const count = (db: ReturnType<typeof openDatabase>): unknown[] =>
       ['snapshots', 'updates', 'settings', 'notices'].map((t) => (db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n)
     const counts = count(before)
@@ -371,5 +374,127 @@ describe('transport observations (PQ-B5)', () => {
     store.recordTransport(obs({ remote: 'git-https:git.example.com:8443' }))
     expect(store.transportObservations()).toHaveLength(1)
     store.close()
+  })
+})
+
+describe('DocStore schema versioning and hot path (B4)', () => {
+  /** v0.6.7's schema, which had no `user_version`: `git show 28dcd01:packages/desktop/src/main/store.ts`. */
+  function v067Database(file: string): void {
+    const db = openDatabase(file, null)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS snapshots (doc_id TEXT PRIMARY KEY, data BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, data BLOB NOT NULL);
+      CREATE INDEX IF NOT EXISTS updates_doc ON updates (doc_id, id);
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, target TEXT NOT NULL, outcome TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS import_items (id TEXT PRIMARY KEY, last_modified TEXT, status TEXT, error TEXT);
+      CREATE TABLE IF NOT EXISTS import_map (onenote_id TEXT PRIMARY KEY, slate_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS sync_seen (item_id TEXT PRIMARY KEY, etag TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS blob_synced (name TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, box_id TEXT NOT NULL, device TEXT NOT NULL, mine TEXT NOT NULL, theirs TEXT NOT NULL, merged TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, message TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS transport_observations (remote TEXT PRIMARY KEY, transport TEXT NOT NULL, kex TEXT, pq INTEGER NOT NULL, source TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(page_id UNINDEXED, section_id UNINDEXED, notebook_id UNINDEXED, box_id UNINDEXED, ord UNINDEXED, text, tokenize = 'trigram');
+      ALTER TABLE updates ADD COLUMN origin TEXT NOT NULL DEFAULT 'local';
+    `)
+    db.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run('page:old', Buffer.from([4]), 'local')
+    db.close()
+  }
+
+  function schemaOf(file: string): { version: number; tables: unknown[] } {
+    const db = openDatabase(file, null)
+    const version = db.pragma('user_version', { simple: true }) as number
+    const tables = db.prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").all()
+    db.close()
+    return { version, tables }
+  }
+
+  it('T-B4-01: a v0.6.7 database and a fresh one reach the same schema version with the same tables', () => {
+    const upgradedFile = tempDb()
+    v067Database(upgradedFile)
+    const upgraded = new DocStore(upgradedFile)
+    // The migration runs on the old file without touching what it held.
+    expect(upgraded.load('page:old').map((u) => Array.from(u))).toEqual([[4]])
+    upgraded.close()
+    const freshFile = tempDb()
+    new DocStore(freshFile).close()
+    expect(schemaOf(upgradedFile).version).toBeGreaterThan(0)
+    expect(schemaOf(upgradedFile)).toEqual(schemaOf(freshFile))
+  })
+
+  it('T-B4-01: a second open of the same database runs no migration', () => {
+    const file = tempDb()
+    new DocStore(file).close()
+    const before = schemaOf(file)
+    const again = new DocStore(file)
+    again.append('page:1', new Uint8Array([1]))
+    again.close()
+    expect(schemaOf(file)).toEqual(before)
+  })
+
+  it('T-B4-02: 1,000 appends prepare each statement once and count the doc\'s rows once', () => {
+    vi.useFakeTimers()
+    try {
+      const db = openDatabase(tempDb(), null)
+      const store = new DocStore(db)
+      const prepare = vi.spyOn(db, 'prepare')
+      for (let i = 0; i < 1_000; i++) store.append('page:spy', new Uint8Array([i % 256]))
+      const sql = prepare.mock.calls.map((c) => c[0])
+      expect(sql.filter((s) => /count\(\*\)/i.test(s))).toHaveLength(1)
+      expect(sql).toHaveLength(new Set(sql).size)
+      store.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('T-B4-03: opening prunes audit and notices back to their caps, newest kept', () => {
+    const file = tempDb()
+    const first = new DocStore(file)
+    for (let i = 0; i < 10_050; i++) first.appendAudit({ tool: 't', target: `a${i}`, outcome: 'ok' })
+    for (let i = 0; i < 1_050; i++) first.addNotice(`n${i}`)
+    first.close()
+    const second = new DocStore(file)
+    const audit = second.listAudit(20_000)
+    expect(audit).toHaveLength(10_000)
+    expect(audit[0]!.target).toBe('a10049')
+    expect(audit[audit.length - 1]!.target).toBe('a50')
+    second.close()
+    const db = openDatabase(file, null)
+    const notices = db.prepare('SELECT message FROM notices ORDER BY id').all() as Array<{ message: string }>
+    expect(notices).toHaveLength(1_000)
+    expect(notices[0]!.message).toBe('n50')
+    db.close()
+  })
+
+  it('T-B4-04: only a compaction that finished resets the append counter', () => {
+    vi.useFakeTimers()
+    try {
+      const file = tempDb()
+      const compacted: string[] = []
+      const store = new DocStore(file, { beforeCompact: (id) => compacted.push(id) })
+      const updates = textEdits(Array.from({ length: 521 }, (_, i) => `w${i} `))
+      const withheld = updates[1]!
+      for (const [i, u] of updates.entries()) if (i !== 1) store.append('page:gap', u)
+      vi.advanceTimersByTime(COMPACT_IDLE_MS)
+      // The withheld row leaves updates pending, so that compaction bailed and the rows stand.
+      expect(compacted).toEqual(['page:gap'])
+      expect(store.load('page:gap')).toHaveLength(520)
+
+      // The counter was not reset by the bail: the next append reschedules and this one folds.
+      store.append('page:gap', withheld)
+      vi.advanceTimersByTime(COMPACT_IDLE_MS)
+      expect(compacted).toEqual(['page:gap', 'page:gap'])
+      expect(store.load('page:gap').length).toBeLessThan(30)
+
+      // ...and that one did reset it: a handful of further appends compact nothing.
+      for (const u of textEdits(['a ', 'b ', 'c '])) store.append('page:gap', u)
+      vi.advanceTimersByTime(COMPACT_IDLE_MS)
+      expect(compacted).toHaveLength(2)
+      store.close()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
