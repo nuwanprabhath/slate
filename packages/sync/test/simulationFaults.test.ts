@@ -208,12 +208,3 @@ describe('three devices over a faulty drive', () => {
     expect(totals.compacted, 'runs that compacted').toBeGreaterThan(RUNS / 2)
   })
 })
-
-// `flush` is the one drive call the engine's `transfer` does not wrap, so an abort during a git drive's push leaves
-// syncOnce pending forever (shown with a scratch test on main); and without a signal no call has a deadline.
-describe('stalled drive calls', () => {
-  // Waits for WP-B6 to route flush through transfer.
-  it.todo('WP-B6: syncOnce rejects with SyncAborted when its signal aborts while flush is stalled')
-  // Waits for WP-B6 to give every drive call a deadline.
-  it.todo('WP-B6: a drive call that never answers fails the sync as offline after a deadline, with no signal')
-})
