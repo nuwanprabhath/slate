@@ -42,15 +42,25 @@ export class DocStore {
 
   /** `compact: false` is for the MCP CLI: only the app compacts, so the two never race on it. */
   private readonly options: { compact?: boolean }
+  /**
+   * Run just before a doc is compacted, so whoever polls other connections' rows can deliver them
+   * while they still exist: compaction deletes the rows it folded, and a reader that never saw one
+   * would stay stale until the page is reopened. The app wires the external watcher's `check()` here.
+   */
+  private readonly beforeCompact: (docId: string) => void
   private readonly compactTimers = new Map<string, ReturnType<typeof setTimeout>>()
   /** Per doc, the highest update id the last compaction folded into the snapshot (`loadSince`). */
   private readonly compactedThrough = new Map<string, number>()
   private readonly removals = new Map<string, number>()
 
   /** The key is used to open the connection and not kept (§15 N9). */
-  constructor(fileOrDb: string | Database.Database, options: { compact?: boolean; key?: KeyHandle | null } = {}) {
+  constructor(
+    fileOrDb: string | Database.Database,
+    options: { compact?: boolean; key?: KeyHandle | null; beforeCompact?: (docId: string) => void } = {},
+  ) {
     this.db = typeof fileOrDb === 'string' ? openDatabase(fileOrDb, options.key ?? null) : fileOrDb
     this.options = { compact: options.compact }
+    this.beforeCompact = options.beforeCompact ?? (() => {})
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS snapshots (doc_id TEXT PRIMARY KEY, data BLOB NOT NULL);
       CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, data BLOB NOT NULL);
@@ -250,13 +260,18 @@ export class DocStore {
   }
 
   compact(docId: string): void {
+    this.beforeCompact(docId)
     this.db.transaction(() => {
       const parts = this.load(docId)
       if (parts.length === 0) return
       const { last } = this.db.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
-      if (last !== null) this.compactedThrough.set(docId, last)
       const doc = new LoroDoc()
-      doc.importBatch(parts)
+      const status = doc.importBatch(parts)
+      // A pending update depends on one that has not arrived (a gapped sync or an unfinished import).
+      // The snapshot would not contain it, so deleting the rows would destroy that edit for good:
+      // leave them and let the next append reschedule, by which time the gap may have been filled.
+      if (status.pending !== null && status.pending.size > 0) return
+      if (last !== null) this.compactedThrough.set(docId, last)
       const snapshot = doc.export({ mode: 'snapshot' })
       this.db
         .prepare('INSERT INTO snapshots (doc_id, data) VALUES (?, ?) ON CONFLICT(doc_id) DO UPDATE SET data = excluded.data')
