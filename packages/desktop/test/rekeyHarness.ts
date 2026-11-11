@@ -128,7 +128,12 @@ export function setBare(path: string): void {
 
 /** A temp folder, a data folder and a bare git remote per test, and the services a test opened closed after it. */
 export function useRekeyHarness(): void {
-  vi.setConfig({ testTimeout: 30_000 })
+  // One key-change scenario: a wizard-encrypted vault, a rotation over a local bare git remote, and a crash-survival
+  // check. Measured over four full `npm run test:main` runs at load average 10-25, the slowest single-scenario case here
+  // cost 17.4 s and the same case varied by 2.1x between a quiet and a busy run, so the old 30 s left only 1.7x and timed
+  // cases out mid-list on a busy Mac. 45 s is 2.6x the measured worst case. A case that runs several scenarios in one
+  // `it` is not covered by this and declares its own budget per scenario.
+  vi.setConfig({ testTimeout: 45_000 })
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'slate-rekey-'))
     dataDir = join(dir, 'data')

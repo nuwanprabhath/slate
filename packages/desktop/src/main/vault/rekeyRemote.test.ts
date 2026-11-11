@@ -130,6 +130,10 @@ describe('review C9 M5: a remote header is written only over the exact header th
     }
   }
 
+  // Each case is one rotation plus `times` whole password changes on the remote, so it is not the single scenario the
+  // harness's budget is for. Measured over four full `npm run test:main` runs at load average 10-25: 13.0 s for one
+  // change and 16.8 s for two, i.e. about 13 s for the rotation and ~4 s per further change. 20 s per lifecycle leaves
+  // more than 3x headroom and still fails fast on a real hang.
   for (const times of [1, 2]) {
     it(`a rotation made with sync off never overwrites another device's password change (${times} change${times === 1 ? '' : 's'})`, async () => {
       const remote = gitRemote()
@@ -154,7 +158,7 @@ describe('review C9 M5: a remote header is written only over the exact header th
       a.keyRing.close()
       expect(await opensRemote(remote, bPassword)).toBe(true)
       expect(await remoteHeader(remote)).toMatchObject({ keyEpoch: 0, revision: 1 + times })
-    })
+    }, (1 + times) * 20_000)
   }
 
   it('two password changes racing: the first one wins, the other device is told to follow and then opens with it', async () => {
