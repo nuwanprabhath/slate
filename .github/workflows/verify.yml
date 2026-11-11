@@ -144,7 +144,7 @@ jobs:
           path: test-reports/
 
   test-mac:
-    name: Unit tests (macOS)
+    name: Unit tests and the e2e smoke (macOS)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -169,6 +169,21 @@ jobs:
       - run: npm run test:main
         env:
           SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/vitest-main-mac.json
+      # D6: macOS is a release target but ran no e2e, so nothing proved the app starts, opens a vault and
+      # quits there (D2 left this out as a budget decision). A smoke of that one path, not the suite: lock,
+      # unlock, type, quit. It is a step of this job rather than a job of its own because npm ci and the
+      # native build (the long part) are already paid here; the added cost is the three specs. quit-clean is
+      # in it because the Electron crash reports it reads are Mac-wide, so only a macOS runner can check them.
+      - name: E2E smoke (lock, unlock, type, quit)
+        run: npm run e2e -- lock.spec.ts click-to-type.spec.ts quit-clean.spec.ts
+        env:
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/playwright-smoke-mac.json
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-smoke-results-mac
+          path: packages/desktop/test-results/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
