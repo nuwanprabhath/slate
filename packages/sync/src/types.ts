@@ -14,14 +14,19 @@ export interface DeltaPage {
   cursor: string
 }
 
+/**
+ * Every call takes the running sync's signal, so a stopped sync stops the work it started: the
+ * request in flight, and the git child process. Optional, so a drive may ignore it; the engine's
+ * own `transfer` still abandons the call. One of these is bookkeeping and one is the real stop.
+ */
 export interface RemoteDrive {
-  upload(path: string, bytes: Uint8Array): Promise<void>
-  download(path: string): Promise<Uint8Array>
-  remove(path: string): Promise<void>
+  upload(path: string, bytes: Uint8Array, signal?: AbortSignal): Promise<void>
+  download(path: string, signal?: AbortSignal): Promise<Uint8Array>
+  remove(path: string, signal?: AbortSignal): Promise<void>
   /** All changes since `cursor` (null = from scratch), following paging; returns the next cursor. */
-  delta(cursor: string | null): Promise<DeltaPage>
+  delta(cursor: string | null, signal?: AbortSignal): Promise<DeltaPage>
   /** Publishes the writes so far, for drives that batch them (git: commit and push). */
-  flush?(): Promise<void>
+  flush?(signal?: AbortSignal): Promise<void>
 }
 
 /** The drive could not be reached; sync reports `offline` and tries again later. */

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { KeyHandle } from '@slate/native'
-import { NETWORK_TIMEOUT_MS, OfflineError, type GitResult, type GitRunner } from '@slate/sync'
+import { NETWORK_TIMEOUT_MS, OfflineError, protocolEnv, type GitResult, type GitRunner } from '@slate/sync'
 import { canonicalJson, floorOf, isDowngrade, parseHeader, verifyCheck, type VaultHeader } from './header'
 import type { WeakKdfOption } from './kdf'
 
@@ -77,6 +77,7 @@ export class GitVaultRemote implements VaultRemote {
 
   private async git(args: string[], opts: { network?: boolean; input?: string } = {}): Promise<GitResult> {
     const env = {
+      ...protocolEnv(this.opts.remoteUrl),
       GIT_AUTHOR_NAME: 'Slate',
       GIT_AUTHOR_EMAIL: 'slate@invalid',
       GIT_COMMITTER_NAME: 'Slate',

@@ -1,7 +1,7 @@
 import { constants, existsSync } from 'node:fs'
 import { lstat, mkdir, open, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, normalize } from 'node:path'
-import { LOCAL_TIMEOUT_MS, NETWORK_TIMEOUT_MS, type GitResult, type GitRunner } from './gitRunner'
+import { LOCAL_TIMEOUT_MS, NETWORK_TIMEOUT_MS, protocolEnv, type GitResult, type GitRunner } from './gitRunner'
 import { OfflineError, UnrelatedHistoryError, UnverifiableFileError, type DeltaPage, type RemoteDrive, type RemoteItem } from './types'
 
 export interface GitDriveOptions {
@@ -43,6 +43,7 @@ const fields = (bytes: Uint8Array) => text(bytes).split('\0').filter((s) => s !=
 function gitError(args: string[], r: GitResult): Error {
   const detail = r.stderr.trim().split('\n').slice(-3).join(' ')
   const message = `git ${args[0]} failed: ${r.timedOut ? 'timed out' : detail}`
+  if (r.aborted === true) return new OfflineError(`git ${args[0]} stopped: sync was asked to stop`)
   if (r.timedOut || OFFLINE.test(r.stderr)) return new OfflineError(message)
   if (SIGNED_OUT.test(r.stderr)) return Object.assign(new Error(message), { status: 401 })
   return new Error(message)
@@ -57,6 +58,10 @@ export class GitDrive implements RemoteDrive {
   readonly dir: string
   private readonly opts: GitDriveOptions
   private ready: Promise<void> | undefined
+  /** The signal of the call being served; one at a time, because `serving` queues the calls. */
+  private signal: AbortSignal | undefined
+  /** The clone's lock: git keeps one index, so two commands that write it race for `index.lock`. */
+  private queue: Promise<unknown> = Promise.resolve()
 
   constructor(opts: GitDriveOptions) {
     this.opts = opts
@@ -69,13 +74,33 @@ export class GitDrive implements RemoteDrive {
   }
 
   private async git(args: string[], network = false, input?: string): Promise<GitResult> {
-    const env = { ...this.identity, ...(network ? await this.opts.authEnv() : {}) }
+    const env = { ...protocolEnv(this.opts.remoteUrl), ...this.identity, ...(network ? await this.opts.authEnv() : {}) }
     return this.opts.run(args, {
       cwd: this.dir,
       env,
       timeoutMs: network ? NETWORK_TIMEOUT_MS : LOCAL_TIMEOUT_MS,
+      ...(this.signal ? { signal: this.signal } : {}),
       ...(input !== undefined ? { input: new TextEncoder().encode(input) } : {}),
     })
+  }
+
+  /**
+   * Every public method runs here: one call at a time on this clone, with the call's signal reaching
+   * each git child it starts. A sync run and anything else that reaches the same clone (an image
+   * fetched for the window, the settings panel listing devices) would otherwise both run `git add`
+   * and lose the race for `index.lock`, which the user saw as "git add failed".
+   */
+  private serving<T>(signal: AbortSignal | undefined, work: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(async () => {
+      this.signal = signal
+      try {
+        return await work()
+      } finally {
+        this.signal = undefined
+      }
+    })
+    this.queue = run.catch(() => {})
+    return run
   }
 
   private async must(args: string[], network = false, input?: string): Promise<GitResult> {
@@ -214,7 +239,11 @@ export class GitDrive implements RemoteDrive {
     return this.ahead
   }
 
-  async upload(path: string, bytes: Uint8Array): Promise<void> {
+  async upload(path: string, bytes: Uint8Array, signal?: AbortSignal): Promise<void> {
+    return this.serving(signal, () => this.writeFile(path, bytes))
+  }
+
+  private async writeFile(path: string, bytes: Uint8Array): Promise<void> {
     await this.ensureClone()
     const file = this.file(path)
     await this.checkParents(path)
@@ -229,7 +258,11 @@ export class GitDrive implements RemoteDrive {
     }
   }
 
-  async download(path: string): Promise<Uint8Array> {
+  async download(path: string, signal?: AbortSignal): Promise<Uint8Array> {
+    return this.serving(signal, () => this.readFile(path))
+  }
+
+  private async readFile(path: string): Promise<Uint8Array> {
     await this.ensureClone()
     const file = this.file(path)
     await this.checkParents(path)
@@ -249,7 +282,11 @@ export class GitDrive implements RemoteDrive {
     }
   }
 
-  async remove(path: string): Promise<void> {
+  async remove(path: string, signal?: AbortSignal): Promise<void> {
+    return this.serving(signal, () => this.removeFile(path))
+  }
+
+  private async removeFile(path: string): Promise<void> {
     await this.ensureClone()
     const file = this.file(path)
     await this.checkParents(path)
@@ -283,13 +320,19 @@ export class GitDrive implements RemoteDrive {
   }
 
   /** Commits what was written since the last flush and pushes it, rebasing on rejection. */
-  async flush(): Promise<void> {
-    await this.ensureClone()
-    await this.commitAll()
-    if (await this.unpushed()) await this.push()
+  async flush(signal?: AbortSignal): Promise<void> {
+    return this.serving(signal, async () => {
+      await this.ensureClone()
+      await this.commitAll()
+      if (await this.unpushed()) await this.push()
+    })
   }
 
-  async delta(cursor: string | null): Promise<DeltaPage> {
+  async delta(cursor: string | null, signal?: AbortSignal): Promise<DeltaPage> {
+    return this.serving(signal, () => this.listChanges(cursor))
+  }
+
+  private async listChanges(cursor: string | null): Promise<DeltaPage> {
     await this.ensureClone()
     // A clean tree to rebase; the commit goes out with the next flush.
     await this.commitAll()

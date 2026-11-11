@@ -31,6 +31,10 @@ async function offlineOnNetworkError<T>(run: () => Promise<T>): Promise<T> {
     return await run()
   } catch (err) {
     if (err instanceof TypeError) throw new OfflineError(err.message, { cause: err })
+    // A request past its deadline, or a server that kept asking Slate to wait (GraphOfflineError).
+    if ((err as { offline?: unknown } | null)?.offline === true && !(err instanceof OfflineError)) {
+      throw new OfflineError(err instanceof Error ? err.message : String(err), { cause: err })
+    }
     throw err
   }
 }
@@ -51,42 +55,51 @@ export class OneDriveClient implements RemoteDrive {
     this.uploadChunkSize = opts.uploadChunkSize ?? UPLOAD_CHUNK
   }
 
-  upload(path: string, bytes: Uint8Array): Promise<void> {
+  upload(path: string, bytes: Uint8Array, signal?: AbortSignal): Promise<void> {
     return offlineOnNetworkError(async () => {
       if (bytes.length <= this.simpleUploadLimit) {
-        await this.http.send(`${itemPath(path)}:/content`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          // A copy is backed by a plain ArrayBuffer, which BodyInit requires.
-          body: bytes.slice()
-        })
+        await this.http.send(
+          `${itemPath(path)}:/content`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            // A copy is backed by a plain ArrayBuffer, which BodyInit requires.
+            body: bytes.slice()
+          },
+          { ...(signal ? { signal } : {}), transfer: true }
+        )
         return
       }
-      const session = await this.http.json<{ uploadUrl: string }>(`${itemPath(path)}:/createUploadSession`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'replace' } })
-      })
+      const session = await this.http.json<{ uploadUrl: string }>(
+        `${itemPath(path)}:/createUploadSession`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'replace' } })
+        },
+        signal ? { signal } : {}
+      )
       for (let start = 0; start < bytes.length; start += this.uploadChunkSize) {
         const end = Math.min(start + this.uploadChunkSize, bytes.length)
         const res = await this.doFetch(session.uploadUrl, {
           method: 'PUT',
           headers: { 'Content-Range': `bytes ${start}-${end - 1}/${bytes.length}` },
-          body: bytes.slice(start, end)
+          body: bytes.slice(start, end),
+          ...(signal ? { signal } : {})
         })
         if (!res.ok) throw new GraphError(res.status, 'uploadSession')
       }
     })
   }
 
-  download(path: string): Promise<Uint8Array> {
-    return offlineOnNetworkError(async () => (await this.http.bytes(`${itemPath(path)}:/content`)).bytes)
+  download(path: string, signal?: AbortSignal): Promise<Uint8Array> {
+    return offlineOnNetworkError(async () => (await this.http.bytes(`${itemPath(path)}:/content`, { ...(signal ? { signal } : {}), transfer: true })).bytes)
   }
 
-  remove(path: string): Promise<void> {
+  remove(path: string, signal?: AbortSignal): Promise<void> {
     return offlineOnNetworkError(async () => {
       try {
-        await this.http.send(itemPath(path), { method: 'DELETE' })
+        await this.http.send(itemPath(path), { method: 'DELETE' }, signal ? { signal } : {})
       } catch (err) {
         // Already gone is what we wanted.
         if (!(err instanceof GraphError && err.status === 404)) throw err
@@ -94,13 +107,13 @@ export class OneDriveClient implements RemoteDrive {
     })
   }
 
-  delta(cursor: string | null): Promise<DeltaPage> {
+  delta(cursor: string | null, signal?: AbortSignal): Promise<DeltaPage> {
     return offlineOnNetworkError(async () => {
-      const root = await this.root()
+      const root = await this.root(signal)
       const items: RemoteItem[] = []
       let next = cursor ?? `${APPROOT}/delta`
       for (;;) {
-        const body = await this.http.json<{ value: DriveItem[]; '@odata.nextLink'?: string; '@odata.deltaLink'?: string }>(next)
+        const body = await this.http.json<{ value: DriveItem[]; '@odata.nextLink'?: string; '@odata.deltaLink'?: string }>(next, {}, signal ? { signal } : {})
         for (const it of body.value) items.push(toItem(it, root))
         if (body['@odata.nextLink']) next = body['@odata.nextLink']
         else if (body['@odata.deltaLink']) return { items, cursor: body['@odata.deltaLink'] }
@@ -110,9 +123,9 @@ export class OneDriveClient implements RemoteDrive {
   }
 
   /** The app folder's own path, as items' `parentReference.path` spells it. */
-  private async root(): Promise<string> {
+  private async root(signal?: AbortSignal): Promise<string> {
     if (this.rootPath === undefined) {
-      const me = await this.http.json<{ name: string; parentReference?: { path?: string } }>(APPROOT)
+      const me = await this.http.json<{ name: string; parentReference?: { path?: string } }>(APPROOT, {}, signal ? { signal } : {})
       this.rootPath = `${me.parentReference?.path ?? ''}/${me.name}`
     }
     return this.rootPath

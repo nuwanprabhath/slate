@@ -283,6 +283,35 @@ describe('SyncService over git', { timeout: 30_000 }, () => {
 
   const gitLog = () => execFileSync('git', ['--git-dir', bare, 'log', '--format=%an|%s', 'main']).toString()
 
+  it('starts no second run while one is in flight, and runs exactly one more after it', async () => {
+    const a = await device('A', { enabled: false })
+    await a.service.configure({ provider: 'git', git: gitSettings() })
+    let inFlight = 0
+    let peak = 0
+    let runs = 0
+    const inner = a.service as unknown as { run: () => Promise<unknown> }
+    const real = inner.run.bind(a.service)
+    inner.run = async () => {
+      runs++
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      try {
+        return await real()
+      } finally {
+        inFlight--
+      }
+    }
+    writePage(a.store, 'edited while syncing')
+    // Two more triggers while the first run is still going, as the after-edit timer and the interval do.
+    const first = a.service.now()
+    await Promise.all([first, a.service.now(), a.service.now()])
+    for (let i = 0; i < 100 && runs < 2; i++) await new Promise((r) => setTimeout(r, 20))
+    await a.service.pause()
+    expect(peak).toBe(1)
+    // The run, plus exactly one for everything asked during it.
+    expect(runs).toBe(2)
+  })
+
   it('delivers a page from A to B through the repository', async () => {
     const a = await device('A', { enabled: false })
     const b = await device('B', { enabled: false })
@@ -452,7 +481,14 @@ describe('SyncService post-quantum transport policy (PQ-C4)', { timeout: 30_000 
             stderr: 'Unable to negotiate with 192.0.2.1 port 22: no matching key exchange method found. Their offer: curve25519-sha256\nfatal: Could not read from remote repository.\n',
           }
         }
-        const rewrite = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `url.file://${bare}.insteadOf`, GIT_CONFIG_VALUE_0: SSH_URL }
+        // The rewrite sends an ssh remote to a local repository, so this harness's git also needs the
+        // local protocol; the service asks for `https:ssh` because the configured remote is an ssh URL.
+        const rewrite = {
+          GIT_CONFIG_COUNT: '1',
+          GIT_CONFIG_KEY_0: `url.file://${bare}.insteadOf`,
+          GIT_CONFIG_VALUE_0: SSH_URL,
+          GIT_ALLOW_PROTOCOL: 'https:ssh:file',
+        }
         return real(args, { ...opts, env: { ...opts.env, ...rewrite } })
       }
     }

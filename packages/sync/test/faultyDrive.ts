@@ -51,18 +51,18 @@ export function faultyDrive(inner: RemoteDrive, plan: FaultPlan): FaultyDrive {
     enabled: true,
     fired: Object.fromEntries(FAULT_KINDS.map((k) => [k, 0])) as Record<FaultKind, number>,
     onHang: undefined,
-    upload: (path, bytes) => call(true, () => inner.upload(path, bytes)),
-    download: (path) => call(false, () => inner.download(path)),
-    remove: (path) => call(true, () => inner.remove(path)),
-    delta: (cursor) => {
+    upload: (path, bytes, signal) => call(true, () => inner.upload(path, bytes, signal)),
+    download: (path, signal) => call(false, () => inner.download(path, signal)),
+    remove: (path, signal) => call(true, () => inner.remove(path, signal)),
+    delta: (cursor, signal) => {
       const fault = drive.enabled ? plan.deltas[deltas] : undefined
       deltas++
-      return call(false, async () => disturb(await inner.delta(cursor), cursor, fault))
+      return call(false, async () => disturb(await inner.delta(cursor, signal), cursor, fault))
     }
   }
   if (inner.flush) {
     const flush = inner.flush.bind(inner)
-    drive.flush = () => call(true, flush)
+    drive.flush = (signal) => call(true, () => flush(signal))
   }
 
   /** Never answers. The caller's `transfer` or the harness's dropped engine is what ends the wait. */

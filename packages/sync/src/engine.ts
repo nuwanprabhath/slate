@@ -136,9 +136,9 @@ export class SyncEngine {
       await this.local.setMeta(META.changed, String(changed.seq))
       await this.pushBlobs()
       await this.writeDevice()
-      await this.remote.flush?.()
+      await this.flush()
       await this.pull(counts, pushedAt)
-      await this.remote.flush?.()
+      await this.flush()
       return { status: 'idle-synced', ...counts, at: Date.now() }
     } catch (err) {
       if (err instanceof SyncAborted || opts.signal?.aborted) throw new SyncAborted()
@@ -154,6 +154,13 @@ export class SyncEngine {
   private async changedDocs(): Promise<{ ids: string[]; seq: number }> {
     const raw = await this.local.getMeta(META.changed)
     return this.local.changedDocIds(raw === undefined || raw === '' ? null : Number(raw))
+  }
+
+  /** Like every other call on the drive: abandoned when the signal aborts, never awaited past it. */
+  private flush(): Promise<void> {
+    return this.transfer(async () => {
+      await this.remote.flush?.(this.signal)
+    })
   }
 
   /** Rejects as soon as the signal aborts, leaving `work` to finish unobserved. */
@@ -197,7 +204,7 @@ export class SyncEngine {
 
     const seq = Number((await this.local.getMeta(META.seq(docId))) ?? 0) + 1
     const path = chunkPath(docId, this.deviceId, seq)
-    await this.transfer(() => this.remote.upload(path, doc.export({ mode: 'update', from: pushed })))
+    await this.transfer(() => this.remote.upload(path, doc.export({ mode: 'update', from: pushed }), this.signal))
     const chunks = [...(await this.jsonMeta<string[]>(META.chunks(docId), [])), path]
     await this.local.setMeta(META.seq(docId), String(seq))
     await this.local.setMeta(META.chunks(docId), JSON.stringify(chunks))
@@ -214,7 +221,7 @@ export class SyncEngine {
    */
   private async compact(docId: string, doc: LoroDoc, seq: number, chunks: string[]): Promise<void> {
     const path = snapshotPath(docId, this.deviceId, seq)
-    await this.transfer(() => this.remote.upload(path, doc.export({ mode: 'snapshot' })))
+    await this.transfer(() => this.remote.upload(path, doc.export({ mode: 'snapshot' }), this.signal))
     const previous = await this.local.getMeta(META.snapshot(docId))
     const stale = [...(await this.jsonMeta<string[]>(META.stale(docId), [])), ...chunks, ...(previous ? [previous] : [])]
     await this.local.setMeta(META.seq(docId), String(seq))
@@ -228,7 +235,7 @@ export class SyncEngine {
   private async removeStale(docId: string): Promise<void> {
     const stale = await this.jsonMeta<string[]>(META.stale(docId), [])
     while (stale.length > 0) {
-      await this.transfer(() => this.remote.remove(stale[0]!))
+      await this.transfer(() => this.remote.remove(stale[0]!, this.signal))
       stale.shift()
       await this.local.setMeta(META.stale(docId), JSON.stringify(stale))
     }
@@ -237,7 +244,7 @@ export class SyncEngine {
   private async pushBlobs(): Promise<void> {
     for (const name of await this.local.unsyncedBlobNames()) {
       const bytes = await this.local.readBlob(name)
-      await this.transfer(() => this.remote.upload(`blobs/${name}`, bytes))
+      await this.transfer(() => this.remote.upload(`blobs/${name}`, bytes, this.signal))
       await this.local.markBlobSynced(name)
     }
   }
@@ -259,7 +266,7 @@ export class SyncEngine {
     const now = Date.now()
     if (last && last.content === content && now - last.at < DAY_MS) return
     const record = { ...(JSON.parse(content) as object), lastSeen: now }
-    await this.transfer(() => this.remote.upload(`devices/${this.deviceId}.json`, new TextEncoder().encode(JSON.stringify(record))))
+    await this.transfer(() => this.remote.upload(`devices/${this.deviceId}.json`, new TextEncoder().encode(JSON.stringify(record)), this.signal))
     await this.local.setMeta(META.device, JSON.stringify({ content, at: now }))
   }
 
@@ -333,7 +340,7 @@ export class SyncEngine {
 
   private async pull(counts: Counts, pushedAt: Map<string, VersionVector>): Promise<void> {
     const cursor = (await this.local.getMeta(META.cursor)) ?? null
-    const page = await this.transfer(() => this.remote.delta(cursor))
+    const page = await this.transfer(() => this.remote.delta(cursor, this.signal))
     const states = new Map<string, PullState>()
     const ownDeleted = new Set<string>()
     const ownPresent = new Set<string>()
@@ -354,7 +361,7 @@ export class SyncEngine {
       }
       let bytes: Uint8Array
       try {
-        bytes = await this.transfer(() => this.remote.download(item.path))
+        bytes = await this.transfer(() => this.remote.download(item.path, this.signal))
       } catch (err) {
         // Compacted away since the listing; the snapshot that replaced it is in this delta too.
         if ((err as { status?: unknown }).status === 404) continue

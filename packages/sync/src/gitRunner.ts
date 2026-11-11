@@ -6,6 +6,8 @@ export interface GitResult {
   stdout: Uint8Array
   stderr: string
   timedOut?: boolean
+  /** The caller's signal aborted and the child was killed: no result, and nothing left running. */
+  aborted?: boolean
 }
 
 export interface GitRunOptions {
@@ -13,6 +15,8 @@ export interface GitRunOptions {
   env?: Record<string, string>
   input?: Uint8Array
   timeoutMs?: number
+  /** The running sync's signal: the child is killed when it aborts, as it is after the timeout. */
+  signal?: AbortSignal
 }
 
 export type GitRunner = (args: string[], opts?: GitRunOptions) => Promise<GitResult>
@@ -24,13 +28,35 @@ const BASE_SSH_COMMAND = 'ssh -o BatchMode=yes'
 /** Only what sshCommand builds (INV-PQ-6): git hands GIT_SSH_COMMAND to /bin/sh. */
 export const SAFE_SSH_COMMAND = /^ssh -o BatchMode=yes( -o KexAlgorithms=\^?[a-z0-9@.,-]+)?$/
 
+/**
+ * The protocols Slate's git may speak. `ext::` and the other helper transports run a program of the
+ * remote URL's choosing; this says so to git itself, so a remote that slipped past the URL
+ * allow-list (`isAllowedRemote`, review C3) still reaches no helper, whatever the user's git config
+ * allows. `file` is added only for a local remote, which the tests and the e2e sync against.
+ */
+export const ALLOWED_PROTOCOLS = 'https:ssh'
+const LOCAL_PROTOCOLS = `${ALLOWED_PROTOCOLS}:file`
+
 /** Git must never wait on a terminal or an SSH passphrase: a sync runs with nobody watching. */
 export const PROMPT_FREE_ENV: Record<string, string> = {
   GIT_TERMINAL_PROMPT: '0',
   GIT_SSH_COMMAND: BASE_SSH_COMMAND,
   GCM_INTERACTIVE: 'never',
   GIT_ASKPASS: '',
-  SSH_ASKPASS: ''
+  SSH_ASKPASS: '',
+  GIT_ALLOW_PROTOCOL: ALLOWED_PROTOCOLS
+}
+
+/** A remote on this machine: a `file://` URL or a path, never a helper (`ext::`) or an scp-style host. */
+export function isLocalRemote(remoteUrl: string): boolean {
+  if (/^file:\/\//i.test(remoteUrl)) return true
+  if (/^[a-z][a-z0-9+.-]*:/i.test(remoteUrl)) return false
+  return remoteUrl.startsWith('/') || remoteUrl.startsWith('./') || remoteUrl.startsWith('../') || /^[A-Za-z]:[\\/]/.test(remoteUrl)
+}
+
+/** The protocol allow-list for one remote, as git's environment: for every command that may reach it. */
+export function protocolEnv(remoteUrl: string): Record<string, string> {
+  return { GIT_ALLOW_PROTOCOL: isLocalRemote(remoteUrl) ? LOCAL_PROTOCOLS : ALLOWED_PROTOCOLS }
 }
 
 export interface NodeGitRunnerOptions {
@@ -58,19 +84,31 @@ export function nodeGitRunner(gitPath = 'git', runnerOpts: NodeGitRunnerOptions 
       const out: Buffer[] = []
       let stderr = ''
       let timedOut = false
+      let aborted = false
       const timer = setTimeout(() => {
         timedOut = true
         child.kill('SIGKILL')
       }, opts.timeoutMs ?? LOCAL_TIMEOUT_MS)
+      // A stopped sync leaves no git child behind, exactly as the timeout does not.
+      const onAbort = () => {
+        aborted = true
+        child.kill('SIGKILL')
+      }
+      if (opts.signal?.aborted === true) onAbort()
+      else opts.signal?.addEventListener('abort', onAbort, { once: true })
+      const finished = () => {
+        clearTimeout(timer)
+        opts.signal?.removeEventListener('abort', onAbort)
+      }
       child.stdout.on('data', (b: Buffer) => out.push(b))
       child.stderr.on('data', (b: Buffer) => (stderr += b.toString()))
       child.on('error', (err) => {
-        clearTimeout(timer)
+        finished()
         reject(err)
       })
       child.on('close', (code) => {
-        clearTimeout(timer)
-        resolve({ code: timedOut ? -1 : (code ?? -1), stdout: new Uint8Array(Buffer.concat(out)), stderr, timedOut })
+        finished()
+        resolve({ code: timedOut || aborted ? -1 : (code ?? -1), stdout: new Uint8Array(Buffer.concat(out)), stderr, timedOut, aborted })
       })
       child.stdin.end(opts.input ? Buffer.from(opts.input) : undefined)
     })
