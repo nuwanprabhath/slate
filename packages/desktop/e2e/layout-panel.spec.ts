@@ -20,13 +20,13 @@ async function drag(page: Page, testId: string, dx: number) {
 
 test('the activity bar button hides and shows the library panel', async ({ page }) => {
   await expect(page.getByTestId('activity-bar')).toBeVisible()
-  await expect(page.getByTestId('activity-library')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('activity-library.notebooks')).toHaveAttribute('aria-pressed', 'true')
   const before = await width(page, 'canvas')
-  await page.getByTestId('activity-library').click()
+  await page.getByTestId('activity-library.notebooks').click()
   await expect(page.getByTestId('library-panel')).toHaveCount(0)
-  await expect(page.getByTestId('activity-library')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('activity-library.notebooks')).toHaveAttribute('aria-pressed', 'false')
   expect(await width(page, 'canvas')).toBeGreaterThan(before + 200)
-  await page.getByTestId('activity-library').click()
+  await page.getByTestId('activity-library.notebooks').click()
   await expect(page.getByTestId('library-panel')).toHaveCount(1)
 })
 
@@ -89,13 +89,13 @@ test('hidden panel and column widths survive a relaunch', async () => {
   const first = await launchApp(userData)
   const auto = await width(first.page, 'sections-column')
   await drag(first.page, 'splitter-sections', 60)
-  await first.page.getByTestId('activity-library').click()
+  await first.page.getByTestId('activity-library.notebooks').click()
   await first.app.close()
 
   const second = await launchApp(userData)
   await expect(second.page.getByTestId('activity-bar')).toBeVisible()
   await expect(second.page.getByTestId('library-panel')).toHaveCount(0)
-  await second.page.getByTestId('activity-library').click()
+  await second.page.getByTestId('activity-library.notebooks').click()
   expect(Math.abs((await width(second.page, 'sections-column')) - (auto + 60))).toBeLessThanOrEqual(4)
   await second.app.close()
 })

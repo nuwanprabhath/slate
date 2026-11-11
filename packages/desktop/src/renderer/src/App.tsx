@@ -6,6 +6,7 @@ import { ActivityBar } from './activity/ActivityBar'
 import { editorSettings } from './editorSettings'
 import { followSettings } from './settingsFeed'
 import { toolsFromViews } from './activity/tools'
+import { LIBRARY_VIEW_ID } from './plugins/ids'
 import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
 import { clampPane, clampWidth, loadLayout, loadLibraryBox, paneWidth, saveLayout, saveLibraryBox, scaleExpanded, type Layout } from './layout'
@@ -292,7 +293,7 @@ function Workspace({ library, onShowImport, banners }: { library: Library; onSho
   // Remembered across restarts, so an app that starts in the Search view already knows the width.
   const libraryBox = useRef(loadLibraryBox())
   useLayoutEffect(() => {
-    if (!layout.panelOpen || layout.activeTool !== 'library') return
+    if (!layout.panelOpen || layout.activeTool !== LIBRARY_VIEW_ID) return
     const aside = document.querySelector<HTMLElement>('[data-testid="library-panel"]')
     if (!aside) return
     const measure = () => {
@@ -391,7 +392,7 @@ function Workspace({ library, onShowImport, banners }: { library: Library; onSho
     </aside>
   )
   const showView = useCallback((id: string) => setLayout((l) => ({ ...l, activeTool: id, panelOpen: true })), [])
-  const tools = toolsFromViews(usePlugins({ library, notebookId: entry.id, setSelection, libraryPanel }, showView))
+  const tools = toolsFromViews(usePlugins({ library, notebookId: entry.id, pageId: page?.pageId ?? null, setSelection, libraryPanel }, showView))
   const activeTool = tools.find((t) => t.id === layout.activeTool) ?? tools[0]!
 
   return (
@@ -400,7 +401,7 @@ function Workspace({ library, onShowImport, banners }: { library: Library; onSho
       {banners}
       <div className="app">
         <ActivityBar tools={tools} activeId={activeTool.id} panelOpen={layout.panelOpen} onSelect={selectTool} />
-        {layout.panelOpen && (activeTool.id === 'library' ? activeTool.panel() : sidePane(activeTool.panel()))}
+        {layout.panelOpen && (activeTool.id === LIBRARY_VIEW_ID ? activeTool.panel() : sidePane(activeTool.panel()))}
         <main className="app-main">
           <UpdateBanner />
           <Toolbar />

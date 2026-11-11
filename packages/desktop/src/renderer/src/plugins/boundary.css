@@ -1,0 +1,4 @@
+/* The fallback a plugin's panel is replaced by when its render throws (boundary.tsx). */
+.plugin-error { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; padding: 16px 12px; background: var(--sidebar-bg); color: var(--text); font-size: 13px; }
+.plugin-error-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.plugin-error-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
