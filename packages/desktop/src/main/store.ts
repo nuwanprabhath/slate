@@ -300,8 +300,9 @@ export class DocStore {
   append(docId: string, update: Uint8Array, origin: 'local' | 'remote' = 'local'): void {
     this.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
     if (this.options.compact === false) return
-    const seeded = this.rowCounts.get(docId) ?? ((this.prepare('SELECT COUNT(*) AS n FROM updates WHERE doc_id = ?').get(docId) as { n: number }).n - 1)
-    const n = seeded + 1
+    const counted = this.rowCounts.get(docId)
+    // The seeding count includes the row just inserted; after that the counter is kept, not read back.
+    const n = counted === undefined ? (this.prepare('SELECT COUNT(*) AS n FROM updates WHERE doc_id = ?').get(docId) as { n: number }).n : counted + 1
     this.rowCounts.set(docId, n)
     if (n < COMPACT_THRESHOLD) return
     clearTimeout(this.compactTimers.get(docId))
