@@ -3,14 +3,16 @@
 //   (default)  development mode: default provider, no FIPS claim
 //   --asan     the same under AddressSanitizer + UndefinedBehaviorSanitizer
 //   --fips     through the FIPS provider in fips/<host>, with the config fipsConfig.ts writes
+//   --report <file>  also write {kat:{target,checks:[{name,status}]}} from the program's PASS/FAIL lines, the
+//                    evidence that each check("…") name ran here (scripts/traceability.mjs --verify-run, F9)
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { fipsModuleFile, fipsOutDir, hostTarget, opensslPrefix, PACKAGE_DIR, writePinHeader } from './lib.mjs'
 
-const { values: args } = parseArgs({ options: { asan: { type: 'boolean', default: false }, fips: { type: 'boolean', default: false } } })
+const { values: args } = parseArgs({ options: { asan: { type: 'boolean', default: false }, fips: { type: 'boolean', default: false }, report: { type: 'string' } } })
 const target = hostTarget()
 const prefix = opensslPrefix(target)
 if (!existsSync(join(prefix, 'lib', 'libcrypto.a'))) {
@@ -45,8 +47,30 @@ if (args.fips) {
   writeFileSync(config, fipsConfigText(modulesDir), { mode: 0o600 })
   runArgs.push(config, modulesDir)
 }
+const env = { ...process.env, ASAN_OPTIONS: 'detect_leaks=0', UBSAN_OPTIONS: 'print_stacktrace=1' }
 try {
-  execFileSync(bin, runArgs, { stdio: 'inherit', env: { ...process.env, ASAN_OPTIONS: 'detect_leaks=0', UBSAN_OPTIONS: 'print_stacktrace=1' } })
+  if (!args.report) execFileSync(bin, runArgs, { stdio: 'inherit', env })
+  else {
+    // The program's own output still goes to the log; the report is parsed from it, so it cannot claim a
+    // check the program did not print.
+    let out = ''
+    try {
+      out = execFileSync(bin, runArgs, { encoding: 'utf8', env, stdio: ['inherit', 'pipe', 'inherit'] })
+    } catch (e) {
+      out = e.stdout ?? ''
+      process.stdout.write(out)
+      writeReport(out)
+      throw e
+    }
+    process.stdout.write(out)
+    writeReport(out)
+  }
 } finally {
   if (tmp) rmSync(tmp, { recursive: true, force: true })
+}
+
+function writeReport(out) {
+  mkdirSync(dirname(args.report), { recursive: true })
+  const checks = [...out.matchAll(/^(PASS|FAIL) (.+)$/gm)].map((m) => ({ name: m[2].replace(/ got [0-9a-f]*$/, ''), status: m[1] === 'PASS' ? 'passed' : 'failed' }))
+  writeFileSync(args.report, `${JSON.stringify({ kat: { target, fips: args.fips, checks } }, null, 2)}\n`)
 }

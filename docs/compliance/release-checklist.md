@@ -34,6 +34,20 @@ before you tag `v0.2.0`.
   check cannot publish. Before 0.7.0 the release ran only typecheck plus the unit and main-process tests, which is
   how v0.6.7 was published from a commit whose Ubuntu e2e job had failed (review F4) — the "Linux CI is green" tick
   above is no longer the only thing standing between a failing test and an immutable release.
+- [x] **The traced tests ran and passed on the tagged commit** (0.7.0). `verify.yml`'s `evidence` job downloads
+  every runner's JSON report from this run and runs `node scripts/traceability.mjs --verify-run`, which fails
+  unless each traced test id has a *passing* result on this commit; `release.yml` attaches its output to the
+  GitHub release as `traceability-evidence.json`. Everything in that output's `MANUAL` table is one of the
+  steps below, and no MANUAL entry counts as a test that ran (review F9).
+- [ ] **The packaged app passes its own e2e run**: `npm run e2e:packaged` against the built package (no CI job
+  runs `packages/desktop/e2e-packaged/`, so T-POST-13 has no result in the evidence file and appears under
+  MANUAL). Run it on the release candidate before tagging.
+- [ ] **The compliance documents validate** on the released commit: `node scripts/validate-oscal.mjs` (also
+  `.github/workflows/compliance.yml`, which runs only when the compliance files change, so a release that
+  touched none of them has no run of its own). This covers `C10-oscal-validation` in the MANUAL table.
+- [ ] **The open lab questions are still open**: L-1 and L-2 (`docs/compliance/decisions.md`) have no
+  accredited-laboratory answer yet, so F-FIPS-03 and F-FIPS-10 rest on their tests plus these questions. Confirm
+  nothing shipped this release claims a lab has settled them. This covers `L-1` and `L-2` in the MANUAL table.
 - [ ] **Versions match.** The root and `packages/desktop` `package.json` both say 0.2.0, and CHANGELOG's
   `## [0.2.0]` section is dated (`release.yml` checks the tag against both versions).
 - [ ] **Read the README's "Upgrading to 0.2.0"** once more: it is the user-facing warning about 0.1.x devices.

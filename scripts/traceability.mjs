@@ -7,8 +7,17 @@
 //   node scripts/traceability.mjs           write docs/compliance/traceability.yaml
 //   node scripts/traceability.mjs --check   fail (exit 1) when a finding has no test, a §6 test id is in no
 //                                           title, or the committed file is not what the titles give
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+//   node scripts/traceability.mjs --verify-run <report...> [--out <file>]
+//                                           fail (exit 1) unless every traced test id PASSED in the runners'
+//                                           machine-readable reports of this commit (review F9: --check is
+//                                           static, so a skipped or never-run test still looked traced).
+//                                           Evidence no CI job runs (the keychain specs, the lab questions,
+//                                           a validator run by another workflow) is printed in its own MANUAL
+//                                           table with the release-checklist step that covers it, and never
+//                                           counts as a passing test.
+import { execFileSync } from 'node:child_process'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tseslint } from '../tools/lint/index.mjs'
 
@@ -344,6 +353,164 @@ export function build(filesTitles, audit, exists = () => false, poam = '') {
   return { findings, rules, aliases: alias, mrows, required, problems: [...new Set(problems)] }
 }
 
+/**
+ * Evidence that no CI job runs, and the release-checklist step (docs/compliance/release-checklist.md) that
+ * covers it. A test id whose every evidence file matches one of these is MANUAL: --verify-run lists it apart
+ * and never treats it as a test that passed on this commit.
+ */
+export const MANUAL_FILES = [
+  [/\.keychain\.ts$/, 'release-checklist: "C8 criterion 3 settled" (`npm run e2e:keychain` on the maintainer\'s Mac)'],
+  [/^packages\/desktop\/e2e-packaged\//, 'release-checklist: "The packaged app passes its own e2e run" (`npm run e2e:packaged` on a built package)'],
+  [/^scripts\//, 'release-checklist: "The compliance documents validate" (`node scripts/validate-oscal.mjs`, .github/workflows/compliance.yml)'],
+]
+
+/** The lab questions a finding waits on (SEED `lab`), and the release-checklist step that carries each. */
+export const LAB_STEPS = {
+  'L-1': 'release-checklist: "The open lab questions are still open" (L-1, docs/compliance/decisions.md)',
+  'L-2': 'release-checklist: "The open lab questions are still open" (L-2, docs/compliance/decisions.md)',
+}
+
+/** The MANUAL step covering evidence in `files`, or null when a CI job can run it. */
+export function manualStep(files) {
+  if (files.length === 0) return null
+  for (const [re, step] of MANUAL_FILES) if (files.every((f) => re.test(f))) return step
+  return null
+}
+
+/** A repo-relative posix path for a path a report names, resolved against `base` when it is relative. */
+function reportFile(file, base, root) {
+  const abs = isAbsolute(file) ? file : resolve(base, file)
+  return relative(root, abs).split('\\').join('/')
+}
+
+/**
+ * [file, titles] for the tests that PASSED in one report. Vitest's JSON reporter, Playwright's JSON reporter
+ * and the native KAT program's report (scripts/kat.mjs --report) each say it differently; a skipped, todo,
+ * failed or flaky-then-failed result contributes no title, so it is no evidence.
+ */
+export function reportTitles(report, root = ROOT) {
+  const byFile = new Map()
+  const add = (file, title) => {
+    if (title === null || title === undefined || title === '') return
+    if (!byFile.has(file)) byFile.set(file, [])
+    byFile.get(file).push(title)
+  }
+  if (Array.isArray(report.testResults)) {
+    // Vitest (and Jest's) JSON reporter: absolute file, one assertionResult per test.
+    for (const f of report.testResults) {
+      const file = reportFile(f.name ?? '', root, root)
+      for (const a of f.assertionResults ?? []) {
+        if (a.status !== 'passed') continue
+        add(file, a.title)
+        for (const t of a.ancestorTitles ?? []) add(file, t)
+      }
+    }
+  } else if (Array.isArray(report.suites)) {
+    // Playwright's JSON reporter: nested suites, each spec a title with one result per retry.
+    const base = report.config?.rootDir ?? root
+    const walk = (suite, ancestors) => {
+      const file = suite.file ? reportFile(suite.file, base, root) : null
+      // A top-level suite is titled by its file; that is a path, not a test title.
+      const titlesHere = suite.title && suite.title !== suite.file ? [...ancestors, suite.title] : ancestors
+      for (const spec of suite.specs ?? []) {
+        const specFile = spec.file ? reportFile(spec.file, base, root) : file
+        const passed = (spec.tests ?? []).some((t) => (t.results ?? []).some((r) => r.status === 'passed'))
+        if (!passed || specFile === null) continue
+        add(specFile, spec.title)
+        for (const t of titlesHere) add(specFile, t)
+      }
+      for (const child of suite.suites ?? []) walk(child, titlesHere)
+    }
+    for (const s of report.suites) walk(s, [])
+  } else if (Array.isArray(report.kat?.checks)) {
+    // packages/native/scripts/kat.mjs --report: the check("…") names of test/kat.c and how each ended.
+    for (const c of report.kat.checks) if (c.status === 'passed') add('packages/native/test/kat.c', c.name)
+  } else {
+    throw new Error('traceability: not a Vitest, Playwright or KAT JSON report')
+  }
+  return [...byFile]
+}
+
+/**
+ * Review F9: every traced test id must have PASSED somewhere in `runEvidence` (the union of this commit's
+ * reports), with the ids whose only evidence runs outside CI in their own MANUAL table. `staticEvidence` is
+ * what --check sees, so an id nothing claims at all is already a --check failure, not this one's.
+ */
+export function verifyRun(matrix, staticEvidence, runEvidence) {
+  const problems = []
+  const passed = []
+  const manual = []
+  const seen = new Set()
+  const owned = [
+    ...matrix.findings.flatMap((e) => e.tests.map(([t]) => [e.id, t])),
+    ...matrix.rules.flatMap((e) => e.tests.map(([t]) => [e.id, t])),
+    ...matrix.mrows.flatMap((e) => e.tests.map(([t]) => [e.id, t])),
+    ...matrix.required.map(([t]) => ['audit §6', t]),
+  ]
+  for (const [owner, id] of owned) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    const evidenceFiles = staticEvidence.get(id) ?? []
+    const step = manualStep(evidenceFiles)
+    if (step !== null) {
+      manual.push({ id, owner, status: 'manual', files: evidenceFiles, step })
+      continue
+    }
+    const ran = runEvidence.get(id) ?? []
+    if (ran.length === 0) problems.push(`${owner}: ${id} did not pass in this run's reports (traced to ${evidenceFiles.join(', ') || 'nothing'})`)
+    else passed.push({ id, owner, status: 'passed', files: ran })
+  }
+  for (const e of matrix.findings) {
+    for (const l of e.lab ?? []) {
+      const step = LAB_STEPS[l]
+      if (step === undefined) problems.push(`${e.id}: lab item ${l} has no release-checklist step; add one to LAB_STEPS`)
+      else if (!manual.some((m) => m.id === l)) manual.push({ id: l, owner: e.id, status: 'manual', files: [], step })
+    }
+  }
+  return { passed, manual, problems: [...new Set(problems)] }
+}
+
+/** `commit` and `job` for the evidence file: GitHub's if this is a run, otherwise this checkout's HEAD. */
+export function runContext(env = process.env, root = ROOT) {
+  let commit = env.GITHUB_SHA ?? null
+  if (commit === null) {
+    try {
+      commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+    } catch {
+      commit = 'unknown'
+    }
+  }
+  return {
+    commit,
+    job: env.GITHUB_JOB ?? 'local',
+    run: env.GITHUB_RUN_ID ?? null,
+    workflow: env.GITHUB_WORKFLOW ?? null,
+    repository: env.GITHUB_REPOSITORY ?? null,
+  }
+}
+
+/** The evidence attached to the release (traceability-evidence.json): commit, job, id, status, for each id. */
+export function evidenceDocument(result, context) {
+  return {
+    ...context,
+    generated: new Date().toISOString(),
+    results: [...result.passed, ...result.manual]
+      .map(({ id, owner, status, files, step }) => ({ id, owner, status, files, ...(step === undefined ? {} : { step }) }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  }
+}
+
+/** The two tables --verify-run prints: what ran and passed, and what a person has to do instead. */
+export function evidenceReport(result) {
+  const rows = (xs, columns) => xs.map((r) => `  ${columns(r)}`).join('\n')
+  const out = [`traceability: ${result.passed.length} test ids passed in this run`]
+  out.push(rows(result.passed, (r) => `PASSED  ${r.id.padEnd(22)} ${r.owner.padEnd(10)} ${r.files.join(', ')}`))
+  out.push(`MANUAL (${result.manual.length}): not evidence from this run; a person runs each before the release`)
+  out.push(rows(result.manual, (r) => `MANUAL  ${r.id.padEnd(22)} ${r.owner.padEnd(10)} ${r.step}`))
+  return `${out.filter((l) => l !== '').join('\n')}\n`
+}
+
+
 const list = (xs) => `[${xs.join(', ')}]`
 
 export function toYaml(m) {
@@ -376,7 +543,10 @@ export function toYaml(m) {
 }
 
 function main() {
-  const check = process.argv.includes('--check')
+  const argv = process.argv.slice(2)
+  const check = argv.includes('--check')
+  const verifyAt = argv.indexOf('--verify-run')
+  const outAt = argv.indexOf('--out')
   const filesTitles = testFiles().map((f) => [f, titles(readFileSync(join(ROOT, f), 'utf8'), f)])
   const audit = readFileSync(join(ROOT, AUDIT), 'utf8')
   const exists = (p) => {
@@ -388,6 +558,27 @@ function main() {
     }
   }
   const m = build(filesTitles, audit, exists, readFileSync(join(ROOT, POAM), 'utf8'))
+  if (verifyAt >= 0) {
+    const reports = argv.slice(verifyAt + 1).filter((a) => !a.startsWith('--') && argv[outAt + 1] !== a)
+    if (reports.length === 0) {
+      process.stderr.write('traceability: --verify-run needs at least one report file\n')
+      process.exit(1)
+    }
+    const ran = []
+    for (const file of reports) {
+      if (!existsSync(file)) {
+        process.stderr.write(`traceability: no such report: ${file}\n`)
+        process.exit(1)
+      }
+      ran.push(...reportTitles(JSON.parse(readFileSync(file, 'utf8'))))
+    }
+    const result = verifyRun(m, evidence(filesTitles, exists), evidence(ran))
+    process.stdout.write(evidenceReport(result))
+    if (outAt >= 0) writeFileSync(argv[outAt + 1], `${JSON.stringify(evidenceDocument(result, runContext()), null, 2)}\n`)
+    for (const p of [...m.problems, ...result.problems]) process.stderr.write(`traceability: ${p}\n`)
+    if (m.problems.length + result.problems.length > 0) process.exit(1)
+    return
+  }
   const yaml = toYaml(m)
   const problems = [...m.problems]
   if (check) {
