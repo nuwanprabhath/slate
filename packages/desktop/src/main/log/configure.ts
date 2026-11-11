@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '../../shared/ipc'
 import type { DiagnosticsStatus, RendererErrorReport, Settings } from '../../shared/api'
+import { isRendererErrorReport, refuse } from '../../shared/ipcValidators'
 import { log, securityLog } from './logger'
 import { logPqState, type PqDiagnostics } from './pqState'
 
@@ -68,5 +69,8 @@ export function registerDiagnosticsIpc(ipc: IpcRegistrar, pqState: () => Promise
     const file = status().file
     try { statSync(file); revealInFolder(file) } catch { void openLocalPath(app.getPath('userData')) }
   })
-  ipc.handle(CH.diagnosticsRendererError, (_e, report: RendererErrorReport) => rendererError(report))
+  ipc.handle(CH.diagnosticsRendererError, (_e, report: unknown) => {
+    if (!isRendererErrorReport(report)) refuse(CH.diagnosticsRendererError)
+    rendererError(report)
+  })
 }

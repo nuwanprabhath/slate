@@ -6,6 +6,7 @@ import {
   isDocId,
   isDocPrefix,
   isGitSettings,
+  isRendererErrorReport,
   isId,
   isMenuPath,
   isObject,
@@ -153,5 +154,32 @@ describe('isSyncConfig', () => {
     for (const bad of [null, 'git', { provider: 'dropbox' }, { provider: undefined }, { provider: 'git', git: { ...git, auth: 'none' } }, { provider: 'git', git, token: 't'.repeat(501) }, { provider: 'git', token: null }]) {
       expect(isSyncConfig(bad), JSON.stringify(bad) ?? 'undefined').toBe(false)
     }
+  })
+})
+
+describe('isRendererErrorReport', () => {
+  const good = { kind: 'error', name: 'TypeError', frames: ['at f (app://slate/index.js:1:1)'] }
+
+  it('takes the two kinds with a name and stack frames, and an empty frame list', () => {
+    expect(isRendererErrorReport(good)).toBe(true)
+    expect(isRendererErrorReport({ ...good, kind: 'unhandledrejection' })).toBe(true)
+    expect(isRendererErrorReport({ ...good, frames: [] })).toBe(true)
+  })
+
+  it('refuses a wrong type, an unknown kind, a missing or oversized field and extra keys', () => {
+    const bad: unknown[] = [
+      null,
+      'error',
+      [],
+      { ...good, kind: 'warning' },
+      { ...good, name: 5 },
+      { ...good, frames: 'at f' },
+      { ...good, frames: [5] },
+      { kind: 'error', name: 'TypeError' },
+      { ...good, name: 'n'.repeat(201) },
+      { ...good, frames: Array.from({ length: 101 }, () => 'at f') },
+      { ...good, extra: 1 },
+    ]
+    for (const value of bad) expect(isRendererErrorReport(value), JSON.stringify(value) ?? 'undefined').toBe(false)
   })
 })
