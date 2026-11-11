@@ -11,7 +11,11 @@ import { nodeGitRunner } from '../src/gitRunner'
 import { expectConverged, simulate, type Drives } from './simulation'
 
 describe('three-device simulation', () => {
-  it('converges over git clones of one bare repo', { timeout: 120_000 }, async () => {
+  // The whole three-device simulation, but over real git clones of a bare repo rather than memory drives, so every
+  // step is git child processes. Measured over four runs at load average 23-27: 44.3, 70.3, 70.3 and 72.4 s, against
+  // 120 s, i.e. 1.7x, and it timed out. 240 s is 3.3x the measured worst case. The 70 s itself is the cost of the
+  // scenario, not of waiting: nothing in this file sleeps or polls.
+  it('converges over git clones of one bare repo', { timeout: 240_000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), 'slate-sim-'))
     try {
       const bare = join(root, 'remote.git')

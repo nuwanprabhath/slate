@@ -272,7 +272,12 @@ describe('SyncService', () => {
   })
 })
 
-describe('SyncService over git', { timeout: 30_000 }, () => {
+// Every case here drives one or two whole devices through a real git remote: each `now()` is a fetch, a commit and a
+// push in child processes. Measured over four full `npm run test:main` runs at load average 10-25, the cases cost
+// 4.8-24.6 s, and the slowest one (two key-ringed devices) varied by 2.1x between a quiet and a busy run, so the old
+// 30 s left it 1.2x and timed it out on a busy Mac. 60 s is 2.4x the measured worst case; the slowness is the shape of
+// every case in this block, not of one of them, so the budget is the block's.
+describe('SyncService over git', { timeout: 60_000 }, () => {
   let bare: string
   const gitSettings = (auth: GitAuthMode = 'system') => ({ remoteUrl: `file://${bare}`, branch: 'main', auth })
 
