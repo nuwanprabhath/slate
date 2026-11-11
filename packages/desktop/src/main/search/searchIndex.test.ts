@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { NotebookDoc, PageDoc, writeContent, type PMJSON } from '@slate/core'
 import type { SearchQuery } from '../../shared/api'
 import { COMPACT_IDLE_MS, DocStore } from '../store'
-import { SearchIndex } from './searchIndex'
+import { SEARCH_INDEX_VERSION, SearchIndex } from './searchIndex'
 
 const dirs: string[] = []
 const open: Array<{ close(): void }> = []
@@ -210,5 +210,106 @@ describe('SearchIndex', () => {
     store.setSyncMeta('search.version', new TextEncoder().encode('0'))
     expect(again.ensureBuilt()).toBe(true)
     expect(again.query(q('alpha')).total).toBe(2)
+  })
+
+  it('builds in slices that never hold the thread, and a query mid-build still sees every page', () => {
+    const store = new DocStore(tempDb())
+    const nb = NotebookDoc.create('Work')
+    const section = nb.addSection('One')
+    const PAGES = 60
+    for (let i = 0; i < PAGES; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
+    store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
+    // Nothing here waits on real time: the clock moves 5 ms per reading and slices run when pumped.
+    let clock = 0
+    const queue: Array<() => void> = []
+    const index = new SearchIndex(store, { debounceMs: 10_000, sliceMs: 8, now: () => (clock += 5), schedule: (run) => void queue.push(run) })
+    open.push(index, store)
+    const rows = () => store.searchRows(null, null).length
+    expect(index.ensureBuilt()).toBe(true)
+    // Sliced, not one long pass: the first slice stopped short and asked for another turn.
+    expect(queue.length).toBe(1)
+    expect(rows()).toBeLessThan(PAGES)
+    const spans: number[] = []
+    for (let i = 0; i < 5 && queue.length > 0; i++) {
+      const before = clock
+      queue.shift()!()
+      spans.push(clock - before)
+    }
+    expect(spans.length).toBe(5)
+    // A slice reads the clock between pages and gives the thread back well inside a keystroke.
+    expect(Math.max(...spans)).toBeLessThanOrEqual(16)
+    const built = rows()
+    expect(built).toBeGreaterThan(0)
+    expect(built).toBeLessThan(PAGES)
+    // The place it reached is on disk, so a restart carries on from it (one row per page here).
+    const docs = store.list('page:')
+    expect(new TextDecoder().decode(store.getSyncMeta('search.progress')!)).toBe(`${SEARCH_INDEX_VERSION}\n${docs[built - 1]}`)
+    // A query arriving mid-build finishes the rest first, so it sees the last page as well as the first.
+    expect(index.query(q('row 59')).total).toBe(1)
+    expect(index.query(q('row 0')).total).toBe(1)
+    expect(rows()).toBe(PAGES)
+  })
+
+  it('carries an interrupted build on from where it stopped', () => {
+    const file = tempDb()
+    const store = new DocStore(file)
+    const nb = NotebookDoc.create('Work')
+    const section = nb.addSection('One')
+    for (let i = 0; i < 24; i++) writePage(store, nb.addPage(section, `P${i}`).pageId, [{ lines: [`row ${i}`] }])
+    store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
+    const queue: Array<() => void> = []
+    const index = new SearchIndex(store, { debounceMs: 10_000, sliceMs: 0, schedule: (run) => void queue.push(run) })
+    open.push(index, store)
+    index.ensureBuilt()
+    queue.shift()!()
+    const indexed = store.searchRows(null, null).length
+    expect(indexed).toBeGreaterThan(0)
+    index.close()
+    store.close()
+    const again = new DocStore(file)
+    const resumed = new SearchIndex(again, { debounceMs: 10_000, sliceMs: 0, schedule: (run) => void queue.push(run) })
+    open.push(resumed, again)
+    const cleared = vi.spyOn(again, 'clearSearch')
+    expect(resumed.ensureBuilt()).toBe(true)
+    expect(cleared).not.toHaveBeenCalled()
+    expect(resumed.query(q('row 23')).total).toBe(1)
+    expect(resumed.query(q('row 0')).total).toBe(1)
+  })
+
+  it('refuses a pattern that backtracks exponentially instead of freezing the thread', () => {
+    const { index, store, p1 } = setup()
+    writePage(store, p1.pageId, [{ lines: [`${'a'.repeat(4999)}!`] }])
+    index.docChanged(`page:${p1.pageId}`)
+    index.query(q('alpha'))
+    const started = Date.now()
+    const r = index.query(q('(a+)+$', { regex: true }))
+    expect(Date.now() - started).toBeLessThan(300)
+    expect(r.total).toBe(0)
+    expect(r.truncated).toBe(true)
+  })
+
+  it('hands a regex at most 20,000 characters of a row and says it truncated', () => {
+    const { index, store, p1 } = setup()
+    writePage(store, p1.pageId, [{ lines: [`${'b'.repeat(20_000)}needle` ] }])
+    index.docChanged(`page:${p1.pageId}`)
+    const r = index.query(q('needle'))
+    expect(r.total).toBe(0)
+    expect(r.truncated).toBe(true)
+  })
+
+  it('stops a scan the trigram index cannot narrow once it runs out of time', () => {
+    const { file, index, store, p1 } = setup()
+    writePage(store, p1.pageId, [{ lines: Array.from({ length: 20 }, (_, i) => `ab line ${i}`) }])
+    index.docChanged(`page:${p1.pageId}`)
+    index.query(q('alpha'))
+    index.close()
+    store.close()
+    const slow = new DocStore(file)
+    let clock = 0
+    const budgeted = new SearchIndex(slow, { debounceMs: 10_000, now: () => (clock += 100) })
+    open.push(budgeted, slow)
+    const r = budgeted.query(q('ab'))
+    expect(r.truncated).toBe(true)
+    expect(r.total).toBeLessThan(20)
   })
 })
