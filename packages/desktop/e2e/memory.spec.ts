@@ -4,6 +4,11 @@
 // short-lived string is collected before the snapshot. Zeroing on every exit is vaultIpc.test.ts; no text
 // from a secret on the unlock path is vault/noSecretText.test.ts; the whole process memory, native heap
 // included, is T-ZERO-04 (memory.linux.ts, Linux CI).
+//
+// T-ZERO-10 (review C6) asks the reachability half of the same question of a recovery key main generated and
+// keeps for `saveRecoveryKey` (`Migration.pendingRecovery`, C4): after the lock's `discard()`, does any live
+// object still hold the text? Whether the dropped string survives as garbage is T-ZERO-09 (memory.linux.ts),
+// which this spec cannot see.
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -69,6 +74,43 @@ test('T-ZERO-07: after lock, the main JavaScript heap holds no MK, LK, password 
       }, { timeout: 15_000 })
       .toBe(true)
     expect(found(await heapText(app, join(snapshots, 'locked.heapsnapshot')), needles)).toEqual([])
+  } finally {
+    await app.close()
+    rmSync(snapshots, { recursive: true, force: true })
+  }
+})
+
+test('T-ZERO-10: after lock, the main JavaScript heap retains no recovery key it generated', async () => {
+  test.setTimeout(120_000)
+  const userData = mkdtempSync(join(tmpdir(), 'slate-e2e-'))
+  const snapshots = mkdtempSync(join(tmpdir(), 'slate-heap-'))
+  await writeCanaryVault(userData)
+  const { app, page } = await launchApp(userData, { ...CANARY_ENV, SLATE_TEST_EXPOSE_GC: '1', SLATE_TEST_HEAP_SNAPSHOT: '1' })
+  try {
+    const notes = await unlockWith(app, page, CANARY_PASSWORD)
+    await expect.poll(() => notes.evaluate(async () => (await window.slate.vault.status()).state), { timeout: 15_000 }).toBe('unlocked')
+
+    // Settings → Security's "new recovery key": the text is main's, not one this test chose.
+    const made = await notes.evaluate((pw) => window.slate.vault.newRecoveryKey(new TextEncoder().encode(pw)), CANARY_PASSWORD)
+    expect(made.ok, `newRecoveryKey failed: ${made.ok ? '' : made.message}`).toBe(true)
+    const text = made.ok ? made.recoveryKey : ''
+    const needles: Array<[string, string]> = [
+      ['recovery-text/grouped', text],
+      ['recovery-text/ungrouped', text.replace(/-/g, '')],
+    ]
+
+    // Control: main holds the key for `saveRecoveryKey`, so a snapshot finds it. Without this a clean result
+    // after the lock would prove only that the snapshot cannot see the text at all.
+    expect(found(await heapText(app, join(snapshots, 'recovery-retained.heapsnapshot')), needles)).not.toEqual([])
+
+    await notes.evaluate(() => window.slate.vault.lock())
+    await expect
+      .poll(async () => {
+        for (const w of app.windows()) if (await w.getByTestId('lock-screen').isVisible().catch(() => false)) return true
+        return false
+      }, { timeout: 15_000 })
+      .toBe(true)
+    expect(found(await heapText(app, join(snapshots, 'recovery-locked.heapsnapshot')), needles)).toEqual([])
   } finally {
     await app.close()
     rmSync(snapshots, { recursive: true, force: true })
