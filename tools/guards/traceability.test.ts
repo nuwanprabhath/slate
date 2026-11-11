@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { aliases, build, expand, mappingRows, OUT, PENDING_WPS, POAM, requiredIds, SEED, titles, testFiles, toYaml } from '../../scripts/traceability.mjs'
-import { exists, read } from './repo'
+import { aliases, build, evidence, evidenceDocument, evidenceReport, expand, LAB_STEPS, mappingRows, manualStep, OUT, PENDING_WPS, POAM, requiredIds, reportTitles, runContext, SEED, titles, testFiles, toYaml, verifyRun } from '../../scripts/traceability.mjs'
+import { exists, read, ROOT } from './repo'
 
 /**
  * Audit C11 criteria 1 and 2: every §6 test id is in a describe/it/test title, and the traceability matrix
@@ -100,5 +100,81 @@ describe('traceability (audit Appendix D, C11)', () => {
     ]
     const problems = build(landed, read(AUDIT), exists).problems
     for (const wp of PENDING_WPS) expect(problems).toContain(`${wp} has landed (every test it owes is found): take it off PENDING_WPS`)
+  })
+})
+
+/**
+ * Review F9: --check only matches ids to test titles, so a test that never ran still looked traced.
+ * `--verify-run` reads the runners' own reports for this commit: a traced id is evidence only where a
+ * result with that title PASSED, and evidence no CI job runs is listed apart as MANUAL.
+ */
+const CHECKLIST = 'docs/compliance/release-checklist.md'
+
+describe('traceability --verify-run (review F9: the matrix asserts that tests ran)', () => {
+  const vitestReport = (file: string, title: string, status: string) => ({
+    testResults: [{ name: `${ROOT}/${file}`, assertionResults: [{ title, ancestorTitles: ['a suite'], status }] }],
+  })
+  const playwrightReport = (file: string, title: string, status: string) => ({
+    config: { rootDir: `${ROOT}/packages/desktop` },
+    suites: [{ title: file, file, specs: [{ title, file, tests: [{ results: [{ status }] }] }] }],
+  })
+
+  it('a report is evidence only for the tests that passed in it (Vitest, Playwright and the native KAT)', () => {
+    expect(reportTitles(vitestReport('packages/core/test/x.test.ts', 'T-RUN-01 ran', 'passed'))).toEqual([
+      ['packages/core/test/x.test.ts', ['T-RUN-01 ran', 'a suite']],
+    ])
+    expect(reportTitles(vitestReport('packages/core/test/x.test.ts', 'T-RUN-01 ran', 'skipped'))).toEqual([])
+    expect(reportTitles(playwrightReport('e2e/x.spec.ts', 'T-RUN-02 ran', 'passed'))).toEqual([['packages/desktop/e2e/x.spec.ts', ['T-RUN-02 ran']]])
+    expect(reportTitles(playwrightReport('e2e/x.spec.ts', 'T-RUN-02 ran', 'skipped'))).toEqual([])
+    expect(reportTitles({ kat: { checks: [{ name: 'T-RUN-03 heap', status: 'passed' }, { name: 'T-RUN-04 heap', status: 'failed' }] } })).toEqual([
+      ['packages/native/test/kat.c', ['T-RUN-03 heap']],
+    ])
+    expect(() => reportTitles({ nothing: true })).toThrow(/not a Vitest, Playwright or KAT JSON report/)
+  })
+
+  it('a traced test that is skipped (or simply never ran) fails --verify-run although --check passes', () => {
+    const audit = read(AUDIT)
+    const real = repoTitles()
+    const m = build(real, audit, exists, read(POAM))
+    const staticEv = evidence(real, exists)
+    // Everything the suite claims statically also passed in the reports: nothing to report.
+    expect(verifyRun(m, staticEv, staticEv).problems).toEqual([])
+    // F-FIPS-09's only test is T-GCM-01: skipping it keeps the title (so --check still passes) and loses the
+    // passing result (so --verify-run fails).
+    const skipped = new Map([...staticEv].filter(([id]) => id !== 'T-GCM-01'))
+    expect(verifyRun(m, staticEv, skipped).problems).toEqual(
+      expect.arrayContaining([expect.stringContaining("T-GCM-01 did not pass in this run's reports")]),
+    )
+    // The same suite is still traced: --check's verdict does not move.
+    expect(m.problems).toEqual([])
+  })
+
+  it('evidence that no CI job runs is MANUAL, never a pass, and names a step of the release checklist', () => {
+    const checklist = read(CHECKLIST)
+    expect(manualStep(['packages/desktop/e2e/x.keychain.ts'])).toContain('C8 criterion 3')
+    expect(manualStep(['packages/desktop/e2e/x.spec.ts'])).toBe(null)
+    expect(manualStep(['packages/desktop/e2e/x.keychain.ts', 'packages/desktop/e2e/x.spec.ts'])).toBe(null)
+    const m = build(repoTitles(), read(AUDIT), exists, read(POAM))
+    const staticEv = evidence(repoTitles(), exists)
+    staticEv.set('T-GCM-01', ['packages/desktop/e2e/sealed.keychain.ts'])
+    const result = verifyRun(m, staticEv, evidence([]))
+    expect(result.manual.map((r) => r.id)).toEqual(expect.arrayContaining(['T-GCM-01', 'L-1', 'L-2']))
+    expect(result.passed.map((r) => r.id)).not.toContain('T-GCM-01')
+    expect(result.problems).not.toContain(expect.stringContaining('T-GCM-01'))
+    // Every step the tables print is a line a person can find in the checklist.
+    const steps: string[] = [...Object.values(LAB_STEPS), ...result.manual.map((r) => r.step ?? '')]
+    expect(steps.every((s) => s !== '')).toBe(true)
+    for (const step of steps) {
+      const quoted = /"([^"]+)"/.exec(step)?.[1] ?? ''
+      expect(checklist, `${step} names no step of ${CHECKLIST}`).toContain(quoted)
+    }
+    // The printed report keeps them apart, and the evidence file carries commit, id and status.
+    const text = evidenceReport(result)
+    expect(text).toContain('MANUAL')
+    expect(text).toMatch(/MANUAL {2}L-1/)
+    const doc = evidenceDocument(result, runContext({ GITHUB_SHA: 'abc123', GITHUB_JOB: 'evidence' }))
+    expect(doc.commit).toBe('abc123')
+    expect(doc.job).toBe('evidence')
+    expect(doc.results.find((r) => r.id === 'L-1')).toMatchObject({ status: 'manual' })
   })
 })

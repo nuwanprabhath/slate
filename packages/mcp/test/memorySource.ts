@@ -1,4 +1,4 @@
-import { NotebookDoc, PageDoc, writeContent } from '@slate/core'
+import { agentBoxes, NotebookDoc, PageDoc, placeBelow, writeContent } from '@slate/core'
 import type { AuditEntry, DocSource } from '../src/source'
 
 /** An in-memory DocSource with the same doc-id conventions as the desktop store. */
@@ -11,7 +11,20 @@ export function memorySource() {
   const source: DocSource = {
     notebooks: async () =>
       [...docs.keys()].filter((k) => k.startsWith('notebook:')).map((k) => ({ id: k.slice('notebook:'.length), doc: NotebookDoc.fromUpdates(docs.get(k)!) })),
-    loadPage: async (pageId) => PageDoc.fromUpdates(docs.get(`page:${pageId}`) ?? []),
+    readPage: async (pageId) => ({ boxes: agentBoxes(PageDoc.fromUpdates(docs.get(`page:${pageId}`) ?? [])) }),
+    appendBox: async (pageId, blocks) => {
+      const page = PageDoc.fromUpdates(docs.get(`page:${pageId}`) ?? [])
+      const from = page.doc.oplogVersion()
+      const { x, y } = placeBelow(page)
+      const boxId = page.addBox({ x, y, width: 480, content: blocks })
+      save(`page:${pageId}`, page.doc.export({ mode: 'update', from }))
+      return { boxId }
+    },
+    createPage: async (pageId, blocks) => {
+      const page = new PageDoc()
+      if (blocks) page.addBox({ x: 40, y: 40, width: 480, content: blocks })
+      save(`page:${pageId}`, page.doc.export({ mode: 'snapshot' }))
+    },
     save: async (docId, update) => save(docId, update),
     audit: async (entry) => {
       audits.push(entry)

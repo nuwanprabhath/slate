@@ -32,6 +32,8 @@ jobs:
       - run: npm run guards
         env:
           SLATE_BASE_REF: origin/main
+          # Review F9: the machine-readable results the evidence job checks the trace matrix against.
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/vitest-guards.json
       # Audit C11 criterion 2: every finding has a test and the committed matrix matches the test titles.
       - name: Traceability (docs/compliance/traceability.yaml)
         run: node scripts/traceability.mjs --check
@@ -40,6 +42,14 @@ jobs:
         run: node scripts/agents/check-guard-commits.mjs
         env:
           SLATE_BASE_REF: origin/main
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-reports-lint
+          # A job that failed before its runner wrote anything has nothing to upload; the evidence job
+          # then fails on the ids whose report is missing, which is the message worth reading.
+          if-no-files-found: ignore
+          path: test-reports/
 
   test-linux:
     name: Typecheck, tests and e2e (Ubuntu)
@@ -80,10 +90,16 @@ jobs:
           npm run -w @slate/native build:addon
       - run: npm run typecheck
       - run: npm test
+        env:
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/vitest-unit-linux.json
       - run: npm run test:main
+        env:
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/vitest-main-linux.json
       - name: E2E (virtual display)
         run: xvfb-run --auto-servernum npm run e2e
         env:
+          # Review F9: scripts/e2e.mjs gives each Playwright pass its own file (…-parallel-os-shared, …-perf).
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/playwright-e2e.json
           # A shared runner with no GPU: perf.spec.ts scales its budgets by this (see the spec).
           SLATE_PERF_FACTOR: 1.5
           # perf-diagnose.spec.ts prints where typing time goes on this runner.
@@ -103,6 +119,7 @@ jobs:
           test -z "$(ls /tmp/slate-core.* 2>/dev/null)"
         env:
           SLATE_E2E_SHOW: 1
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/playwright-linux.json
       # Playwright hides the app's own output, so a launch that hangs shows only timeouts. Start it
       # once by hand and print what Electron and the main process said.
       - name: App startup log
@@ -117,6 +134,14 @@ jobs:
           name: e2e-results
           path: packages/desktop/test-results/
           if-no-files-found: ignore
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-reports-linux
+          # A job that failed before its runner wrote anything has nothing to upload; the evidence job
+          # then fails on the ids whose report is missing, which is the message worth reading.
+          if-no-files-found: ignore
+          path: test-reports/
 
   test-mac:
     name: Unit tests (macOS)
@@ -138,8 +163,20 @@ jobs:
           npm run -w @slate/native build:sqlcipher
           npm run -w @slate/native build:addon
       - run: npm test
+        env:
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/vitest-unit-mac.json
       # Audit §6.1: the main-process layer runs on darwin-arm64 as well as linux-x64.
       - run: npm run test:main
+        env:
+          SLATE_TEST_REPORT: ${{ github.workspace }}/test-reports/vitest-main-mac.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-reports-mac
+          # A job that failed before its runner wrote anything has nothing to upload; the evidence job
+          # then fails on the ids whose report is missing, which is the message worth reading.
+          if-no-files-found: ignore
+          path: test-reports/
 
   native:
     # Audit C2: @slate/native per prebuild target. OpenSSL 3.5.x and the FIPS Provider 3.1.2 are
@@ -180,12 +217,14 @@ jobs:
         run: npm run -w @slate/native build:addon
       - name: Symbol-export check (criterion 1)
         run: npm run -w @slate/native check:exports
+      # --report: the PASS/FAIL lines of test/kat.c as JSON, so the evidence job can see that T-ZERO-03 and the
+      # other check("…") names ran and passed here (review F9).
       - name: Native KATs (B.1a, T-ZERO-03)
-        run: npm run -w @slate/native test:kat
+        run: npm run -w @slate/native test:kat -- --report ${{ github.workspace }}/test-reports/kat-${{ matrix.target }}.json
       - name: Native KATs under ASan/UBSan
         run: npm run -w @slate/native test:kat:asan
       - name: Native KATs through the FIPS provider
-        run: node packages/native/scripts/kat.mjs --fips
+        run: node packages/native/scripts/kat.mjs --fips --report ${{ github.workspace }}/test-reports/kat-fips-${{ matrix.target }}.json
       - name: T-KAT-01 cross-implementation vectors
         if: runner.os == 'macOS'
         run: |
@@ -195,8 +234,16 @@ jobs:
         run: npm run test:main -- src/main/native
       - name: SQLCipher in the module (T-DB-01..03), in FIPS mode
         run: |
-          npx vitest run --project native
-          npm run test:main -- src/main/db
+          SLATE_TEST_REPORT="$GITHUB_WORKSPACE/test-reports/vitest-native-${{ matrix.target }}.json" npx vitest run --project native
+          SLATE_TEST_REPORT="$GITHUB_WORKSPACE/test-reports/vitest-db-${{ matrix.target }}.json" npm run test:main -- src/main/db
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-reports-native-${{ matrix.target }}
+          # A job that failed before its runner wrote anything has nothing to upload; the evidence job
+          # then fails on the ids whose report is missing, which is the message worth reading.
+          if-no-files-found: ignore
+          path: test-reports/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-${{ matrix.target }}
@@ -205,3 +252,35 @@ jobs:
             packages/native/prebuilds/${{ matrix.target }}/slate_native.node
             packages/native/fips/${{ matrix.target }}/
             packages/native/fips-digest.json
+
+  # Review F9: the trace matrix only matched finding ids to test titles, so a test that was skipped, or that no
+  # job ran, still looked traced. This job reads the reports every job above wrote and fails unless each traced
+  # id has a PASSING result on this commit. Its output is the release's evidence file: commit, job, id, status,
+  # with the ids no CI job can run in their own MANUAL table against the release-checklist step that covers each.
+  evidence:
+    name: Traced tests ran and passed
+    needs: [lint, test-linux, test-mac, native]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      # The check parses the suite's test titles as well as the reports, so it needs the lint toolchain's
+      # TypeScript parser (tools/lint, installed by postinstall).
+      - run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: test-reports-*
+          path: test-reports
+          merge-multiple: true
+      - name: Every traced test id passed in this run
+        run: node scripts/traceability.mjs --verify-run test-reports/*.json --out traceability-evidence.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: traceability-evidence
+          if-no-files-found: error
+          path: traceability-evidence.json

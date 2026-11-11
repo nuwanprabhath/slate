@@ -8,6 +8,9 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
  * frames it, so `slate-mcp` can relay bytes between the two without parsing them. It counts
  * requests still waiting for their response, so the app can let them finish before it locks.
  */
+/** A client that never sends a newline would grow the buffer without end; 8 MiB is past any real message. */
+const MAX_LINE_BYTES = 8 * 1024 * 1024
+
 export class LineTransport implements Transport {
   onclose?: () => void
   onerror?: (error: Error) => void
@@ -16,6 +19,7 @@ export class LineTransport implements Transport {
   private readonly pending = new Set<string | number>()
   private idle: Array<() => void> = []
   private closed = false
+  private unterminated = 0
   private refusing: ((request: JSONRPCMessage) => JSONRPCMessage | null) | null = null
 
   constructor(
@@ -31,6 +35,14 @@ export class LineTransport implements Transport {
   }
 
   private readonly onData = (chunk: Buffer) => {
+    const newline = chunk.lastIndexOf(0x0a)
+    this.unterminated = newline < 0 ? this.unterminated + chunk.length : chunk.length - newline - 1
+    if (this.unterminated > MAX_LINE_BYTES) {
+      this.onerror?.(new Error('message line too long'))
+      this.input.destroy()
+      void this.close()
+      return
+    }
     this.buffer.append(chunk)
     for (;;) {
       let message: JSONRPCMessage | null

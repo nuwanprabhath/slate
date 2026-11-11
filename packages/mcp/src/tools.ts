@@ -1,17 +1,11 @@
-import {
-  agentBoxes,
-  agentPageMarkdown,
-  markdownToBlocks,
-  PageDoc,
-  placeBelow,
-  type Access,
-  type NotebookDoc,
-  type TreeItem,
-} from '@slate/core'
+import { agentMarkdown, markdownToBlocks, type Access, type NotebookDoc, type TreeItem } from '@slate/core'
 import type { AuditOutcome, DocSource, NotebookRef } from './source'
 
 /** One message for unknown and forbidden ids alike, so an agent cannot probe what exists. */
 export const NOT_PERMITTED = 'not found or not permitted'
+
+/** An audit row names what was asked for, not a whole query: a long one would bloat every row. */
+const AUDIT_TARGET_MAX = 200
 
 class NotPermitted extends Error {
   constructor(readonly outcome: AuditOutcome) {
@@ -37,10 +31,10 @@ export interface AgentNotebook {
 async function audited<T>(src: DocSource, tool: string, target: string, run: () => Promise<T>): Promise<T> {
   try {
     const result = await run()
-    await src.audit({ tool, target, outcome: 'ok' })
+    await src.audit({ tool, target: target.slice(0, AUDIT_TARGET_MAX), outcome: 'ok' })
     return result
   } catch (error) {
-    if (error instanceof NotPermitted) await src.audit({ tool, target, outcome: error.outcome })
+    if (error instanceof NotPermitted) await src.audit({ tool, target: target.slice(0, AUDIT_TARGET_MAX), outcome: error.outcome })
     throw error
   }
 }
@@ -75,7 +69,7 @@ export function listTree(src: DocSource): Promise<AgentNotebook[]> {
 export function readPage(src: DocSource, pageId: string): Promise<string> {
   return audited(src, 'read_page', pageId, async () => {
     await findPage(src, pageId, 'read')
-    return agentPageMarkdown(await src.loadPage(pageId))
+    return agentMarkdown((await src.readPage(pageId)).boxes)
   })
 }
 
@@ -96,7 +90,7 @@ export function search(src: DocSource, query: string): Promise<SearchHit[]> {
       walk(ref.doc.items())
       for (const item of pages) {
         if (!item.pageId || !ref.doc.effectiveAccess(item.id)) continue
-        for (const box of agentBoxes(await src.loadPage(item.pageId))) {
+        for (const box of (await src.readPage(item.pageId)).boxes) {
           if (box.markdown === null) continue
           const at = box.markdown.toLowerCase().indexOf(needle)
           if (at < 0) continue
@@ -112,12 +106,7 @@ export function search(src: DocSource, query: string): Promise<SearchHit[]> {
 export function appendToPage(src: DocSource, pageId: string, markdown: string): Promise<{ boxId: string }> {
   return audited(src, 'append_to_page', pageId, async () => {
     await findPage(src, pageId, 'readwrite')
-    const page = await src.loadPage(pageId)
-    const from = page.doc.oplogVersion()
-    const { x, y } = placeBelow(page)
-    const boxId = page.addBox({ x, y, width: 480, content: markdownToBlocks(markdown) })
-    await src.save(`page:${pageId}`, page.doc.export({ mode: 'update', from }))
-    return { boxId }
+    return src.appendBox(pageId, markdownToBlocks(markdown))
   })
 }
 
@@ -130,11 +119,7 @@ export function createPage(src: DocSource, notebookId: string, sectionId: string
     const from = ref.doc.doc.oplogVersion()
     const { pageId } = ref.doc.addPage(section.id, title)
     await src.save(`notebook:${notebookId}`, ref.doc.doc.export({ mode: 'update', from }))
-    const page = new PageDoc()
-    if (markdown && markdown.trim() !== '') {
-      page.addBox({ x: 40, y: 40, width: 480, content: markdownToBlocks(markdown) })
-    }
-    await src.save(`page:${pageId}`, page.doc.export({ mode: 'snapshot' }))
+    await src.createPage(pageId, markdown && markdown.trim() !== '' ? markdownToBlocks(markdown) : null)
     return { pageId }
   })
 }

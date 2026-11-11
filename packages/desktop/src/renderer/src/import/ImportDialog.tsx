@@ -115,9 +115,9 @@ export function ImportDialog({ onClose, initial = 'graph' }: { onClose: () => vo
           <BackupPicker
             pick={stage.pick}
             onStart={(ids) => {
-              const paths = stage.pick!.paths
+              const pickId = stage.pick!.pickId
               // A failed start returns to this list, not to the Graph sign-in.
-              void run(() => window.slate.onenote.startBackup(paths, ids), stage)
+              void run(() => window.slate.onenote.startBackup(pickId, ids), stage)
             }}
           />
         )}

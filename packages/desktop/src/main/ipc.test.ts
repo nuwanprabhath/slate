@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CH } from '../shared/ipc'
-import type { SearchQuery } from '../shared/api'
+import type { BackupPick, SearchQuery } from '../shared/api'
 import { MAX_UPDATE_BYTES } from '../shared/ipcValidators'
-import { isSearchQuery, registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
+import { clearBackupPick, isSearchQuery, registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
 import { registerCopyIpc, type CopyClipboard } from './copyHtml'
 import { registerThemeIpc } from './theme/ipc'
 import type { ThemeStore } from './theme/themeStore'
@@ -139,9 +142,12 @@ const malformed: Array<[channel: string, args: unknown[]]> = [
   [CH.syncOpened, [5]],
   [CH.syncOpened, ['nope']],
   [CH.syncOpened, []],
-  [CH.onenoteStartBackup, [['/tmp/a.one'], 'ids']],
-  [CH.onenoteStartBackup, [[`/${'p'.repeat(4096)}`], []]],
-  [CH.onenoteStartBackup, [['/tmp/a.one']]],
+  [CH.onenoteStartBackup, [uuid, 'ids']],
+  [CH.onenoteStartBackup, [uuid, ['i'.repeat(501)]]],
+  [CH.onenoteStartBackup, [uuid]],
+  // C2: a path, where only an id main handed out is accepted.
+  [CH.onenoteStartBackup, [['/tmp/a.one'], []]],
+  [CH.onenoteStartBackup, ['/tmp/a.one', []]],
   [CH.onenoteStart, ['id']],
   [CH.onenoteStart, [['i'.repeat(10_001)]]],
   [CH.onenoteStart, []],
@@ -190,4 +196,57 @@ describe('every invoke handler validates its arguments first (C1)', () => {
     expect(reached).toEqual(['store.append(2)', 'onAppend', 'store.list(1)', 'store.listAudit(1)', 'sync.conflicts(1)', 'sync.resolve(2)', 'importer.start(1)', 'themes.rename(2)'])
   })
 
+})
+
+describe('the backup\u2019s file paths never come from the renderer (C2)', () => {
+  const backupDir = mkdtempSync(join(tmpdir(), 'slate-pick-'))
+
+  /** The dialog answers with `backupDir` (the e2e hook), so no window opens in a unit test. */
+  function withDialog() {
+    vi.stubEnv('SLATE_E2E', '1')
+    vi.stubEnv('SLATE_E2E_BACKUP_PATH', backupDir)
+  }
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('hands the renderer an id, not the paths', async () => {
+    withDialog()
+    const { handlers } = allHandlers()
+    const pick = (await handlers.get(CH.onenotePickBackup)!({} as never)) as BackupPick
+    expect(Object.keys(pick).sort()).toEqual(['pickId', 'sections'])
+    expect(JSON.stringify(pick)).not.toContain(backupDir)
+  })
+
+  it('resolves that id to the paths the dialog chose', async () => {
+    withDialog()
+    const { handlers, reached } = allHandlers()
+    const pick = (await handlers.get(CH.onenotePickBackup)!({} as never)) as BackupPick
+    const paths = await handlers.get(CH.onenoteStartBackup)!({} as never, pick.pickId, [])
+    expect(reached).toEqual(['importer.startBackup(2)'])
+    expect(paths).toBeUndefined()
+  })
+
+  it('refuses an id main never handed out, and one from a pick the lock cleared', async () => {
+    withDialog()
+    const { handlers, reached } = allHandlers()
+    await expect(Promise.resolve().then(() => handlers.get(CH.onenoteStartBackup)!({} as never, uuid, []))).rejects.toThrow(
+      `Refused a malformed ${CH.onenoteStartBackup} request`,
+    )
+    const pick = (await handlers.get(CH.onenotePickBackup)!({} as never)) as BackupPick
+    clearBackupPick()
+    await expect(Promise.resolve().then(() => handlers.get(CH.onenoteStartBackup)!({} as never, pick.pickId, []))).rejects.toThrow(
+      `Refused a malformed ${CH.onenoteStartBackup} request`,
+    )
+    expect(reached).toEqual([])
+  })
+
+  it('keeps only the newest pick, so an earlier id names no files', async () => {
+    withDialog()
+    const { handlers, reached } = allHandlers()
+    const first = (await handlers.get(CH.onenotePickBackup)!({} as never)) as BackupPick
+    const second = (await handlers.get(CH.onenotePickBackup)!({} as never)) as BackupPick
+    expect(second.pickId).not.toBe(first.pickId)
+    await expect(Promise.resolve().then(() => handlers.get(CH.onenoteStartBackup)!({} as never, first.pickId, []))).rejects.toThrow('Refused a malformed')
+    expect(reached).toEqual([])
+  })
 })

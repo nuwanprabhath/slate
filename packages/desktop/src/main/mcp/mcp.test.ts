@@ -3,9 +3,10 @@ import { connect, createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { NotebookDoc } from '@slate/core'
+import { search } from '@slate/mcp'
+import { NotebookDoc, PageDoc, writeContent } from '@slate/core'
 import { DocStore } from '../store'
 import { storeDocSource } from './docSource'
 import { LineTransport } from './lineTransport'
@@ -234,5 +235,66 @@ describe('slate-mcp proxy (§15 N5)', () => {
 
     const r = await client.callTool({ name: 'list_tree', arguments: {} }, undefined, { timeout: 3000 })
     expect(textOf(r)).toBe(LOCKED_MESSAGE)
+  })
+})
+
+describe('MCP limits (A2)', () => {
+  it('drops a connection whose line passes 8 MiB before its newline', async () => {
+    const dir = dataDir()
+    const { store } = seededStore(dir)
+    const path = join(dir, 'mcp.sock')
+    const server = await startMcpSocketServer(path, storeDocSource(() => store))
+    cleanups.push(() => server.close(100))
+    const sock = await socketConnect(path)
+    const closed = new Promise<void>((r) => sock.once('close', () => r()))
+    // One unterminated line, written in chunks, past the cap.
+    for (let i = 0; i < 9 && !sock.destroyed; i++) sock.write('x'.repeat(1024 * 1024))
+    await closed
+    expect(sock.destroyed).toBe(true)
+  })
+
+  it('accepts eight concurrent clients and refuses a ninth', async () => {
+    const dir = dataDir()
+    const { store } = seededStore(dir)
+    const path = join(dir, 'mcp.sock')
+    const server = await startMcpSocketServer(path, storeDocSource(() => store))
+    cleanups.push(() => server.close(100))
+    const socks: Socket[] = []
+    for (let i = 0; i < 8; i++) {
+      const s = await socketConnect(path)
+      socks.push(s)
+      cleanups.push(() => s.destroy())
+      expect(textOf(await (await clientOver(s, s)).callTool({ name: 'list_tree', arguments: {} }))).toContain('Work')
+    }
+    const ninth = await socketConnect(path)
+    cleanups.push(() => ninth.destroy())
+    await new Promise<void>((r) => ninth.once('close', () => r()))
+    expect(ninth.destroyed).toBe(true)
+    // A freed slot lets the next client in.
+    socks[0]!.destroy()
+    await new Promise((r) => setTimeout(r, 50))
+    const later = await socketConnect(path)
+    cleanups.push(() => later.destroy())
+    expect(textOf(await (await clientOver(later, later)).callTool({ name: 'list_tree', arguments: {} }))).toContain('Work')
+  })
+
+  it('decodes no page again for a repeated search with no intervening write', async () => {
+    const dir = dataDir()
+    const { store, shared } = seededStore(dir)
+    const source = storeDocSource(() => store)
+    const nb = NotebookDoc.fromUpdates(store.load('notebook:nb1'))
+    const page = nb.addPage(shared as never, 'Runbook')
+    store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
+    const doc = new PageDoc()
+    const box = doc.addBox({ x: 0, y: 0, width: 300 })
+    writeContent(doc.contentMap(box)!, [{ type: 'paragraph', content: [{ type: 'text', text: 'kubectl rollout' }] }])
+    doc.doc.commit()
+    store.append(`page:${page.pageId}`, doc.doc.export({ mode: 'snapshot' }))
+
+    expect(await search(source, 'kubectl')).toHaveLength(1)
+    const loads = vi.spyOn(store, 'load')
+    expect(await search(source, 'kubectl')).toHaveLength(1)
+    expect(loads.mock.calls.filter(([id]) => id.startsWith('page:'))).toEqual([])
+    loads.mockRestore()
   })
 })

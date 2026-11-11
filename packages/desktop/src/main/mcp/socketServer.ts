@@ -11,6 +11,8 @@ export interface McpSocketServer {
 }
 
 const GRACE_MS = 5000
+/** Each client holds a decoded copy of the notes; a client that keeps connecting must not grow that without end. */
+const MAX_CLIENTS = 8
 
 /**
  * §9: the MCP tools inside the app, one server instance per connection, over the app's own
@@ -21,6 +23,7 @@ export async function startMcpSocketServer(path: string, source: DocSource): Pro
   rmSync(path, { force: true })
   const clients = new Map<Socket, LineTransport>()
   const server = createServer((socket) => {
+    if (clients.size >= MAX_CLIENTS) return void socket.destroy()
     const transport = new LineTransport(socket, socket)
     clients.set(socket, transport)
     socket.on('close', () => clients.delete(socket))

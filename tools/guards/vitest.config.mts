@@ -10,5 +10,7 @@ export default defineConfig({
     environment: 'node',
     include: ['tools/guards/**/*.test.ts', 'tools/eslint-rules/**/*.test.mjs'],
     testTimeout: 60_000,
+    // SLATE_TEST_REPORT: see vitest.config.ts at the repo root (review F9, the release's test evidence).
+    ...(process.env.SLATE_TEST_REPORT ? { reporters: ['default', ['json', { outputFile: process.env.SLATE_TEST_REPORT }]] } : {}),
   },
 })

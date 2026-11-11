@@ -1,10 +1,11 @@
+import { newId } from '@slate/core'
 import { env } from './testHooks'
 import { BrowserWindow, clipboard, dialog, type OpenDialogOptions } from 'electron'
 import type { IpcRegistrar } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
 import { CH } from '../shared/ipc'
 import type { BackupPick, SearchQuery } from '../shared/api'
-import { GIT_AUTH_MODES, IMAGE_MIMES, isAnyBytes, isBool, isBytes, isCount, isDocId, isDocPrefix, isGitSettings, isId, isOneOf, isSettingsPatch, isSyncConfig, isText, isTextList, MAX_PATH, MAX_UPDATE_BYTES, optional, refuse, RESOLVE_CHOICES } from '../shared/ipcValidators'
+import { GIT_AUTH_MODES, IMAGE_MIMES, isAnyBytes, isBool, isBytes, isCount, isDocId, isDocPrefix, isGitSettings, isId, isOneOf, isSettingsPatch, isSyncConfig, isText, isTextList, MAX_UPDATE_BYTES, optional, refuse, RESOLVE_CHOICES } from '../shared/ipcValidators'
 import { configureLogging } from './log/configure'
 import { scanBackup } from './onenote/backup'
 import { ImageTooLarge, type BlobStore } from './blobs'
@@ -20,8 +21,6 @@ const MAX_NAME = 200
 const MAX_TOKEN = 500
 const isName = (v: unknown): v is string => isText(v, MAX_NAME)
 const isToken = (v: unknown): v is string => isText(v, MAX_TOKEN)
-/** The most files or folders one import may name; the picker returns what the person chose. */
-const MAX_PICKED = 1000
 /** A OneNote section or notebook id comes from Microsoft Graph, so it is longer than one of Slate's. */
 const MAX_EXTERNAL_ID = 500
 
@@ -144,17 +143,33 @@ async function chooseBackupPaths(): Promise<string[] | null> {
   return result.canceled || result.filePaths.length === 0 ? null : result.filePaths
 }
 
+/**
+ * The one live backup pick (review C2): the paths the file dialog returned stay in main, and the
+ * renderer gets only `pickId`. A later dialog replaces it and the lock clears it, so an id names
+ * the files that person chose, for as long as those notes are open.
+ */
+let livePick: { id: string; paths: string[] } | null = null
+
+/** Called by the lock sequence: an id from before the lock reads nothing after it. */
+export function clearBackupPick(): void {
+  livePick = null
+}
+
 export function registerOneNoteIpc(ipc: IpcRegistrar, auth: AuthService, importer: () => ImportService, setClientId: (id: string) => void): void {
   ipc.handle(CH.onenotePickBackup, async (): Promise<BackupPick | null> => {
     const paths = await chooseBackupPaths()
     if (!paths) return null
-    return { paths, sections: scanBackup(paths).map(({ id, name, date, notebook }) => ({ id, name, date, notebook })) }
+    const pickId = newId()
+    livePick = { id: pickId, paths }
+    return { pickId, sections: scanBackup(paths).map(({ id, name, date, notebook }) => ({ id, name, date, notebook })) }
   })
-  // F7 residual: the paths come back from the renderer, so main re-checks their shape; which folders
-  // the person picked is still the renderer's word (noted for a later wave).
-  ipc.handle(CH.onenoteStartBackup, (_e, paths: unknown, ids: unknown) => {
-    if (!isTextList(paths, MAX_PATH, MAX_PICKED) || !isTextList(ids, MAX_EXTERNAL_ID)) refuse(CH.onenoteStartBackup)
-    return importer().startBackup(paths, ids)
+  ipc.handle(CH.onenoteStartBackup, (_e, pickId: unknown, ids: unknown) => {
+    if (!isId(pickId) || !isTextList(ids, MAX_EXTERNAL_ID)) refuse(CH.onenoteStartBackup)
+    // A well-formed id main did not hand out, or one the lock cleared: the dialog decides what main
+    // reads, so there is nothing to fall back to.
+    const pick = livePick
+    if (!pick || pick.id !== pickId) refuse(CH.onenoteStartBackup)
+    return importer().startBackup(pick.paths, ids)
   })
   ipc.handle(CH.onenoteStatus, () => auth.status())
   ipc.handle(CH.onenoteSignIn, () => auth.signIn())

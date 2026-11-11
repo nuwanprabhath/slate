@@ -32,3 +32,31 @@ export function testFiles(root?: string): string[]
 export function evidence(filesTitles: [string, string[]][], exists?: (path: string) => boolean): Map<string, string[]>
 export function build(filesTitles: [string, string[]][], audit: string, exists?: (path: string) => boolean, poam?: string): Matrix
 export function toYaml(m: Matrix): string
+
+export interface EvidenceRow {
+  id: string
+  owner: string
+  status: 'passed' | 'manual'
+  files: string[]
+  step?: string
+}
+export interface RunResult {
+  passed: EvidenceRow[]
+  manual: EvidenceRow[]
+  problems: string[]
+}
+export interface RunContext {
+  commit: string
+  job: string
+  run: string | null
+  workflow: string | null
+  repository: string | null
+}
+export const MANUAL_FILES: [RegExp, string][]
+export const LAB_STEPS: Record<string, string>
+export function manualStep(files: string[]): string | null
+export function reportTitles(report: unknown, root?: string): [string, string[]][]
+export function verifyRun(matrix: Matrix, staticEvidence: Map<string, string[]>, runEvidence: Map<string, string[]>): RunResult
+export function runContext(env?: Record<string, string | undefined>, root?: string): RunContext
+export function evidenceDocument(result: RunResult, context: RunContext): RunContext & { generated: string; results: EvidenceRow[] }
+export function evidenceReport(result: RunResult): string
