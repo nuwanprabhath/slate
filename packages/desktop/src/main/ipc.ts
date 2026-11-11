@@ -88,7 +88,7 @@ export function isSearchQuery(value: unknown): value is SearchQuery {
 
 export function registerSearchIpc(ipc: IpcRegistrar, index: () => SearchIndex): void {
   ipc.handle(CH.searchQuery, (_e, query: unknown) => {
-    if (!isSearchQuery(query)) throw new Error('Refused a malformed search query')
+    if (!isSearchQuery(query)) refuse(CH.searchQuery)
     return index().query(query)
   })
 }

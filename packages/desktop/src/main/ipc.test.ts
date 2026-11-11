@@ -38,7 +38,7 @@ describe('registerSearchIpc', () => {
     let called = false
     registerSearchIpc(ipc, () => ({ query: () => ((called = true), { pages: [], total: 0, truncated: false }) }) as unknown as SearchIndex)
     for (const bad of [null, 'zeta', { ...good, text: 5 }, { ...good, scope: { kind: 'notebook' } }, { ...good, regex: 'yes' }, { ...good, text: 'x'.repeat(10_001) }]) {
-      expect(() => handlers.get(CH.searchQuery)!({} as never, bad), JSON.stringify(bad)?.slice(0, 40)).toThrow(/search query/)
+      expect(() => handlers.get(CH.searchQuery)!({} as never, bad), JSON.stringify(bad)?.slice(0, 40)).toThrow(/Refused a malformed search:query request/)
     }
     expect(called).toBe(false)
   })
