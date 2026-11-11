@@ -30,7 +30,9 @@ import type { DeviceCode, GitAuthInfo, GitAuthMode, GitCheck, GitSettings, Setti
 import type { BlobStore } from '../blobs'
 import { SIGN_IN_SCOPES, type AuthService } from '../onenote/auth'
 import { secretFile, type SecretFile, type SecretStorage } from '../secretStorage'
+import { isAllowedBranch, isAllowedRemote, isAllowedRepoName } from '../../shared/gitRemote'
 import { readSettings, writeSettings } from '../settings'
+import { allowLocalGitRemotes } from '../testHooks'
 import { DocStore } from '../store'
 import { createPrivateRepo, ghToken, githubDeviceFlow, testConnection } from './git/auth'
 import type { KeyRing } from '../vault/keyring'
@@ -528,6 +530,9 @@ export class SyncService {
   }
 
   async testGit(git: GitSettings, token?: string): Promise<GitCheck> {
+    // The same allow-list the settings schema applies, before the URL becomes a `git` argument (C3).
+    if (!isAllowedRemote(git.remoteUrl, { allowLocal: allowLocalGitRemotes() })) return { ok: false, message: 'That is not a git remote Slate will use' }
+    if (!isAllowedBranch(git.branch)) return { ok: false, message: 'That is not a branch name git accepts' }
     let env: Record<string, string>
     try {
       env = token ? tokenEnv(token, tokenHost(git.remoteUrl)) : await this.gitAuthEnv(git)
@@ -614,6 +619,8 @@ export class SyncService {
   }
 
   async createRepo(name: string, auth: GitAuthMode, token?: string): Promise<GitCheck> {
+    // GitHub hands back a clone URL made from this name, which becomes the remote (C3).
+    if (!isAllowedRepoName(name)) return { ok: false, message: 'A repository name is letters, digits, dots, dashes and underscores' }
     let use = token
     try {
       use ??= await this.token(auth)

@@ -39,6 +39,12 @@ describe('settings schema', () => {
   it('validates a patch, keeping only good keys', () => {
     expect(sanitizePatch({ autoBullets: false, markdownShortcuts: 'on', nope: 1 })).toEqual({ autoBullets: false })
     expect(sanitizePatch({ git: { remoteUrl: 'x', branch: 'main', auth: 'magic' } })).toEqual({})
+    expect(sanitizePatch({ git: { remoteUrl: '--upload-pack=x', branch: 'main', auth: 'system' } })).toEqual({})
+    expect(sanitizePatch({ git: { remoteUrl: 'ext::sh -c id', branch: 'main', auth: 'system' } })).toEqual({})
+    expect(sanitizePatch({ git: { remoteUrl: 'https://github.com/o/r.git', branch: '--force', auth: 'system' } })).toEqual({})
+    expect(sanitizePatch({ git: { remoteUrl: 'https://github.com/o/r.git', branch: 'main', auth: 'system' } }).git).toMatchObject({ branch: 'main' })
+    expect(sanitizePatch({ git: { remoteUrl: 'file:///tmp/r.git', branch: 'main', auth: 'system' } })).toEqual({})
+    expect(sanitizePatch({ git: { remoteUrl: 'file:///tmp/r.git', branch: 'main', auth: 'system' } }, { allowLocal: true }).git).toMatchObject({ remoteUrl: 'file:///tmp/r.git' })
     expect(sanitizePatch({ syncProvider: null })).toEqual({ syncProvider: null })
   })
 

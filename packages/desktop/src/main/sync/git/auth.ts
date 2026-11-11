@@ -113,7 +113,7 @@ export async function testConnection(run: GitRunner, url: string, env: Record<st
         : transport?.kind === 'https'
           ? { GIT_TRACE_CURL: '1', GIT_TRACE_CURL_NO_DATA: '1', GIT_TRACE_REDACT: '1' }
           : {}
-    const r = await run(['ls-remote', '--heads', url], { env: { ...env, ...traceEnv }, timeoutMs: NETWORK_TIMEOUT_MS })
+    const r = await run(['ls-remote', '--heads', '--', url], { env: { ...env, ...traceEnv }, timeoutMs: NETWORK_TIMEOUT_MS })
     const seen: Pick<GitConnectionCheck, 'kex' | 'pq' | 'remote'> = {}
     if (transport) {
       const kex = transport.kind === 'ssh' ? parseSshKex(r.stderr) : parseCurlTls(r.stderr)
