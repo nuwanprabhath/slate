@@ -27,7 +27,10 @@ const alive = (pid: number) => {
   }
 }
 
-describe('the git child', () => {
+// Two cases here run real git against a bare repository in a temp folder (an `ls-remote`, and a first
+// clone with its README commit and push), which cost seconds, not milliseconds: the 5 s default left
+// the clone case 0.9x on a loaded machine. 60 s is about 10x the slowest observed case.
+describe('the git child', { timeout: 60_000 }, () => {
   it('speaks only https and ssh, and file for a local remote', () => {
     expect(PROMPT_FREE_ENV.GIT_ALLOW_PROTOCOL).toBe(ALLOWED_PROTOCOLS)
     expect(ALLOWED_PROTOCOLS).not.toMatch(/ext|file/)

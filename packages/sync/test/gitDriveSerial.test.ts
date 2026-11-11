@@ -28,7 +28,10 @@ function countingRunner(): { run: GitRunner; peak: number; commands: string[] } 
 
 const chunk = (n: number) => `docs/page_55555555-5555-4555-8555-555555555555/A/0000000${n}.chunk`
 
-describe('GitDrive on one clone', { timeout: 30_000 }, () => {
+// Both cases clone, commit and push with real git, like `gitDrive.test.ts`: 12 s for the file when it
+// has the machine to itself, so the budget is that file's 90 s rather than a tighter one that a loaded
+// machine would break.
+describe('GitDrive on one clone', { timeout: 90_000 }, () => {
   it('runs one git command at a time however many callers it has', async () => {
     const counting = countingRunner()
     const drive = new GitDrive({
