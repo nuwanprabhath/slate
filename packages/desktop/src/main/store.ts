@@ -6,6 +6,40 @@ import type { ConflictRecord } from '@slate/sync'
 import type { PqLevel, TransportObservation } from '../shared/api'
 
 const COMPACT_THRESHOLD = 500
+/** Diagnostics, pruned on open: the newest rows are the only ones anything reads. */
+const AUDIT_KEEP = 10_000
+const NOTICES_KEEP = 1_000
+
+/**
+ * The schema, as the ordered list of migrations that builds it; `PRAGMA user_version` is how many of
+ * them a database has run. To change the schema, append one function here and leave every entry above
+ * it exactly as it is: a database runs only the entries past its own version, so editing an old entry
+ * would never reach a database that already ran it. Each runs inside the constructor's one transaction.
+ */
+const MIGRATIONS: ReadonlyArray<(db: Database.Database) => void> = [
+  // 1: the schema as of v0.6.7, which carried no version. Every statement tolerates the table being
+  // there already, so a v0.6.7 database and a fresh one come out identical.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS snapshots (doc_id TEXT PRIMARY KEY, data BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, data BLOB NOT NULL);
+      CREATE INDEX IF NOT EXISTS updates_doc ON updates (doc_id, id);
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, target TEXT NOT NULL, outcome TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS import_items (id TEXT PRIMARY KEY, last_modified TEXT, status TEXT, error TEXT);
+      CREATE TABLE IF NOT EXISTS import_map (onenote_id TEXT PRIMARY KEY, slate_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS sync_seen (item_id TEXT PRIMARY KEY, etag TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS blob_synced (name TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, box_id TEXT NOT NULL, device TEXT NOT NULL, mine TEXT NOT NULL, theirs TEXT NOT NULL, merged TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, message TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS transport_observations (remote TEXT PRIMARY KEY, transport TEXT NOT NULL, kex TEXT, pq INTEGER NOT NULL, source TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(page_id UNINDEXED, section_id UNINDEXED, notebook_id UNINDEXED, box_id UNINDEXED, ord UNINDEXED, text, tokenize = 'trigram');
+    `)
+    const columns = db.prepare('PRAGMA table_info(updates)').all() as Array<{ name: string }>
+    if (!columns.some((c) => c.name === 'origin')) db.exec(`ALTER TABLE updates ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'`)
+  },
+]
 /**
  * Compaction rebuilds the whole doc on the main thread, which also routes the window's key presses,
  * so it waits for this long without an append to that doc rather than stalling a keystroke.
@@ -52,6 +86,12 @@ export class DocStore {
   /** Per doc, the highest update id the last compaction folded into the snapshot (`loadSince`). */
   private readonly compactedThrough = new Map<string, number>()
   private readonly removals = new Map<string, number>()
+  private readonly statements = new Map<string, Database.Statement>()
+  /**
+   * Per doc, how many update rows this connection believes it has: seeded by one count on the doc's
+   * first append and reset by a compaction that finished, so an edit never counts rows again.
+   */
+  private readonly rowCounts = new Map<string, number>()
 
   /** The key is used to open the connection and not kept (§15 N9). */
   constructor(
@@ -61,29 +101,53 @@ export class DocStore {
     this.db = typeof fileOrDb === 'string' ? openDatabase(fileOrDb, options.key ?? null) : fileOrDb
     this.options = { compact: options.compact }
     this.beforeCompact = options.beforeCompact ?? (() => {})
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS snapshots (doc_id TEXT PRIMARY KEY, data BLOB NOT NULL);
-      CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id TEXT NOT NULL, data BLOB NOT NULL);
-      CREATE INDEX IF NOT EXISTS updates_doc ON updates (doc_id, id);
-      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, target TEXT NOT NULL, outcome TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS import_items (id TEXT PRIMARY KEY, last_modified TEXT, status TEXT, error TEXT);
-      CREATE TABLE IF NOT EXISTS import_map (onenote_id TEXT PRIMARY KEY, slate_id TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
-      CREATE TABLE IF NOT EXISTS sync_seen (item_id TEXT PRIMARY KEY, etag TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS blob_synced (name TEXT PRIMARY KEY);
-      CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, box_id TEXT NOT NULL, device TEXT NOT NULL, mine TEXT NOT NULL, theirs TEXT NOT NULL, merged TEXT NOT NULL, at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS notices (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, message TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS transport_observations (remote TEXT PRIMARY KEY, transport TEXT NOT NULL, kex TEXT, pq INTEGER NOT NULL, source TEXT NOT NULL, at INTEGER NOT NULL);
-      CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(page_id UNINDEXED, section_id UNINDEXED, notebook_id UNINDEXED, box_id UNINDEXED, ord UNINDEXED, text, tokenize = 'trigram');
-    `)
-    const columns = this.db.prepare('PRAGMA table_info(updates)').all() as Array<{ name: string }>
-    if (!columns.some((c) => c.name === 'origin')) this.db.exec(`ALTER TABLE updates ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'`)
+    this.migrate()
+    this.prune()
+  }
+
+  /**
+   * Brings the database up to `MIGRATIONS.length` in one transaction, running only the entries it has
+   * not run yet. A v0.6.7 database reports 0 and runs migration 1, whose statements all tolerate the
+   * tables already being there, so it ends where a fresh database does.
+   */
+  private migrate(): void {
+    const from = this.db.pragma('user_version', { simple: true }) as number
+    if (from >= MIGRATIONS.length) return
+    this.db.transaction(() => {
+      for (const migration of MIGRATIONS.slice(from)) migration(this.db)
+      this.db.pragma(`user_version = ${MIGRATIONS.length}`)
+    })()
+  }
+
+  /**
+   * Both tables are diagnostics nobody reads past the recent end, and nothing else ever deletes a row.
+   * Each count comes first so that the usual open, with both tables under their cap, takes no write
+   * lock at all: several connections (the app, sync, an import) open the same file while it is in use.
+   */
+  private prune(): void {
+    if ((this.prepare('SELECT COUNT(*) AS n FROM audit').get() as { n: number }).n > AUDIT_KEEP)
+      this.prepare('DELETE FROM audit WHERE id <= (SELECT MAX(id) FROM audit) - ?').run(AUDIT_KEEP)
+    if ((this.prepare('SELECT COUNT(*) AS n FROM notices').get() as { n: number }).n > NOTICES_KEEP)
+      this.prepare('DELETE FROM notices WHERE id <= (SELECT MAX(id) FROM notices) - ?').run(NOTICES_KEEP)
+  }
+
+  /**
+   * One prepared statement per SQL text per connection. Preparing costs more than running a small
+   * statement does, and in the app every statement is also a fresh `watched` Proxy. The SQL stays a
+   * literal at the call site; the cache is keyed by it.
+   */
+  private prepare(sql: string): Database.Statement {
+    let statement = this.statements.get(sql)
+    if (!statement) {
+      statement = this.db.prepare(sql)
+      this.statements.set(sql, statement)
+    }
+    return statement
   }
 
   /** Sync bookkeeping: strings and version-vector bytes share one table. */
   getSyncMeta(key: string): Uint8Array | undefined {
-    const row = this.db.prepare('SELECT value FROM sync_meta WHERE key = ?').get(key) as { value: Buffer } | undefined
+    const row = this.prepare('SELECT value FROM sync_meta WHERE key = ?').get(key) as { value: Buffer } | undefined
     return row ? new Uint8Array(row.value) : undefined
   }
 
@@ -94,7 +158,7 @@ export class DocStore {
   }
 
   syncSeen(itemId: string, eTag: string): boolean {
-    return this.db.prepare('SELECT 1 FROM sync_seen WHERE item_id = ? AND etag = ?').get(itemId, eTag) !== undefined
+    return this.prepare('SELECT 1 FROM sync_seen WHERE item_id = ? AND etag = ?').get(itemId, eTag) !== undefined
   }
 
   markSyncSeen(itemId: string, eTag: string): void {
@@ -104,11 +168,11 @@ export class DocStore {
   }
 
   blobSynced(name: string): boolean {
-    return this.db.prepare('SELECT 1 FROM blob_synced WHERE name = ?').get(name) !== undefined
+    return this.prepare('SELECT 1 FROM blob_synced WHERE name = ?').get(name) !== undefined
   }
 
   markBlobSynced(name: string): void {
-    this.db.prepare('INSERT OR IGNORE INTO blob_synced (name) VALUES (?)').run(name)
+    this.prepare('INSERT OR IGNORE INTO blob_synced (name) VALUES (?)').run(name)
   }
 
   addConflict(c: ConflictRecord): void {
@@ -119,12 +183,12 @@ export class DocStore {
 
   listConflicts(pageId?: string): ConflictRecord[] {
     const sql = 'SELECT id, page_id AS pageId, box_id AS boxId, device, mine, theirs, merged, at FROM conflicts'
-    const rows = pageId === undefined ? this.db.prepare(`${sql} ORDER BY at`).all() : this.db.prepare(`${sql} WHERE page_id = ? ORDER BY at`).all(pageId)
+    const rows = pageId === undefined ? this.prepare(`${sql} ORDER BY at`).all() : this.prepare(`${sql} WHERE page_id = ? ORDER BY at`).all(pageId)
     return rows as ConflictRecord[]
   }
 
   removeConflict(id: string): void {
-    this.db.prepare('DELETE FROM conflicts WHERE id = ?').run(id)
+    this.prepare('DELETE FROM conflicts WHERE id = ?').run(id)
   }
 
   /** Upsert the last key exchange seen for a remote; `remote` must be host-level so no credential is stored. */
@@ -139,24 +203,24 @@ export class DocStore {
   }
 
   transportObservations(): TransportObservation[] {
-    const rows = this.db.prepare('SELECT remote, transport, kex, pq, source, at FROM transport_observations ORDER BY remote').all() as Array<
+    const rows = this.prepare('SELECT remote, transport, kex, pq, source, at FROM transport_observations ORDER BY remote').all() as Array<
       Omit<TransportObservation, 'pq'> & { pq: number }
     >
     return rows.map((r) => ({ ...r, pq: r.pq === 1 ? 'hybrid' : r.pq === 0 ? 'classical' : 'unknown' }))
   }
 
   addNotice(message: string): void {
-    this.db.prepare('INSERT INTO notices (ts, message) VALUES (?, ?)').run(Date.now(), message)
+    this.prepare('INSERT INTO notices (ts, message) VALUES (?, ?)').run(Date.now(), message)
   }
 
   /** Per update row: 'local' (this app or an agent) or 'remote' (another device, through sync). */
   origins(docId: string): string[] {
-    return (this.db.prepare('SELECT origin FROM updates WHERE doc_id = ? ORDER BY id').all(docId) as Array<{ origin: string }>).map((r) => r.origin)
+    return (this.prepare('SELECT origin FROM updates WHERE doc_id = ? ORDER BY id').all(docId) as Array<{ origin: string }>).map((r) => r.origin)
   }
 
   /** Checkpoint of a OneNote page import. */
   getImportItem(id: string): ImportRecord | undefined {
-    const row = this.db.prepare('SELECT last_modified, status, error FROM import_items WHERE id = ?').get(id) as
+    const row = this.prepare('SELECT last_modified, status, error FROM import_items WHERE id = ?').get(id) as
       | { last_modified: string; status: ImportRecord['status']; error: string | null }
       | undefined
     if (!row) return undefined
@@ -174,7 +238,7 @@ export class DocStore {
 
   /** The Slate id (notebook id or tree id) a OneNote notebook, group, section or page was imported as. */
   getMapping(onenoteId: string): string | undefined {
-    return (this.db.prepare('SELECT slate_id FROM import_map WHERE onenote_id = ?').get(onenoteId) as { slate_id: string } | undefined)?.slate_id
+    return (this.prepare('SELECT slate_id FROM import_map WHERE onenote_id = ?').get(onenoteId) as { slate_id: string } | undefined)?.slate_id
   }
 
   setMapping(onenoteId: string, slateId: string): void {
@@ -184,20 +248,20 @@ export class DocStore {
   }
 
   appendAudit(entry: { tool: string; target: string; outcome: string }): void {
-    this.db.prepare('INSERT INTO audit (ts, tool, target, outcome) VALUES (?, ?, ?, ?)').run(Date.now(), entry.tool, entry.target, entry.outcome)
+    this.prepare('INSERT INTO audit (ts, tool, target, outcome) VALUES (?, ?, ?, ?)').run(Date.now(), entry.tool, entry.target, entry.outcome)
   }
 
   listAudit(limit = 200): AuditRow[] {
-    return this.db.prepare('SELECT id, ts, tool, target, outcome FROM audit ORDER BY id DESC LIMIT ?').all(limit) as AuditRow[]
+    return this.prepare('SELECT id, ts, tool, target, outcome FROM audit ORDER BY id DESC LIMIT ?').all(limit) as AuditRow[]
   }
 
   updatesSince(id: number): Array<{ id: number; docId: string; data: Uint8Array }> {
-    const rows = this.db.prepare('SELECT id, doc_id, data FROM updates WHERE id > ? ORDER BY id').all(id) as Array<{ id: number; doc_id: string; data: Buffer }>
+    const rows = this.prepare('SELECT id, doc_id, data FROM updates WHERE id > ? ORDER BY id').all(id) as Array<{ id: number; doc_id: string; data: Buffer }>
     return rows.map((r) => ({ id: r.id, docId: r.doc_id, data: new Uint8Array(r.data) }))
   }
 
   maxUpdateId(): number {
-    return (this.db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM updates').get() as { m: number }).m
+    return (this.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM updates').get() as { m: number }).m
   }
 
   /** Changes whenever ANOTHER connection commits to this database file. */
@@ -217,8 +281,8 @@ export class DocStore {
   }
 
   load(docId: string): Uint8Array[] {
-    const snapshot = this.db.prepare('SELECT data FROM snapshots WHERE doc_id = ?').get(docId) as { data: Buffer } | undefined
-    const updates = this.db.prepare('SELECT data FROM updates WHERE doc_id = ? ORDER BY id').all(docId) as Array<{ data: Buffer }>
+    const snapshot = this.prepare('SELECT data FROM snapshots WHERE doc_id = ?').get(docId) as { data: Buffer } | undefined
+    const updates = this.prepare('SELECT data FROM updates WHERE doc_id = ? ORDER BY id').all(docId) as Array<{ data: Buffer }>
     return [...(snapshot ? [snapshot.data] : []), ...updates.map((u) => u.data)].map((b) => new Uint8Array(b))
   }
 
@@ -229,20 +293,23 @@ export class DocStore {
    */
   loadSince(docId: string, cursor: DocCursor | undefined): { parts: Uint8Array[]; cursor: DocCursor; full: boolean } {
     return this.db.transaction(() => {
-      const { last } = this.db.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
+      const { last } = this.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
       const folded = this.compactedThrough.get(docId) ?? 0
       const removals = this.removals.get(docId) ?? 0
       const next = { lastId: Math.max(last ?? 0, folded, cursor?.lastId ?? 0), removals }
       if (!cursor || cursor.removals !== removals || folded > cursor.lastId) return { parts: this.load(docId), cursor: next, full: true }
-      const rows = this.db.prepare('SELECT data FROM updates WHERE doc_id = ? AND id > ? ORDER BY id').all(docId, cursor.lastId) as Array<{ data: Buffer }>
+      const rows = this.prepare('SELECT data FROM updates WHERE doc_id = ? AND id > ? ORDER BY id').all(docId, cursor.lastId) as Array<{ data: Buffer }>
       return { parts: rows.map((r) => new Uint8Array(r.data)), cursor: next, full: false }
     })()
   }
 
   append(docId: string, update: Uint8Array, origin: 'local' | 'remote' = 'local'): void {
-    this.db.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
+    this.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
     if (this.options.compact === false) return
-    const { n } = this.db.prepare('SELECT COUNT(*) AS n FROM updates WHERE doc_id = ?').get(docId) as { n: number }
+    const counted = this.rowCounts.get(docId)
+    // The seeding count includes the row just inserted; after that the counter is kept, not read back.
+    const n = counted === undefined ? (this.prepare('SELECT COUNT(*) AS n FROM updates WHERE doc_id = ?').get(docId) as { n: number }).n : counted + 1
+    this.rowCounts.set(docId, n)
     if (n < COMPACT_THRESHOLD) return
     clearTimeout(this.compactTimers.get(docId))
     this.compactTimers.set(
@@ -264,7 +331,7 @@ export class DocStore {
     this.db.transaction(() => {
       const parts = this.load(docId)
       if (parts.length === 0) return
-      const { last } = this.db.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
+      const { last } = this.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
       const doc = new LoroDoc()
       const status = doc.importBatch(parts)
       // A pending update depends on one that has not arrived (a gapped sync or an unfinished import).
@@ -272,11 +339,13 @@ export class DocStore {
       // leave them and let the next append reschedule, by which time the gap may have been filled.
       if (status.pending !== null && status.pending.size > 0) return
       if (last !== null) this.compactedThrough.set(docId, last)
+      // Only here: a compaction that bailed above left every row in place, so the count still holds.
+      this.rowCounts.set(docId, 0)
       const snapshot = doc.export({ mode: 'snapshot' })
       this.db
         .prepare('INSERT INTO snapshots (doc_id, data) VALUES (?, ?) ON CONFLICT(doc_id) DO UPDATE SET data = excluded.data')
         .run(docId, Buffer.from(snapshot))
-      this.db.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
+      this.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
     })()
   }
 
@@ -284,9 +353,10 @@ export class DocStore {
     clearTimeout(this.compactTimers.get(docId))
     this.compactTimers.delete(docId)
     this.removals.set(docId, (this.removals.get(docId) ?? 0) + 1)
+    this.rowCounts.delete(docId)
     this.db.transaction(() => {
-      this.db.prepare('DELETE FROM snapshots WHERE doc_id = ?').run(docId)
-      this.db.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
+      this.prepare('DELETE FROM snapshots WHERE doc_id = ?').run(docId)
+      this.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
     })()
   }
 
@@ -298,7 +368,7 @@ export class DocStore {
    */
   replaceSearchPage(page: { pageId: string; sectionId: string; notebookId: string }, rows: SearchRow[]): void {
     this.db.transaction(() => {
-      const insert = this.db.prepare('INSERT INTO search (page_id, section_id, notebook_id, box_id, ord, text) VALUES (?, ?, ?, ?, ?, ?)')
+      const insert = this.prepare('INSERT INTO search (page_id, section_id, notebook_id, box_id, ord, text) VALUES (?, ?, ?, ?, ?, ?)')
       const old = this.db
         .prepare('SELECT rowid AS id, section_id AS sectionId, notebook_id AS notebookId, box_id AS boxId, ord, text FROM search WHERE page_id = ? ORDER BY ord')
         .all(page.pageId) as Array<SearchRow & { id: number; sectionId: string; notebookId: string }>
@@ -314,30 +384,30 @@ export class DocStore {
       const moved = old.some((r) => r.sectionId !== page.sectionId || r.notebookId !== page.notebookId)
       // Repeated inserts at one spot halve the gap each time: renumber before it runs out of precision.
       if (moved || old.length === 0 || step < 1e-6) {
-        this.db.prepare('DELETE FROM search WHERE page_id = ?').run(page.pageId)
+        this.prepare('DELETE FROM search WHERE page_id = ?').run(page.pageId)
         rows.forEach((r, ord) => insert.run(page.pageId, page.sectionId, page.notebookId, r.boxId, ord, r.text))
         return
       }
-      const remove = this.db.prepare('DELETE FROM search WHERE rowid = ?')
+      const remove = this.prepare('DELETE FROM search WHERE rowid = ?')
       for (const r of old.slice(head, old.length - tail)) remove.run(r.id)
       added.forEach((r, i) => insert.run(page.pageId, page.sectionId, page.notebookId, r.boxId, low + step * (i + 1), r.text))
     })()
   }
 
   removeSearchPage(pageId: string): void {
-    this.db.prepare('DELETE FROM search WHERE page_id = ?').run(pageId)
+    this.prepare('DELETE FROM search WHERE page_id = ?').run(pageId)
   }
 
   clearSearch(): void {
-    this.db.prepare('DELETE FROM search').run()
+    this.prepare('DELETE FROM search').run()
   }
 
   setSearchPageScope(pageId: string, sectionId: string, notebookId: string): void {
-    this.db.prepare('UPDATE search SET section_id = ?, notebook_id = ? WHERE page_id = ? AND (section_id != ? OR notebook_id != ?)').run(sectionId, notebookId, pageId, sectionId, notebookId)
+    this.prepare('UPDATE search SET section_id = ?, notebook_id = ? WHERE page_id = ? AND (section_id != ? OR notebook_id != ?)').run(sectionId, notebookId, pageId, sectionId, notebookId)
   }
 
   hasSearchRows(): boolean {
-    return this.db.prepare('SELECT 1 FROM search LIMIT 1').get() !== undefined
+    return this.prepare('SELECT 1 FROM search LIMIT 1').get() !== undefined
   }
 
   /** Rows in scope, narrowed by an FTS5 trigram phrase when `phrase` is given (it needs 3+ characters). */
@@ -353,11 +423,11 @@ export class DocStore {
       params.push(scope.id)
     }
     const sql = `SELECT page_id AS pageId, box_id AS boxId, ord, text FROM search ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY page_id, ord`
-    return this.db.prepare(sql).all(...params) as Array<SearchRow & { pageId: string }>
+    return this.prepare(sql).all(...params) as Array<SearchRow & { pageId: string }>
   }
 
   getSetting<T>(key: string): T | undefined {
-    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    const row = this.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
     return row ? (JSON.parse(row.value) as T) : undefined
   }
 
@@ -370,6 +440,7 @@ export class DocStore {
   close(): void {
     for (const t of this.compactTimers.values()) clearTimeout(t)
     this.compactTimers.clear()
+    this.statements.clear()
     this.db.close()
   }
 }
