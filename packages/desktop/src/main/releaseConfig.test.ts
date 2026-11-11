@@ -146,3 +146,92 @@ describe('release configuration (C12)', () => {
     expect(downloads.some((d) => /name:\s*sbom\b/.test(d))).toBe(true)
   })
 })
+
+const workflows = join(desktop, '..', '..', '.github', 'workflows')
+
+/** The jobs of a workflow, by name, each as its own slice of the text (the shape the tests below read). */
+function jobsOf(file: string): Map<string, string> {
+  const yml = readFileSync(join(workflows, file), 'utf8')
+  const body = yml.slice(yml.indexOf('\njobs:\n'))
+  const slices = body.split(/\n(?=  [A-Za-z][\w-]*:\n)/).slice(1)
+  return new Map(slices.map((s) => [/^ {2}([A-Za-z][\w-]*):/.exec(s)![1]!, s]))
+}
+
+/** What a job declares in `needs:` (a bare name or a `[a, b]` list). */
+function needsOf(job: string): string[] {
+  const line = /\n {4}needs:\s*(.+)/.exec(job)?.[1]?.trim()
+  if (!line) return []
+  return line.startsWith('[') ? line.slice(1, -1).split(',').map((n) => n.trim()).filter(Boolean) : [line]
+}
+
+describe('release gate (review F4)', () => {
+  it('ci.yml delegates to the reusable verify workflow, which every CI job lives in', () => {
+    const ci = jobsOf('ci.yml')
+    for (const job of ci.values()) expect(job).toMatch(/\n {4}uses: \.\/\.github\/workflows\/verify\.yml\n/)
+    const verify = readFileSync(join(workflows, 'verify.yml'), 'utf8')
+    // Called, never triggered on its own: a push or pull_request trigger here would double every CI run.
+    expect(verify).toMatch(/\non:\n {2}workflow_call:/)
+    expect(verify).not.toMatch(/\n {2}(push|pull_request):/)
+    // The full gate: nothing that used to run on a push may be missing from it.
+    expect([...jobsOf('verify.yml').keys()]).toEqual(['lint', 'test-linux', 'test-mac', 'native'])
+  })
+
+  it('the reusable workflow runs lint, guards, traceability, unit, main-process, e2e and the memory evidence', () => {
+    const verify = readFileSync(join(workflows, 'verify.yml'), 'utf8')
+    for (const step of [
+      'npm run lint',
+      'npm run guards',
+      'node scripts/traceability.mjs --check',
+      'node scripts/agents/check-guard-commits.mjs',
+      'npm run typecheck',
+      'npm test',
+      'npm run test:main',
+      'npm run e2e',
+      'playwright.linux.config.ts',
+    ])
+      expect(verify, step).toContain(step)
+  })
+
+  it('a tag runs that same gate before it builds, and nothing publishes without it', () => {
+    const release = jobsOf('release.yml')
+    expect(release.get('verify')).toMatch(/\n {4}uses: \.\/\.github\/workflows\/verify\.yml\n/)
+    // Reachability over `needs`: build, sbom and publish all sit downstream of verify and of the tag gate.
+    const upstream = (name: string, seen = new Set<string>()): Set<string> => {
+      for (const need of needsOf(release.get(name)!))
+        if (!seen.has(need)) {
+          seen.add(need)
+          upstream(need, seen)
+        }
+      return seen
+    }
+    for (const job of ['build', 'sbom', 'publish']) {
+      expect([...upstream(job)], job).toContain('verify')
+      expect([...upstream(job)], job).toContain('gate')
+    }
+  })
+
+  it('the first job refuses a tag that is not an ancestor of origin/main', () => {
+    const gate = jobsOf('release.yml').get('gate')!
+    expect(needsOf(gate)).toEqual([])
+    // A tag on a side branch (or a rewritten commit) never reached main's protected, CI-gated history.
+    expect(gate).toContain('git merge-base --is-ancestor')
+    expect(gate).toContain('origin/main')
+    // The tag/version check stays in the gate, so a mismatch fails before any runner builds.
+    expect(gate).toContain('does not match package.json')
+  })
+
+  it("every job's needs name a job of the same workflow, and the graph has no cycle", () => {
+    for (const file of ['ci.yml', 'verify.yml', 'release.yml']) {
+      const jobs = jobsOf(file)
+      expect(jobs.size, file).toBeGreaterThan(0)
+      const walk = (name: string, path: string[]): void => {
+        for (const need of needsOf(jobs.get(name)!)) {
+          expect([...jobs.keys()], `${file}: ${name} needs ${need}`).toContain(need)
+          expect(path, `${file}: cycle at ${need}`).not.toContain(need)
+          walk(need, [...path, need])
+        }
+      }
+      for (const name of jobs.keys()) walk(name, [name])
+    }
+  })
+})
