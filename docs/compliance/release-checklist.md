@@ -26,6 +26,14 @@ before you tag `v0.2.0`.
   POAM-01, -02, -03 and -07 stay open (`poam.md`). Nothing to do for 0.2.0 unless you have decided to buy a Developer
   ID; if you have, do it before tagging, because it changes `fips.dylib`'s bytes and its pin (POAM-07).
 - [ ] **Ship C5 and C9 together (both in 0.2.0).** No 0.1.x or 0.2.x-without-C9 build may change a v2 vault's password.
+- [x] **The tag runs the full gate** (release.yml, 0.7.0). `release.yml`'s first job (`gate`) refuses a tag whose
+  commit is not an ancestor of `origin/main` and checks the tag against both `package.json` versions; its `verify`
+  job then calls `.github/workflows/verify.yml`, the same reusable workflow CI runs on a push, so a tag runs lint,
+  guards, traceability, the guard-commit check, unit, main-process, the Linux e2e suite, the memory evidence
+  (T-ZERO-04/06) and the native matrix. `build`, `sbom` and `publish` all depend on `gate` and `verify`, so a red
+  check cannot publish. Before 0.7.0 the release ran only typecheck plus the unit and main-process tests, which is
+  how v0.6.7 was published from a commit whose Ubuntu e2e job had failed (review F4) — the "Linux CI is green" tick
+  above is no longer the only thing standing between a failing test and an immutable release.
 - [ ] **Versions match.** The root and `packages/desktop` `package.json` both say 0.2.0, and CHANGELOG's
   `## [0.2.0]` section is dated (`release.yml` checks the tag against both versions).
 - [ ] **Read the README's "Upgrading to 0.2.0"** once more: it is the user-facing warning about 0.1.x devices.
