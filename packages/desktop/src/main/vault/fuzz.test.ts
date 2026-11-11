@@ -139,7 +139,7 @@ const benignParse = (): void => {
 }
 
 describe('T-FUZZ-01: arbitrary JSON', () => {
-  it('parseHeader (v1 and v2) throws only BadHeader, 5 ms a parse on average and none over 50 ms', () => {
+  it('parseHeader (v1 and v2) throws only BadHeader, and costs no more than a benign parse in proportion', () => {
     const cost = parseCost(benignParse)
     forAll('T-FUZZ-01', (rng) => {
       const json = rng.bool() ? jsonValue(rng) : apply({ ...VALID_V2 }, { op: 'replace', at: rng.int(0, 99), value: jsonValue(rng, 3) }, rng)
@@ -315,7 +315,7 @@ describe('T-FUZZ (fast-check): shrinking properties over the same parsers', () =
   /** fast-check JSON plus the awkward numbers a hostile file holds, which `fc.jsonValue` never draws. */
   const hostileJson = fc.oneof(fc.jsonValue({ maxDepth: 6 }), fc.constantFrom<unknown>(-0, 2 ** 53, 1e21, 0.5, '', '\u0000', 'A'.repeat(70_000)))
 
-  it('T-FUZZ-01: arbitrary JSON (fc.jsonValue, maxDepth 6): parseHeader and parseHeaderV2 throw only BadHeader, 5 ms a parse on average', () => {
+  it('T-FUZZ-01: arbitrary JSON (fc.jsonValue, maxDepth 6): parseHeader and parseHeaderV2 throw only BadHeader, in proportion to a benign parse', () => {
     const cost = parseCost(benignParse)
     fc.assert(
       fc.property(hostileJson, (json) => {
