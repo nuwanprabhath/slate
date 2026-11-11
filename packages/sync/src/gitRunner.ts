@@ -6,6 +6,10 @@ export interface GitResult {
   stdout: Uint8Array
   stderr: string
   timedOut?: boolean
+  /** The timeout that killed it was the quiet one: git had been talking and then went silent. */
+  quiet?: boolean
+  /** The deadline that killed it, in ms, so the error can say how long Slate waited. */
+  deadlineMs?: number
   /** The caller's signal aborted and the child was killed: no result, and nothing left running. */
   aborted?: boolean
 }
@@ -14,15 +18,48 @@ export interface GitRunOptions {
   cwd?: string
   env?: Record<string, string>
   input?: Uint8Array
+  /** The ceiling for the whole command; `gitTimeout` sizes it from the work. */
   timeoutMs?: number
+  /**
+   * Once the child has written something, this long with nothing more means hung. It is only armed
+   * by the first byte of output: a command that is silent by design (`add`, `commit`) is judged by
+   * `timeoutMs` alone and never killed for being quiet.
+   */
+  quietMs?: number
   /** The running sync's signal: the child is killed when it aborts, as it is after the timeout. */
   signal?: AbortSignal
 }
 
 export type GitRunner = (args: string[], opts?: GitRunOptions) => Promise<GitResult>
 
+/**
+ * A git command's cost is linear in the files it touches, so its deadline is a floor plus an
+ * allowance per file, not a fixed ceiling. Measured on a 10-core Mac at load average 12, over a
+ * clone of 500, 2,000 and 8,000 chunk files: `git add -A` 0.92 / 2.89 / 10.15 s (~1.3 ms a file) and
+ * `git push` to a local remote 0.68 / 3.29 / 14.39 s (~1.8 ms a file); `status`, `commit` and
+ * `ls-tree` stay under 200 ms at every size. So the old fixed 10 s was already too small for
+ * `add` alone at 8,000 files on an idle machine, and D4B measured first syncs of 2,000 pages
+ * costing 35-64 s where this machine needs 6 s - five to ten times slower under real load. The
+ * allowances below are ~18x the measured per-file cost, which covers that and leaves margin.
+ */
 export const LOCAL_TIMEOUT_MS = 10_000
 export const NETWORK_TIMEOUT_MS = 60_000
+export const PER_FILE_LOCAL_MS = 25
+export const PER_FILE_NETWORK_MS = 30
+/** However many files a vault holds, a command past this is hung, not slow. */
+export const MAX_TIMEOUT_MS = 15 * 60_000
+/**
+ * A command that reaches the remote prints its progress (`--progress`), so silence from one is the
+ * honest sign of a hang: a stalled connection that neither fails nor moves.
+ */
+export const QUIET_TIMEOUT_MS = 60_000
+
+/** The deadline for one git command over `files` files; `network` also pays for the transfer. */
+export function gitTimeout(kind: 'local' | 'network', files = 0): number {
+  const floor = kind === 'network' ? NETWORK_TIMEOUT_MS : LOCAL_TIMEOUT_MS
+  const perFile = kind === 'network' ? PER_FILE_NETWORK_MS : PER_FILE_LOCAL_MS
+  return Math.min(floor + Math.max(0, Math.trunc(files)) * perFile, MAX_TIMEOUT_MS)
+}
 
 const BASE_SSH_COMMAND = 'ssh -o BatchMode=yes'
 /** Only what sshCommand builds (INV-PQ-6): git hands GIT_SSH_COMMAND to /bin/sh. */
@@ -84,11 +121,21 @@ export function nodeGitRunner(gitPath = 'git', runnerOpts: NodeGitRunnerOptions 
       const out: Buffer[] = []
       let stderr = ''
       let timedOut = false
+      let quiet = false
       let aborted = false
-      const timer = setTimeout(() => {
+      const ceiling = opts.timeoutMs ?? LOCAL_TIMEOUT_MS
+      const expire = (wasQuiet: boolean) => {
         timedOut = true
+        quiet = wasQuiet
         child.kill('SIGKILL')
-      }, opts.timeoutMs ?? LOCAL_TIMEOUT_MS)
+      }
+      const timer = setTimeout(() => expire(false), ceiling)
+      let quietTimer: ReturnType<typeof setTimeout> | undefined
+      const spoke = () => {
+        if (opts.quietMs === undefined || timedOut) return
+        clearTimeout(quietTimer)
+        quietTimer = setTimeout(() => expire(true), opts.quietMs)
+      }
       // A stopped sync leaves no git child behind, exactly as the timeout does not.
       const onAbort = () => {
         aborted = true
@@ -98,17 +145,32 @@ export function nodeGitRunner(gitPath = 'git', runnerOpts: NodeGitRunnerOptions 
       else opts.signal?.addEventListener('abort', onAbort, { once: true })
       const finished = () => {
         clearTimeout(timer)
+        clearTimeout(quietTimer)
         opts.signal?.removeEventListener('abort', onAbort)
       }
-      child.stdout.on('data', (b: Buffer) => out.push(b))
-      child.stderr.on('data', (b: Buffer) => (stderr += b.toString()))
+      child.stdout.on('data', (b: Buffer) => {
+        out.push(b)
+        spoke()
+      })
+      child.stderr.on('data', (b: Buffer) => {
+        stderr += b.toString()
+        spoke()
+      })
       child.on('error', (err) => {
         finished()
         reject(err)
       })
       child.on('close', (code) => {
         finished()
-        resolve({ code: timedOut || aborted ? -1 : (code ?? -1), stdout: new Uint8Array(Buffer.concat(out)), stderr, timedOut, aborted })
+        resolve({
+          code: timedOut || aborted ? -1 : (code ?? -1),
+          stdout: new Uint8Array(Buffer.concat(out)),
+          stderr,
+          timedOut,
+          quiet,
+          aborted,
+          ...(timedOut ? { deadlineMs: quiet ? (opts.quietMs ?? ceiling) : ceiling } : {})
+        })
       })
       child.stdin.end(opts.input ? Buffer.from(opts.input) : undefined)
     })

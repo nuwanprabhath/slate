@@ -39,6 +39,21 @@ export class OfflineError extends Error {
   }
 }
 
+/**
+ * A git command or a request outran its deadline. This is not `offline`: the remote answered (or
+ * was never asked), and the work may well have been progressing. Sync reports `error` with this
+ * message, because telling the person they have no connection when the truth is that their vault is
+ * too big for one sync to finish sends them to fix the wrong thing.
+ */
+export class SyncTimeoutError extends Error {
+  readonly timedOut = true
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'SyncTimeoutError'
+  }
+}
+
 /** A remote file that did not authenticate, or is too large to try; the engine skips it. */
 export class UnverifiableFileError extends Error {
   readonly unverifiable = true

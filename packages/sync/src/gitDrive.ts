@@ -1,8 +1,8 @@
 import { constants, existsSync } from 'node:fs'
 import { lstat, mkdir, open, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, normalize } from 'node:path'
-import { LOCAL_TIMEOUT_MS, NETWORK_TIMEOUT_MS, protocolEnv, type GitResult, type GitRunner } from './gitRunner'
-import { OfflineError, UnrelatedHistoryError, UnverifiableFileError, type DeltaPage, type RemoteDrive, type RemoteItem } from './types'
+import { QUIET_TIMEOUT_MS, gitTimeout, protocolEnv, type GitResult, type GitRunner } from './gitRunner'
+import { OfflineError, SyncTimeoutError, UnrelatedHistoryError, UnverifiableFileError, type DeltaPage, type RemoteDrive, type RemoteItem } from './types'
 
 export interface GitDriveOptions {
   run: GitRunner
@@ -36,15 +36,32 @@ const OFFLINE = /Could not resolve host|Connection refused|unable to access|Netw
 const SIGNED_OUT = /Authentication failed|Permission denied \(publickey|could not read Username|could not read Password|terminal prompts disabled/i
 const REJECTED = /\[rejected\]|non-fast-forward|fetch first|failed to push some refs/i
 
+/** Progress counters are carriage-return updates on one line: only the last state of each is text. */
+const PROGRESS = /^(Enumerating|Counting|Compressing|Writing|Receiving|Resolving|Unpacking|Total|remote: (Enumerating|Counting|Compressing|Resolving))/
+function detailOf(stderr: string): string {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.slice(line.lastIndexOf('\r') + 1).trim())
+    .filter((line) => line !== '' && !PROGRESS.test(line))
+  return lines.slice(-3).join(' ')
+}
+
+const seconds = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`)
+
 const text = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8')
 const fields = (bytes: Uint8Array) => text(bytes).split('\0').filter((s) => s !== '')
 
-/** A git failure as the sync engine understands it: offline, signed out, or an error. */
+/** A git failure as the sync engine understands it: offline, timed out, signed out, or an error. */
 function gitError(args: string[], r: GitResult): Error {
-  const detail = r.stderr.trim().split('\n').slice(-3).join(' ')
-  const message = `git ${args[0]} failed: ${r.timedOut ? 'timed out' : detail}`
+  const detail = detailOf(r.stderr)
+  const message = `git ${args[0]} failed: ${detail}`
   if (r.aborted === true) return new OfflineError(`git ${args[0]} stopped: sync was asked to stop`)
-  if (r.timedOut || OFFLINE.test(r.stderr)) return new OfflineError(message)
+  if (r.timedOut === true) {
+    const waited = r.deadlineMs === undefined ? '' : ` after ${seconds(r.deadlineMs)}`
+    const why = r.quiet === true ? 'the connection went quiet' : 'this vault needs longer than Slate allows for one sync'
+    return new SyncTimeoutError(`Sync gave up waiting for git ${args[0]}${waited}: ${why}. Nothing was lost; Slate will try again.`)
+  }
+  if (OFFLINE.test(r.stderr)) return new OfflineError(message)
   if (SIGNED_OUT.test(r.stderr)) return Object.assign(new Error(message), { status: 401 })
   return new Error(message)
 }
@@ -60,6 +77,11 @@ export class GitDrive implements RemoteDrive {
   private ready: Promise<void> | undefined
   /** The signal of the call being served; one at a time, because `serving` queues the calls. */
   private signal: AbortSignal | undefined
+  /**
+   * How many files the clone holds, as the last `status` or `ls-tree` saw it: what a command's
+   * deadline is sized from. A ceiling only, so the largest count seen stands.
+   */
+  private files = 0
   /** The clone's lock: git keeps one index, so two commands that write it race for `index.lock`. */
   private queue: Promise<unknown> = Promise.resolve()
 
@@ -78,7 +100,8 @@ export class GitDrive implements RemoteDrive {
     return this.opts.run(args, {
       cwd: this.dir,
       env,
-      timeoutMs: network ? NETWORK_TIMEOUT_MS : LOCAL_TIMEOUT_MS,
+      timeoutMs: gitTimeout(network ? 'network' : 'local', this.files),
+      ...(network ? { quietMs: QUIET_TIMEOUT_MS } : {}),
       ...(this.signal ? { signal: this.signal } : {}),
       ...(input !== undefined ? { input: new TextEncoder().encode(input) } : {}),
     })
@@ -153,7 +176,8 @@ export class GitDrive implements RemoteDrive {
   /** Only the sync branch, no tags: other branches may hold plaintext history that must not land here. */
   private async fetch(): Promise<void> {
     const { branch } = this.opts
-    const args = ['fetch', '-q', '--no-tags', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`]
+    // `--progress` against `-q`: no chatter unless git is working, which is what the quiet deadline reads.
+    const args = ['fetch', '-q', '--progress', '--no-tags', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`]
     const r = await this.git(args, true)
     // An empty remote has no such branch yet; `hasRemoteBranch` then finds none.
     if (r.code !== 0 && !/couldn't find remote ref/i.test(r.stderr)) throw gitError(args, r)
@@ -174,6 +198,7 @@ export class GitDrive implements RemoteDrive {
    */
   private async commitAll(): Promise<boolean> {
     const changes = fields((await this.must(['status', '--porcelain', '-z', '--untracked-files=all'])).stdout)
+    this.files = Math.max(this.files, changes.length)
     if (changes.length === 0) return false
     // Every sync rewrites this device's record with a new lastSeen. Alone, that would be a commit
     // per device per sync interval forever, so it only rides along with real changes.
@@ -215,7 +240,7 @@ export class GitDrive implements RemoteDrive {
   }
 
   private async push(): Promise<void> {
-    const args = ['push', '-q', 'origin', `HEAD:refs/heads/${this.opts.branch}`]
+    const args = ['push', '-q', '--progress', 'origin', `HEAD:refs/heads/${this.opts.branch}`]
     for (let attempt = 1; attempt <= MAX_PUSH_ATTEMPTS; attempt++) {
       const r = await this.git(args, true)
       if (r.code === 0) {
@@ -367,6 +392,7 @@ export class GitDrive implements RemoteDrive {
       const [mode, type, sha, size] = entry.slice(0, tab).split(/ +/)
       if (type === 'blob' && REGULAR.has(mode!)) out.set(entry.slice(tab + 1), { sha: sha!, size: Number(size) })
     }
+    this.files = Math.max(this.files, out.size)
     return out
   }
 }
