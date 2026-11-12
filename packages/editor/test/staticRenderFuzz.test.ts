@@ -12,7 +12,8 @@ import { hostileUrl, unsafeMarkup } from '../../desktop/test/fuzzHtml'
 // T-F3B: off-screen boxes are drawn from Loro without an editor, so a content map a hostile peer or an agent
 // wrote goes straight to the page. Whatever it holds, the fragment carries nothing that can run.
 
-const SCHEMES = ['http', 'https', 'mailto', 'slate-image']
+// The real scheme the blob store serves note images on (BLOB_SCHEME, src/main/blobs.ts).
+const SCHEMES = ['http', 'https', 'mailto', 'slate-blob']
 const NODE_TYPES = [...Object.keys(schema.nodes), 'script', 'iframe', 'svg', 'object', 'unknownNode']
 const MARK_TYPES = [...Object.keys(schema.marks), 'script', 'unknownMark']
 const ATTR_NAMES = ['href', 'src', 'onerror', 'onclick', 'style', 'class', 'srcdoc', 'width', 'color', 'target', 'rel', 'textAlign', 'indent', 'checked', 'language', 'x', 'y', 'level', 'start', 'colspan']
