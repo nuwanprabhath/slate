@@ -40,29 +40,30 @@ function linkFieldCodes(root: Element): void {
     }
   }
   collect(root)
+  const global = new RegExp(FIELD_LINK.source, 'g')
   for (const text of walker) {
     const value = text.data
-    const m = FIELD_LINK.exec(value)
+    global.lastIndex = 0
+    let m = global.exec(value)
     if (!m) continue
-    const before = value.slice(0, m.index)
-    // The display text runs to the next field code or the end of this text node.
-    const rest = value.slice(m.index + m[0].length)
-    const next = rest.search(/﷟/)
-    const display = (next < 0 ? rest : rest.slice(0, next)) || m[1]!
-    const after = next < 0 ? '' : rest.slice(next)
-    const a = doc.createElement('a')
-    a.setAttribute('href', m[1]!)
-    a.textContent = display
     const parts: Node[] = []
-    if (before) parts.push(doc.createTextNode(before))
-    parts.push(a)
-    if (after) parts.push(doc.createTextNode(after))
-    text.replaceWith(...parts)
-    // A second field code in the same run is now in `after`, a fresh text node: scan again.
-    if (after) {
-      linkFieldCodes(root)
-      return
+    let cursor = 0
+    // One pass per text node: each display text runs to the next field code or the end of the node.
+    while (m) {
+      if (m.index > cursor) parts.push(doc.createTextNode(value.slice(cursor, m.index)))
+      const start = m.index + m[0].length
+      const next = value.indexOf('﷟', start)
+      const end = next < 0 ? value.length : next
+      const a = doc.createElement('a')
+      a.setAttribute('href', m[1]!)
+      a.textContent = end > start ? value.slice(start, end) : m[1]!
+      parts.push(a)
+      cursor = end
+      global.lastIndex = end
+      m = global.exec(value)
     }
+    if (cursor < value.length) parts.push(doc.createTextNode(value.slice(cursor)))
+    text.replaceWith(...parts)
   }
 }
 
