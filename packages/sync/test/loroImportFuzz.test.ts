@@ -7,10 +7,8 @@ import { FUZZ_RUNS, Rng, forAll, fuzzTimeout } from '../../desktop/test/fuzz'
 import { mutateBytes } from '../../desktop/test/fuzzBytes'
 import { corpusEntries, replayCorpus } from '../../desktop/test/fuzzCorpus'
 
-// Committed as base64 text (the corpus folder is written through the editor tools, which write text); each file is
-// named by the first 16 hex of the sha256 of the decoded bytes. Ten PageDoc edits: updates and snapshots.
-const decode = (text: Uint8Array): Uint8Array => new Uint8Array(Buffer.from(new TextDecoder().decode(text).trim(), 'base64'))
-const seeds = corpusEntries('sync', 'loro-update').map((e) => decode(e.bytes))
+// Ten PageDoc exports, updates and snapshots, each file named by the first 16 hex of its sha256.
+const seeds = corpusEntries('sync', 'loro-update').map((e) => e.bytes)
 
 /** A known update and the JSON a fresh document holds after importing it: the health check after each fault. */
 function known(): { bytes: Uint8Array; json: unknown } {
@@ -42,7 +40,7 @@ function importOrThrow(doc: LoroDoc, bytes: Uint8Array): 'imported' | 'refused' 
 describe('LoroDoc.import of hostile bytes', () => {
   replayCorpus('sync', 'loro-update', (bytes) => {
     // Corpus seeds are real exports: each imports (a delta whose base is missing stays pending, not an error).
-    expect(importOrThrow(new LoroDoc(), decode(bytes))).toBe('imported')
+    expect(importOrThrow(new LoroDoc(), bytes)).toBe('imported')
     stillHealthy()
   })
 
