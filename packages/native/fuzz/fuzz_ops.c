@@ -3,9 +3,10 @@
  * destroyed, stale-generation, wrong-approval-bit or out-of-range handle, and labels of 0, 1, 128 and 129
  * bytes with and without a NUL.
  * Oracles: a handle that is not live always gives SCC_ERR_HANDLE (when the call's other arguments are
- * valid); scc_live_handles() equals this file's own count after every step; after scc_key_destroy the 32
- * bytes the handle named are zero; after scc_zeroize_all the count is 0 and scc_secure_heap_used() is back
- * at its baseline; scc_name_siv_decode(scc_name_siv_encode(p)) == p, and a changed name gives SCC_ERR_AUTH
+ * valid); scc_live_handles() equals this file's own count after every step; after scc_key_destroy no
+ * 8-byte word of the key is still at the address it had and bytes 16..31 are zero (OpenSSL's secure heap
+ * puts its free-list links in the first 16, so those cannot be); after scc_zeroize_all the count is 0
+ * and scc_secure_heap_used() is back at its baseline; scc_name_siv_decode(scc_name_siv_encode(p)) == p, and a changed name gives SCC_ERR_AUTH
  * with a zeroed output; every return code is an SCC_* code. */
 #include "harness.h"
 
