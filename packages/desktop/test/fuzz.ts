@@ -3,6 +3,7 @@
 // fast-check properties next to them share (C11). Seed 0x51a7e and 2000 runs by default; the nightly soak sets
 // SLATE_FUZZ_RUNS=200000 (and SLATE_FUZZ_SEED to vary it). A failure message carries the run and its seed, and
 // fast-check's the shrunk counterexample, so it can become a fixed case.
+import { expect } from 'vitest'
 
 const fromEnv = (name: string, fallback: number): number => {
   const v = Number(process.env[name])
@@ -14,6 +15,67 @@ export const FUZZ_RUNS = fromEnv('SLATE_FUZZ_RUNS', 2000)
 
 /** fast-check's parameters for every T-FUZZ property: deterministic in CI, the soak's run count at night. */
 export const fcParams = { numRuns: FUZZ_RUNS, seed: FUZZ_SEED, endOnFailure: true } as const
+
+/** fcParams with the run count divided, for a property whose single run is expensive. */
+export function fcRuns(divisor: number, floor = 1): { numRuns: number; seed: number; endOnFailure: true } {
+  return { ...fcParams, numRuns: Math.max(floor, Math.floor(FUZZ_RUNS / Math.max(1, divisor))) }
+}
+
+export type CostLimits = {
+  meanOverBenign?: number
+  p99OverBenign?: number
+  meanCeilingMs?: number
+  absoluteCeilingMs?: number
+  calibrationRuns?: number
+  calibrationWarmup?: number
+}
+
+/**
+ * Hostile calls timed against a benign call measured in the same run, so machine load mostly cancels (absolute
+ * bounds failed at load average 25-40). The defaults, and why they are what they are, are T-FUZZ-01's: see the
+ * comment above its constants in src/main/vault/fuzz.test.ts. The baseline drops its warm-up runs, because a
+ * JIT-inflated baseline would loosen every ratio.
+ */
+export function relativeCost(benign: () => void, limits: CostLimits = {}): { time(fn: () => void): void; check(): void } {
+  const { meanOverBenign = 20, p99OverBenign = 150, meanCeilingMs = 5, absoluteCeilingMs = 500, calibrationRuns = 2000, calibrationWarmup = 20 } = limits
+  let total = 0
+  let worst = 0
+  const each: number[] = []
+  const time = (fn: () => void): number => {
+    const t = performance.now()
+    fn()
+    return performance.now() - t
+  }
+  const calibrate = (): number => {
+    let sum = 0
+    let n = 0
+    for (let i = 0; i < calibrationRuns; i++) {
+      const ms = time(benign)
+      if (i < calibrationWarmup) continue
+      sum += ms
+      n++
+    }
+    return Math.max(sum / n, Number.EPSILON)
+  }
+  return {
+    time(fn) {
+      const ms = time(fn)
+      each.push(ms)
+      total += ms
+      worst = Math.max(worst, ms)
+    },
+    check() {
+      expect(each.length).toBeGreaterThan(0)
+      const unit = calibrate()
+      const sorted = [...each].sort((a, b) => a - b)
+      const p99 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))]!
+      expect(total / each.length / unit, 'mean parse / benign parse').toBeLessThan(meanOverBenign)
+      expect(p99 / unit, 'p99 parse / benign parse').toBeLessThan(p99OverBenign)
+      expect(total / each.length, 'mean ms a parse (absolute sanity ceiling)').toBeLessThan(meanCeilingMs)
+      expect(worst, 'slowest parse, ms (absolute sanity ceiling)').toBeLessThan(absoluteCeilingMs)
+    },
+  }
+}
 
 /** A vitest timeout that grows with the run count, so the soak is not cut off at 5 s a test. */
 export const fuzzTimeout = (msPer1000Runs = 5_000): number => Math.max(5_000, Math.ceil((FUZZ_RUNS / 1000) * msPer1000Runs))
