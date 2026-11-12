@@ -92,6 +92,6 @@ export async function runShutdown(steps: ShutdownSteps, opts: { flushTimeoutMs?:
 }
 
 /** What Slate last put on the clipboard: cleared at lock only if it is recent and still there. */
-export function shouldClearClipboard(wrote: { at: number; text: string } | null, current: string, now: number): boolean {
-  return wrote !== null && now - wrote.at <= CLIPBOARD_WINDOW_MS && current === wrote.text
+export function shouldClearClipboard(wrote: { at: number } | null, now: number): boolean {
+  return wrote !== null && now - wrote.at <= CLIPBOARD_WINDOW_MS
 }

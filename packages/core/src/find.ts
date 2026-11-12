@@ -12,6 +12,10 @@ const WORD_AFTER = /^[\p{L}\p{N}\p{M}_]/u
 export function compileQuery(query: string, opts: FindOptions): RegExp | null {
   if (query === '') return null
   const source = opts.regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // A pattern whose own groups repeat unboundedly takes exponential time to fail, and the in-page find
+  // matches on the renderer thread, so one would freeze the window (`editor/src/find.ts`). Refused like
+  // a pattern that will not parse, which the find bar already shows as an error.
+  if (opts.regex && hasNestedUnboundedQuantifier(source)) return null
   try {
     return new RegExp(source, opts.matchCase ? 'gu' : 'giu')
   } catch {

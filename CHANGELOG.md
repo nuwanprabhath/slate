@@ -6,6 +6,36 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-11-12
+
+### Fixed
+
+- The in-page find bar no longer freezes the window on a pattern like `(a+)+$`. With regex search on,
+  the pattern was compiled and matched on the window's own thread, where a pattern whose groups repeat
+  unboundedly takes exponential time: a 40-character line took over a minute in a test before this.
+  Such a pattern is now refused the way an unparseable one already was, and the find bar shows it as an
+  error. Slate's whole-library search had refused them all along; only the in-page find had not.
+
+### Security
+
+- Copying a recovery key no longer leaves it in the main process. A copy told main to read the
+  clipboard back and keep the text, so the key sat in memory as a string that cannot be zeroed and
+  outlived the lock -- the defect T-ZERO-09 found in 0.7.0, on a path that test never walked. Main now
+  records only when a copy happened and clears the clipboard on that alone. The cost is that a lock
+  within two minutes of copying from Slate clears the clipboard even if you copied something else
+  afterwards (`docs/compliance/poam.md` POAM-10).
+- T-ZERO-09 no longer carries the key through the main process itself: it returned the key from the
+  page over Playwright's protocol, which the main process serves, so the test's own copy could not be
+  told apart from the app's. The key now comes back masked. POAM-10 records that the channel leaving
+  the remaining copies is therefore not yet established, and that the clipboard, the selection, the
+  accessibility tree and printing reach the main process too.
+
+### Changed
+
+- Electron 45.2.3, vitest 5.1.0, vite 8.3.6, @vitejs/plugin-react 6.2.1, @azure/msal-node 7.2.0 and
+  dependency-cruiser 18.7.2 (Dependabot #12, applied here because CI refuses a bot's commit that
+  touches a guard file).
+
 ## [0.7.2] - 2026-11-12
 
 ### Security

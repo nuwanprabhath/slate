@@ -274,8 +274,10 @@ void app.whenReady().then(async () => {
   // Real presses per window (trackInput), so the text menu's clipboard commands need a person's click.
   const userInput = new UserInputClock()
   registerEditIpc(ipc, userInput)
-  // What Slate last put on the clipboard, for the lock to clear (shouldClearClipboard).
-  let copied: { at: number; text: string } | null = null
+  // When Slate last copied something, for the lock to clear the clipboard (shouldClearClipboard). The
+  // time only: reading the clipboard here would put whatever was copied -- a recovery key among it --
+  // into main as a JavaScript string nothing can zero (POAM-10, T-ZERO-09).
+  let copied: { at: number } | null = null
   registerCopyIpc(
     ipc,
     () => services().blobs,
@@ -289,8 +291,9 @@ void app.whenReady().then(async () => {
         return true
       },
     },
-    (text) => {
-      copied = { at: Date.now(), text }
+    // Only that a copy happened: the lock clears the clipboard on the time alone (shouldClearClipboard).
+    () => {
+      copied = { at: Date.now() }
     },
   )
   // out/main sits four levels under the repo root when running from a checkout.
@@ -607,7 +610,7 @@ void app.whenReady().then(async () => {
           for (const w of old) w.destroy()
         },
         clearClipboard: async () => {
-          if (shouldClearClipboard(copied, await clipboard.readText(), Date.now())) await clipboard.clear()
+          if (shouldClearClipboard(copied, Date.now())) await clipboard.clear()
           copied = null
         },
       },
@@ -1019,12 +1022,7 @@ void app.whenReady().then(async () => {
   // Locking needs no permission: the worst a page can do with it is lock the vault.
   ipc.on(CH.vaultLock, () => void lock('manual'))
   ipc.on(CH.vaultCopied, () => {
-    // After the copy lands on the clipboard; a lock clears it only if it still holds this.
-    setTimeout(() => {
-      void clipboard.readText().then((text) => {
-        copied = { at: Date.now(), text }
-      })
-    }, 50)
+    copied = { at: Date.now() }
   })
   onSettingsWritten((settings) => {
     const keyRing = servicesOpen() ? services().keyRing : null

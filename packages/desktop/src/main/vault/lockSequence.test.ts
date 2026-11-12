@@ -105,12 +105,21 @@ describe('lock sequence (§6.4, §15 N6)', () => {
     expect(state.state).toBe('locked')
   })
 
-  it('clears the clipboard only when Slate wrote it lately and it is unchanged', () => {
+  /**
+   * It used to compare the clipboard's current text with what Slate had copied, which meant main read
+   * the clipboard and kept a copy of it as a JavaScript string. On the recovery-key path that string was
+   * the key, and a string cannot be zeroed, so it outlived the lock in V8's heap -- the 0.7.0 defect
+   * T-ZERO-09 caught, on a path that test never walked. Main no longer looks at the clipboard at all.
+   *
+   * The cost: a lock within the window clears the clipboard even if the person copied something else
+   * after copying from Slate. Two minutes of occasionally losing a clipboard beats keeping a permanent
+   * credential in memory nothing can wipe.
+   */
+  it('clears the clipboard when Slate copied lately, without reading what is on it', () => {
     const now = 1_000_000
-    expect(shouldClearClipboard({ at: now - 60_000, text: 'secret' }, 'secret', now)).toBe(true)
-    expect(shouldClearClipboard({ at: now - 121_000, text: 'secret' }, 'secret', now)).toBe(false)
-    expect(shouldClearClipboard({ at: now - 1000, text: 'secret' }, 'something else', now)).toBe(false)
-    expect(shouldClearClipboard(null, 'secret', now)).toBe(false)
+    expect(shouldClearClipboard({ at: now - 60_000 }, now)).toBe(true)
+    expect(shouldClearClipboard({ at: now - 121_000 }, now)).toBe(false)
+    expect(shouldClearClipboard(null, now)).toBe(false)
   })
 
   // C4: quitting used to close the services without asking the windows to write what they held,

@@ -1,7 +1,8 @@
 // T-ZERO-04 (audit §6.3, C7): after a lock, no copy of MK, LK, the password KEK or the password is left
 // anywhere in the main process's memory: V8 heap, native heap, OpenSSL's secure heap, stacks. T-ZERO-09
-// (review C6) asks the same of a recovery key main itself generated, which is a JavaScript string until
-// `Migration.discard()` drops it (C4). Linux only (memscan.mjs reads /proc/<pid>/mem with sudo); run by
+// (review C6) asks the same of a recovery key main itself generated, which main holds as bytes it zeroes
+// on `discard()` (C4; it was a JavaScript string until 0.7.1, and a string cannot be zeroed). Linux only
+// (memscan.mjs reads /proc/<pid>/mem with sudo); run by
 // playwright.linux.config.ts in CI's memory-evidence step, never by `npm run e2e`.
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
@@ -179,14 +180,21 @@ test('T-ZERO-09: after lock, the main process holds no copy of a recovery key it
 
     // Settings → Security's "new recovery key": main generates it, keeps the text for `saveRecoveryKey` (C4)
     // and shows it once. Nothing here is a secret this test chose, so the needles come from what main returned.
+    // The key comes back XOR-masked, and only this process unmasks it. Playwright's `evaluate` returns
+    // through the debugging protocol, which the browser process -- main -- serves, so returning the key
+    // itself would have put a contiguous copy of it into main's own IPC memory. The scan looks for
+    // contiguous bytes, so what it finds afterwards is the app's doing and not this test's.
     const made = await notes.evaluate(async (pw) => {
       const r = await window.slate.vault.newRecoveryKey(new TextEncoder().encode(pw))
-      // Main now hands the key over as bytes, which do not survive this boundary; the page turns it into
-      // text exactly as the real renderer does, and the needles are still main's own key.
-      return r.ok ? { ok: true as const, recoveryKey: new TextDecoder().decode(r.recoveryKey) } : { ok: false as const, message: r.message }
+      if (!r.ok) return { ok: false as const, message: r.message }
+      const key = r.recoveryKey
+      const mask = crypto.getRandomValues(new Uint8Array(key.length))
+      const masked = Array.from(key, (b, i) => b ^ (mask[i] ?? 0))
+      key.fill(0)
+      return { ok: true as const, masked, mask: Array.from(mask) }
     }, CANARY_PASSWORD)
     expect(made.ok, `newRecoveryKey failed: ${made.ok ? '' : made.message}`).toBe(true)
-    const text = made.ok ? made.recoveryKey : ''
+    const text = made.ok ? Buffer.from(made.masked.map((b, i) => b ^ (made.mask[i] ?? 0))).toString('latin1') : ''
     const needles = [...recoveryTextNeedles(text), ...needlesFor('recovery-secret', decodeRecoveryText(text))]
 
     // Control: while main still holds the key, the scanner finds it in memory main itself allocated, or a
