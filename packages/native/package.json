@@ -13,7 +13,9 @@
     "check:exports": "node scripts/check-exports.mjs",
     "test:kat": "node scripts/kat.mjs",
     "test:kat:asan": "node scripts/kat.mjs --asan",
-    "test:crosscheck": "sh test/crossCheck.sh"
+    "test:crosscheck": "sh test/crossCheck.sh",
+    "fuzz:smoke": "node scripts/fuzz.mjs --smoke",
+    "fuzz": "node scripts/fuzz.mjs"
   },
   "devDependencies": {
     "node-addon-api": "8.9.2"
