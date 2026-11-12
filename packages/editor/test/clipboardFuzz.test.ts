@@ -14,7 +14,8 @@ import { replayCorpus } from '../../desktop/test/fuzzCorpus'
 const DROPPED = ['script', 'style', 'meta', 'link', 'title', 'font', 'span']
 const KEEP_PASTE_ATTRS = new Set(['href', 'src', 'alt', 'start', 'colspan', 'rowspan'])
 // Image src may be the blob store's address; links are http, https and mailto (TipTap's Link refuses the rest).
-const SCHEMES = ['http', 'https', 'mailto', 'slate-image']
+// The real scheme the blob store serves note images on (BLOB_SCHEME, src/main/blobs.ts).
+const SCHEMES = ['http', 'https', 'mailto', 'slate-blob']
 
 // happy-dom reports every parsed <iframe> it refuses to load on the original console, which vitest hands it
 // before a test can spy on it; thousands of hostile inputs make over a megabyte, which overflows the Stop
@@ -147,7 +148,7 @@ describe('T-F3B storeDataImages', () => {
         const types: string[] = []
         const out = await storeDataImages(html, async (_bytes, mime) => {
           types.push(mime)
-          return 'slate-image://stored/x'
+          return 'slate-blob://blob/x'
         })
         for (const t of types) expect(PICTURE_TYPES).toContain(t)
         for (const img of Array.from(parse(out).querySelectorAll('img'))) {
