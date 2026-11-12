@@ -9,7 +9,7 @@ import { toPlainText, type PMJSON } from '../src/plaintext'
 import { fcRuns } from '../../desktop/test/fuzz'
 
 // Text without lone surrogates (Loro stores UTF-8) and without the empty string (an empty run is dropped).
-const word = fc.string({ minLength: 1, maxLength: 6, unit: 'binary' }).map((s) => s.toWellFormed())
+const word = fc.string({ minLength: 1, maxLength: 6, unit: 'binary' }).map((s) => s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, 'x'))
 const markArb = fc.constantFrom<{ type: string; attrs?: Record<string, unknown> }>({ type: 'bold' }, { type: 'italic' }, { type: 'strike' })
 // Adjacent runs with the same marks would merge into one, so each run alternates its marks.
 const inlineRuns = fc.array(fc.tuple(word, fc.uniqueArray(markArb, { maxLength: 2, selector: (m) => m.type })), { minLength: 1, maxLength: 3 }).map((runs) =>

@@ -8,7 +8,7 @@ import { fcParams } from '../../desktop/test/fuzz'
 // Well-formed strings only: a lone surrogate matches differently under a `u` regex than under indexOf, which is
 // a property of the `u` flag and not of find.ts.
 const SOUP = ['a', 'b', 'A', ' ', '.', '*', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\', '\n', '😀', '𝒳', 'é', '_', '1', '-', '/']
-const textArb = fc.array(fc.oneof(fc.constantFrom(...SOUP), fc.string({ maxLength: 2, unit: 'binary' })), { maxLength: 40 }).map((p) => p.join('').toWellFormed())
+const textArb = fc.array(fc.oneof(fc.constantFrom(...SOUP), fc.string({ maxLength: 2, unit: 'binary' })), { maxLength: 40 }).map((p) => p.join('').replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, 'x'))
 const queryArb = fc.array(fc.constantFrom(...SOUP), { minLength: 1, maxLength: 4 }).map((p) => p.join(''))
 // matchAll's loop must advance: a pattern that makes it spin is caught by counting exec calls, not by a timer.
 class CountedRegExp extends RegExp {
