@@ -91,11 +91,13 @@ describe('T-F4C: the MCP proxy under fuzzed connection schedules', () => {
         fc.asyncProperty(fc.array(fc.boolean(), { maxLength: 12 }), fc.array(cmd, { maxLength: 30 }), async (connects, cmds) => {
           // Each connect() takes the next outcome; past the schedule it succeeds.
           const outcomes = [...connects]
-          let current: ReturnType<typeof fakeApp> | null = null
+          // A holder, because TypeScript narrows a plain `let` to null across the connect closure.
+          const app: { current: ReturnType<typeof fakeApp> | null } = { current: null }
           const connect = async (): Promise<Duplex> => {
             if (outcomes.shift() === false) throw new Error('ECONNREFUSED')
-            current = fakeApp()
-            return current.socket
+            const made = fakeApp()
+            app.current = made
+            return made.socket
           }
           const input = new PassThrough()
           const out = client()
@@ -112,12 +114,12 @@ describe('T-F4C: the MCP proxy under fuzzed connection schedules', () => {
               requested.push(id)
               send({ jsonrpc: '2.0', id, method: c.method, params: {} })
             } else if (c.op === 'notify') send({ jsonrpc: '2.0', method: 'notifications/cancelled', params: {} })
-            else if (c.op === 'answer') current?.answer()
-            else current?.socket.destroy()
+            else if (c.op === 'answer') app.current?.answer()
+            else app.current?.socket.destroy()
             await settle()
           }
           // The app goes away for good: whatever it still owed is answered by lockedReply.
-          current?.socket.destroy()
+          app.current?.socket.destroy()
           await settle()
           input.end()
           await done
