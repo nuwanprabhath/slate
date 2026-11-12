@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto'
 import fc from 'fast-check'
 import { describe, expect, it, vi } from 'vitest'
-import { apply, fcParams, FUZZ_RUNS, forAll, fuzzTimeout, jsonValue, mutation, Rng, type Mutation } from '../../../test/fuzz'
+import { apply, fcParams, FUZZ_RUNS, forAll, fuzzTimeout, jsonValue, mutation, relativeCost, Rng, type Mutation } from '../../../test/fuzz'
 import { importKey, knownDataKey, samePasswordKey } from '../../../test/vaultKeys'
 import { openEnvelope, parseEnvelope, sealEnvelope, UnverifiableFile } from './envelope'
 import { PROFILES } from './profile'
@@ -91,46 +91,15 @@ const P99_OVER_BENIGN = 150
 const MEAN_CEILING_MS = 5
 const ABSOLUTE_CEILING_MS = 500
 
-function parseCost(benign: () => void): { time(fn: () => void): void; check(): void } {
-  let total = 0
-  let worst = 0
-  const each: number[] = []
-  const time = (fn: () => void): number => {
-    const t = performance.now()
-    fn()
-    return performance.now() - t
-  }
-  /** The mean cost of one benign parse on this machine, under this run's load, through the same code path. */
-  const calibrate = (): number => {
-    let sum = 0
-    let n = 0
-    for (let i = 0; i < CALIBRATION_RUNS; i++) {
-      const ms = time(benign)
-      if (i < CALIBRATION_WARMUP) continue
-      sum += ms
-      n++
-    }
-    return Math.max(sum / n, Number.EPSILON)
-  }
-  return {
-    time(fn) {
-      const ms = time(fn)
-      each.push(ms)
-      total += ms
-      worst = Math.max(worst, ms)
-    },
-    check() {
-      expect(each.length).toBeGreaterThan(0)
-      const unit = calibrate()
-      const sorted = [...each].sort((a, b) => a - b)
-      const p99 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))]!
-      expect(total / each.length / unit, 'mean parse / benign parse').toBeLessThan(MEAN_OVER_BENIGN)
-      expect(p99 / unit, 'p99 parse / benign parse').toBeLessThan(P99_OVER_BENIGN)
-      expect(total / each.length, 'mean ms a parse (absolute sanity ceiling)').toBeLessThan(MEAN_CEILING_MS)
-      expect(worst, 'slowest parse, ms (absolute sanity ceiling)').toBeLessThan(ABSOLUTE_CEILING_MS)
-    },
-  }
-}
+const parseCost = (benign: () => void) =>
+  relativeCost(benign, {
+    meanOverBenign: MEAN_OVER_BENIGN,
+    p99OverBenign: P99_OVER_BENIGN,
+    meanCeilingMs: MEAN_CEILING_MS,
+    absoluteCeilingMs: ABSOLUTE_CEILING_MS,
+    calibrationRuns: CALIBRATION_RUNS,
+    calibrationWarmup: CALIBRATION_WARMUP,
+  })
 
 /** The benign baseline: a valid v2 header through the same two parsers, timed the same way. */
 const benignParse = (): void => {
