@@ -1,0 +1,151 @@
+// @vitest-environment happy-dom
+import { describe, expect, it } from 'vitest'
+import fc from 'fast-check'
+import { DOMParser as PMDOMParser, DOMSerializer } from '@tiptap/pm/model'
+import { cleanPastedHtml, storeDataImages } from '../src/clipboard'
+import { schema } from '../src/extensions'
+import { fcParams, fcRuns, fuzzTimeout, relativeCost } from '../../desktop/test/fuzz'
+import { hostileHtml, unsafeMarkup } from '../../desktop/test/fuzzHtml'
+import { replayCorpus } from '../../desktop/test/fuzzCorpus'
+
+// T-F3B: the default paste path. cleanPastedHtml's own promise (what it keeps), then the whole path through the
+// schema (what can run). happy-dom's parser is not Chromium's; F3f replays this corpus in the real browser.
+
+const DROPPED = ['script', 'style', 'meta', 'link', 'title', 'font', 'span']
+const KEEP_PASTE_ATTRS = new Set(['href', 'src', 'alt', 'start', 'colspan', 'rowspan'])
+// Image src may be the blob store's address; links are http, https and mailto (TipTap's Link refuses the rest).
+const SCHEMES = ['http', 'https', 'mailto', 'slate-image']
+
+const parse = (html: string): Document => new DOMParser().parseFromString(html, 'text/html')
+
+/** Property 1: what survives cleanPastedHtml, read back by a parser. */
+function cleanViolations(cleaned: string): string[] {
+  const found: string[] = []
+  for (const el of Array.from(parse(cleaned).body.querySelectorAll<HTMLElement>('*'))) {
+    const tag = el.localName.toLowerCase()
+    if (DROPPED.includes(tag)) found.push(`<${tag}>`)
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase()
+      if (KEEP_PASTE_ATTRS.has(name)) continue
+      if (tag === 'input' && (name === 'type' || name === 'checked')) continue
+      if (tag === 'img' && name === 'width') continue
+      if (name === 'style') {
+        const props = attr.value.split(';').map((d) => d.split(':')[0]!.trim().toLowerCase()).filter(Boolean)
+        if (props.every((p) => p === 'text-align' || p === 'margin-left')) continue
+      }
+      found.push(`<${tag} ${name}>`)
+    }
+  }
+  return found
+}
+
+/** Property 3: the paste as it lands in a page, written out again as the editor draws it. */
+function throughSchema(html: string): HTMLElement {
+  const doc = PMDOMParser.fromSchema(schema).parse(parse(cleanPastedHtml(html)).body)
+  const host = document.createElement('div')
+  host.append(DOMSerializer.fromSchema(schema).serializeFragment(doc.content, { document }))
+  return host
+}
+
+const text = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
+
+// FX-F3B-3 (open): happy-dom's innerHTML throws on a <template> inside svg or math (`<svg><template>`), in the
+// test environment's serialiser, not Slate's code; Chromium does not. Excluded until happy-dom is fixed or F3f covers it.
+const pasteHtml = hostileHtml.filter((h) => !/<(svg|math)\b[\s\S]*<template/i.test(h))
+// FX-F3B-2 (open): cleanPastedHtml is not idempotent, since its output is re-parsed by a different
+// insertion mode (`<table><td>` cleans to `<td></td><table></table>`, which cleans to `<table></table>`).
+// FX-F3B-1 (open, security): an image's src keeps any scheme end to end (`<img src="javascript:alert(1)">`, `file:`),
+// since neither cleanPastedHtml nor the Image node checks it. Excluded from property 3 until FX-F3B-1 lands.
+const unsafeOutsideImgSrc = (root: ParentNode): string[] => unsafeMarkup(root, SCHEMES).filter((f) => !f.startsWith('<img src='))
+
+describe('T-F3B clipboard corpus', () => {
+  replayCorpus('editor', 'paste-html', (bytes) => {
+    const cleaned = cleanPastedHtml(text(bytes))
+    expect(cleanViolations(cleaned)).toEqual([])
+    expect(cleanViolations(cleanPastedHtml(cleaned))).toEqual([])
+    // A paste that throws lands nothing, which is safe; FX-F3B-4 (open): the 2,000-deep div chain overflows
+    // ProseMirror's recursive DOM parser, so that paste fails instead of landing.
+    let landed: HTMLElement | null = null
+    try {
+      landed = throughSchema(text(bytes))
+    } catch (e) {
+      expect(e).toBeInstanceOf(RangeError)
+    }
+    if (landed) expect(unsafeOutsideImgSrc(landed)).toEqual([])
+  })
+})
+
+describe('T-F3B cleanPastedHtml', () => {
+  it('T-F3B-01: keeps no dropped element and no attribute outside the kept set', () => {
+    fc.assert(
+      fc.property(pasteHtml, (html) => {
+        expect(cleanViolations(cleanPastedHtml(html))).toEqual([])
+      }),
+      fcParams,
+    )
+  }, fuzzTimeout())
+
+  // Idempotence is not asserted: it fails on main (FX-F3B-2, see the comment above pasteHtml). What is kept:
+  // a second clean never throws and still keeps only what property 1 allows.
+  it('T-F3B-02: never throws, and cleaning its own output keeps property 1', () => {
+    fc.assert(
+      fc.property(pasteHtml, (html) => {
+        const once = cleanPastedHtml(html)
+        expect(cleanViolations(cleanPastedHtml(once))).toEqual([])
+      }),
+      fcParams,
+    )
+  }, fuzzTimeout())
+
+  it('T-F3B-03: costs within a ratio of a plain paragraph of the same length', () => {
+    const samples = fc.sample(pasteHtml, { numRuns: fcRuns(4, 200).numRuns, seed: fcParams.seed })
+    const longest = Math.max(1, ...samples.map((s) => s.length))
+    const plain = `<p>${'x'.repeat(longest)}</p>`
+    const cost = relativeCost(() => cleanPastedHtml(plain), { calibrationRuns: 300 })
+    for (const html of samples) cost.time(() => cleanPastedHtml(html))
+    cost.check()
+  }, fuzzTimeout(20_000))
+
+  it('T-F3B-04: end to end through the schema, nothing that can run survives', () => {
+    fc.assert(
+      fc.property(pasteHtml, (html) => {
+        expect(unsafeOutsideImgSrc(throughSchema(html))).toEqual([])
+      }),
+      fcRuns(2, 300),
+    )
+  }, fuzzTimeout(10_000))
+})
+
+const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp']
+const dataSrc = fc
+  .tuple(
+    fc.constantFrom(...PICTURE_TYPES, 'image/svg+xml', 'IMAGE/PNG', 'text/html', 'image/x-icon'),
+    fc.constantFrom(';base64,', ',', ';charset=utf-8;base64,'),
+    fc.oneof(fc.base64String({ maxLength: 40 }), fc.string({ maxLength: 20 }), fc.constantFrom('!!!', '====', 'a', 'ab=c', '\n QUJD \t')),
+    fc.constantFrom('data:', 'DATA:', ' data:', '\tda\nta:', '&#100;ata:'),
+  )
+  .map(([mime, sep, body, scheme]) => `${scheme}${mime}${sep}${body}`)
+const imagesHtml = fc
+  .array(fc.oneof(dataSrc.map((src) => `<img src="${src.replace(/"/g, '')}">`), pasteHtml), { maxLength: 6 })
+  .map((parts) => parts.join(''))
+
+describe('T-F3B storeDataImages', () => {
+  it('T-F3B-05: stores only the five picture types, leaves no data: src, never throws', async () => {
+    await fc.assert(
+      fc.asyncProperty(imagesHtml, async (html) => {
+        const types: string[] = []
+        const out = await storeDataImages(html, async (_bytes, mime) => {
+          types.push(mime)
+          return 'slate-image://stored/x'
+        })
+        for (const t of types) expect(PICTURE_TYPES).toContain(t)
+        for (const img of Array.from(parse(out).querySelectorAll('img'))) {
+          // eslint-disable-next-line no-control-regex -- the URL parser strips exactly these
+          const src = (img.getAttribute('src') ?? '').replace(/[\t\n\r]/g, '').replace(/^[\u0000- ]+/, '')
+          expect(src).not.toMatch(/^data:/i)
+        }
+      }),
+      fcParams,
+    )
+  }, fuzzTimeout())
+})
