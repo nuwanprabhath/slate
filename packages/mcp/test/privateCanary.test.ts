@@ -5,6 +5,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { NotebookDoc, PageDoc, contentToJSON, writeContent, type Access, type PMJSON } from '@slate/core'
 import { createSlateMcpServer } from '../src/server'
 import { memorySource } from './memorySource'
+import { fcRuns } from '../../desktop/test/fuzz'
 
 /**
  * A private box must never reach an agent, whatever tool asks. Black box: the real server over an
@@ -268,7 +269,8 @@ describe('private boxes never reach an agent', () => {
           expect(contentToJSON(page.contentMap(box.boxId)!)).toEqual(box.content)
         }
       }),
-      { numRuns: 60, seed: 0x5c0a7e },
+      // A run builds a world and calls every tool: a thirtieth of the kit's count, so the nightly soak deepens it.
+      fcRuns(30),
     )
   }, 120_000)
 
