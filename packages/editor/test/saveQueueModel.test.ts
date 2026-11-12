@@ -111,17 +111,27 @@ const rejectAllCmd = (on: boolean): Cmd => ({
   },
 })
 
+/** The same command with properties 1 and 3 checked once it has run. */
+const checked = (c: Cmd): Cmd => ({
+  check: (m) => c.check(m),
+  toString: () => c.toString(),
+  run: async (m, r) => {
+    await c.run(m, r)
+    checkStored(m)
+  },
+})
+
 const commands = [
-  fc.string({ minLength: 1, maxLength: 4 }).map(editCmd),
-  fc.integer({ min: 2, max: 6 }).map(burstCmd),
-  fc.array(outcomeArb, { maxLength: 4 }).map(scriptCmd),
-  fc.constantFrom(250, 500, 1000, 5000, 10).map(advanceCmd),
-  fc.integer({ min: 1, max: 3000 }).map(idleCmd),
-  fc.constant(closeCmd()),
-  fc.boolean().map(rejectAllCmd),
+  fc.string({ minLength: 1, maxLength: 4 }).map(editCmd).map(checked),
+  fc.integer({ min: 2, max: 6 }).map(burstCmd).map(checked),
+  fc.array(outcomeArb, { maxLength: 4 }).map(scriptCmd).map(checked),
+  fc.constantFrom(250, 500, 1000, 5000, 10).map(advanceCmd).map(checked),
+  fc.integer({ min: 1, max: 3000 }).map(idleCmd).map(checked),
+  fc.constant(checked(closeCmd())),
+  fc.boolean().map(rejectAllCmd).map(checked),
 ]
 
-/** Property 1, checked after every command: replaying what the sink accepted never leaves a pending update. */
+/** Properties 1 and 3 over one state. `checked` runs this after every command, so a violation names the step that caused it. */
 function checkStored(m: Model): void {
   const fresh = new LoroDoc()
   const status = fresh.importBatch(m.sink.stored)
@@ -152,7 +162,7 @@ describe('SaveQueue model', () => {
         const m: Model = { doc, sink, q, edits: 0, closed: false }
         try {
           await fc.asyncModelRun(() => ({ model: m, real: {} as Record<string, never> }), cmds)
-          // The cmds' own checks ran per step; check property 1 and 3 on the final state too.
+          // `checked` held properties 1 and 3 after every command; hold them on the final state too.
           checkStored(m)
           if (!m.closed) {
             // Property 2: the sink accepts again, the timers run, and the stored copy equals the live one.
