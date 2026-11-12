@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { newId } from '@slate/core'
 import { LoroDoc } from 'loro-crdt'
-import { secretBytes } from '../src/shared/secret'
+import { secretBytes, type SecretBytes } from '../src/shared/secret'
 import { writeSettings } from '../src/main/settings'
 import { DocStore } from '../src/main/store'
 import type { VaultHeader } from '../src/main/vault/header'
@@ -25,7 +25,7 @@ export const blobName = (): string => `${toHex(vaultNative().sha256(IMAGE))}.png
 
 export interface TestDevice {
   dir: string
-  recoveryKey: string
+  recoveryKey: SecretBytes
   header: VaultHeader
   notes: number
   ring: KeyRing

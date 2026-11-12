@@ -66,11 +66,20 @@ export const CUSTOM = [
   },
   {
     // Review C7 L2: a typed secret never becomes text; checkPassword (vault/password.ts) is the one residual.
+    // The two recovery-key homes were added for T-ZERO-09 (POAM-10): main used to satisfy this rule by
+    // turning a generated key into a string, and that string could not be zeroed, so it outlived the lock
+    // in V8's heap. Main now keeps the key as bytes, which leaves exactly two places that must take them:
+    // the window, where a displayed key has to be text and may be (Z-6, that process exits after unlock),
+    // and the file the person asked Slate to save it to. Each is one small file with that single purpose.
     name: 'secret-bytes-stay-bytes',
     rule: secretBytesStayBytes,
     files: ['packages/desktop/src/{main,preload,renderer,shared}/**/*.{ts,tsx}'],
     ignores: TESTS,
-    allow: ['packages/desktop/src/main/vault/password.ts'],
+    allow: [
+      'packages/desktop/src/main/vault/password.ts',
+      'packages/desktop/src/renderer/src/vault/secretText.ts',
+      'packages/desktop/src/main/recoverySave.ts',
+    ],
   },
   {
     // A2's request: the MCP tool layer holds an AgentPage, never a PageDoc. The DocSource

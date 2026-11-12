@@ -54,9 +54,9 @@ export interface VaultSecretDeps {
   /** Joins or rejoins (holding `busy` itself). */
   join(secret: VaultSecret): Promise<void>
   changePassword(current: VaultSecret, next: SecretBytes): Promise<void>
-  newRecoveryKey(password: SecretBytes): Promise<string>
+  newRecoveryKey(password: SecretBytes): Promise<SecretBytes>
   /** C9: the new header in memory, its recovery key returned (holding `busy` itself). */
-  prepareRekey(kind: RekeyKind, password: SecretBytes, newPassword: SecretBytes | undefined): Promise<string>
+  prepareRekey(kind: RekeyKind, password: SecretBytes, newPassword: SecretBytes | undefined): Promise<SecretBytes>
 }
 
 const REKEY_KINDS: ReadonlySet<unknown> = new Set<RekeyKind>(['rotate', 'upgrade', 'convert'])
@@ -155,7 +155,7 @@ export function registerVaultSecretIpc(ipc: IpcRegistrar, d: VaultSecretDeps): v
   )
   ipc.handle(
     CH.vaultRekeyPrepare,
-    secretHandler(async (kind, arg, nextArg): Promise<{ ok: true; recoveryKey: string } | { ok: false; message: string }> => {
+    secretHandler(async (kind, arg, nextArg): Promise<{ ok: true; recoveryKey: SecretBytes } | { ok: false; message: string }> => {
       const pw = passwordBytes(arg)
       if (!pw || !REKEY_KINDS.has(kind)) return failed() as { ok: false; message: string }
       const next = nextArg === undefined ? undefined : passwordBytes(nextArg)
@@ -169,7 +169,7 @@ export function registerVaultSecretIpc(ipc: IpcRegistrar, d: VaultSecretDeps): v
   )
   ipc.handle(
     CH.vaultNewRecovery,
-    secretHandler(async (arg): Promise<{ ok: true; recoveryKey: string } | { ok: false; message: string }> => {
+    secretHandler(async (arg): Promise<{ ok: true; recoveryKey: SecretBytes } | { ok: false; message: string }> => {
       const pw = passwordBytes(arg)
       if (!pw) return failed() as { ok: false; message: string }
       try {

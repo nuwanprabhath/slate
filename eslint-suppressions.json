@@ -24,11 +24,6 @@
       "count": 1
     }
   },
-  "packages/desktop/src/main/vault/recovery.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    }
-  },
   "packages/desktop/src/main/vault/screenLock.ts": {
     "@typescript-eslint/no-non-null-assertion": {
       "count": 1

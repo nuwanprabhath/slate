@@ -270,10 +270,12 @@ describe('T-FUZZ-11: decodeRecovery', () => {
         for (const k of [a, b, h]) n.keyDestroy(k)
       }
     }
-    expect(holdsKey(decodeRecovery(secretBytes(text)))).toBe(true)
+    expect(holdsKey(decodeRecovery(text))).toBe(true)
+    // The mutations below are text edits, so the fuzzer works on the key's text form.
+    const textForm = new TextDecoder().decode(text)
     forAll('T-FUZZ-11', (rng) => {
-      let s = rng.bool() ? rng.string(80) : text
-      if (s === text) {
+      let s = rng.bool() ? rng.string(80) : textForm
+      if (s === textForm) {
         const i = rng.int(0, s.length - 1)
         s = rng.pick([s.slice(0, i) + s.slice(i + 1), s.slice(0, i) + rng.pick(['0', 'O', 'I', 'l', '-', ' ', 'z']) + s.slice(i + 1), s.toLowerCase(), s.replace(/-/g, ' '), s + 'A'])
       }
@@ -485,7 +487,7 @@ describe('T-PQ-B1-08: mutated v3 headers', () => {
     destroyKey(kCheck)
     destroyKey(made.mk)
     const recovery = made.recoveryKey!
-    destroyKey(unlockWithRecovery(parseHeader(structuredClone(valid), weak), secretBytes(recovery)))
+    destroyKey(unlockWithRecovery(parseHeader(structuredClone(valid), weak), recovery))
 
     let parsed = 0
     let opened = 0
@@ -505,7 +507,7 @@ describe('T-PQ-B1-08: mutated v3 headers', () => {
         // Nothing dropped or coerced: what parses is the input, field for field.
         expect(canonicalJson(header)).toBe(canonicalJson(h))
         try {
-          destroyKey(unlockWithRecovery(header, secretBytes(recovery)))
+          destroyKey(unlockWithRecovery(header, recovery))
           opened++
         } catch (e) {
           expect(e).toBeInstanceOf(WrongSecret)

@@ -139,7 +139,7 @@ describe('T-ZERO-01: keys are zeroed when a later step throws', () => {
     const m = new Migration(deps)
     const prepared = await m.prepare(secretBytes(PASSWORD))
     if (prepared.kind !== 'recovery') throw new Error(`expected a recovery key, got ${prepared.kind}`)
-    expect(await m.confirmRecovery(secretBytes(prepared.recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(prepared.recoveryKey)).toBe(true)
     rec.failWrite = (p) => p.endsWith(`/${LOCAL_KEYS_FILE}`)
     expect(await leftAfterThrow(() => m.run())).toBe(0)
   })

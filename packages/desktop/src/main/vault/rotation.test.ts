@@ -57,9 +57,9 @@ describe('C9 rekeyHeader: rotation (R-1)', () => {
     const byPassword = await unlockWithPassword(r.header, secretBytes(PW), weak)
     expect(sameMaster(byPassword, r.mk)).toBe(true)
     expect(sameMaster(byPassword, v.mk)).toBe(false)
-    expect(sameMaster(unlockWithRecovery(r.header, secretBytes(r.recoveryKey)), r.mk)).toBe(true)
+    expect(sameMaster(unlockWithRecovery(r.header, r.recoveryKey), r.mk)).toBe(true)
     // The old recovery key no longer opens the new header: its slot could not be rewrapped.
-    expect(() => unlockWithRecovery(r.header, secretBytes(v.recoveryKey!))).toThrow(WrongSecret)
+    expect(() => unlockWithRecovery(r.header, v.recoveryKey!)).toThrow(WrongSecret)
     const hist = openHistory(r.header, r.mk)
     expect([...hist.keys()]).toEqual([0])
     expect(sameMaster(hist.get(0)!.mk, v.mk)).toBe(true)
@@ -117,7 +117,7 @@ describe('C9 rekeyHeader: rotation (R-1)', () => {
     const proof = await proveSecret(other.header, { password: secretBytes(PW) }, weak)
     await expect(rekeyHeader({ kind: 'rotate', base: v.header, mk: v.mk, proof, password: secretBytes(PW), kdf: argon(), profile: 'standard' }, weak)).rejects.toThrow()
     destroyKey(proof.kek)
-    expect(() => unlockWithRecovery(v.header, secretBytes(encodeRecovery(Buffer.alloc(32, 3))))).toThrow(WrongSecret)
+    expect(() => unlockWithRecovery(v.header, encodeRecovery(Buffer.alloc(32, 3)))).toThrow(WrongSecret)
     for (const k of [v.mk, other.mk]) destroyKey(k)
   })
 
@@ -211,7 +211,7 @@ describe('PQ-B4: rotation and conversion of a header-v3 vault', () => {
     expect(parseHeader(JSON.parse(JSON.stringify(h)), weak)).toEqual(h)
     expect(verifyCheck(h, r.mk)).toBe(true)
     expect(sameMaster(await unlockWithPassword(h, secretBytes(PW), weak), r.mk)).toBe(true)
-    expect(sameMaster(unlockWithRecovery(h, secretBytes(r.recoveryKey)), r.mk)).toBe(true)
+    expect(sameMaster(unlockWithRecovery(h, r.recoveryKey), r.mk)).toBe(true)
     const hist = openHistory(h, r.mk)
     expect(sameMaster(hist.get(0)!.mk, v.mk)).toBe(true)
     // A second rotation of the rotated v3 header: still v3, the slot still the same bytes.

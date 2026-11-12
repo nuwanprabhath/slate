@@ -47,7 +47,7 @@ describe('unlock (§6.7, §4)', () => {
     const dir = plainDataDir()
     const { recoveryKey } = await createEncryptedDataDir(dir, secretBytes(PASSWORD), weak)
     await expect(unlockVault(dir, { recoveryKey: secretBytes('AAAA-BBBB') }, weak)).rejects.toThrow(UnlockFailed)
-    const { keyRing } = await unlockVault(dir, { recoveryKey: secretBytes(recoveryKey.toLowerCase()) }, weak)
+    const { keyRing } = await unlockVault(dir, { recoveryKey: secretBytes(new TextDecoder().decode(recoveryKey).toLowerCase()) }, weak)
     expect(isLive(keyRing.get('lk'))).toBe(true)
   })
 

@@ -5,6 +5,7 @@ import { PasswordFields, type NewPasswordHandle } from '../../vault/PasswordFiel
 import { SecretField } from '../../vault/SecretField'
 import { sendSecrets, submitSecret, takeSecret } from '../../vault/secretInput'
 import { zeroSecret } from '../../../../shared/secret'
+import { secretText } from '../../vault/secretText'
 import { allowedIdleOptions, profileLimits, shownIdleMinutes } from '../../../../shared/settings/schema'
 import { CheckboxSetting } from '../fields/CheckboxSetting'
 import { SelectSetting } from '../fields/SelectSetting'
@@ -90,7 +91,7 @@ function NewRecoveryKey() {
     setTyped(false)
     if (!r) return
     if (r.ok) {
-      setKey(r.recoveryKey)
+      setKey(secretText(r.recoveryKey))
       setMessage('')
     } else setMessage(r.message)
   }

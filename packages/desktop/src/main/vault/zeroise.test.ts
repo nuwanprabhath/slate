@@ -56,7 +56,7 @@ describe('T-ZERO-01 (native variant): derived and unwrapped keys are destroyed',
 
   it('T-ZERO-01 Z-e: unlockWithRecovery destroys KEK_rc', async () => {
     const { header, recoveryKey } = await createVault({ password: secretBytes('correct horse'), kdf }, weak)
-    expect(await leftovers(() => destroyKey(unlockWithRecovery(header, secretBytes(recoveryKey!))))).toBe(0)
+    expect(await leftovers(() => destroyKey(unlockWithRecovery(header, recoveryKey!)))).toBe(0)
     expect(await leftovers(() => (() => { try { unlockWithRecovery(header, secretBytes('AAAA-BBBB')) } catch { /* expected */ } })())).toBe(0)
   })
 

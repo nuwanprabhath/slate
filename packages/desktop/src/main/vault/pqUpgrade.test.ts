@@ -88,7 +88,7 @@ describe('PQ-B3: the v2 → v3 header upgrade', () => {
     const h = await local(d.dir)
     expect(h).toMatchObject({ version: 3, revision: d.header.revision + 1, pq: { kem: 'hybrid-only', minCapability: 1 } })
     expect(await notesUnder(d.dir, { password: secretBytes(TEST_PASSWORD) })).toBe(4)
-    expect(await notesUnder(d.dir, { recoveryKey: secretBytes(d.recoveryKey) })).toBe(4)
+    expect(await notesUnder(d.dir, { recoveryKey: d.recoveryKey })).toBe(4)
     expect(await notesUnder(d.dir, { mk: await openQuickUnlock(d.dir, platform) })).toBe(4)
     expect(existsSync(join(d.dir, MIGRATION_FILE))).toBe(false)
     expect(existsSync(join(d.dir, PQ_CANDIDATE_FILE))).toBe(false)

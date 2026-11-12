@@ -22,12 +22,12 @@ describe('C9 key rotation through the migration runner', () => {
         const withRing = liveHandles()
         const m = new Migration(deps({ remote: () => remote, crashAt: step }))
         const { recoveryKey } = await m.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))
-        expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+        expect(await m.confirmRecovery(recoveryKey)).toBe(true)
         await expect(m.runRekey(ring)).rejects.toThrow(`Injected crash before ${step}`)
         closeOpened()
         if (ring.isOpen) ring.close()
         const old = { label: 'password', secret: () => ({ password: secretBytes(PASSWORD) }) }
-        await expectNotesSurviveCrash(dataDir, { old, next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: secretBytes(recoveryKey) }) }], notes, opts: weak })
+        await expectNotesSurviveCrash(dataDir, { old, next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: recoveryKey }) }], notes, opts: weak })
         // No key of either epoch is left in the module, whichever step it stopped at (review C4 M2).
         expect(liveHandles()).toBeLessThanOrEqual(withRing - 9)
         const committed = ((await remoteHeader(remote)) as VaultHeaderV2).keyEpoch === 1

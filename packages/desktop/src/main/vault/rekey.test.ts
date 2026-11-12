@@ -49,7 +49,7 @@ describe('C9 key rotation through the migration runner', () => {
     const ring = await encrypted(remote)
     const m = new Migration(deps({ remote: () => remote }))
     const { recoveryKey } = await m.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     // Another device changes the password first (revision 2 on the remote).
     const base = await remoteHeader(remote)
     const proof = await proveSecret(base, { password: secretBytes(PASSWORD) }, weak)
@@ -84,7 +84,7 @@ describe('C9 key rotation through the migration runner', () => {
     expect(err).toMatch(/cannot read/)
     expect(err).not.toMatch(/Laptop/)
     const ok = new Migration(deps({ remote: () => remote, devices: async () => [{ name: 'Laptop', appVersion: '0.1.0', epochs: 1 }] }))
-    await expect(ok.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))).resolves.toMatchObject({ recoveryKey: expect.any(String) })
+    await expect(ok.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))).resolves.toMatchObject({ recoveryKey: expect.any(Uint8Array) })
     ok.discard()
     ring.close()
   })
@@ -94,7 +94,7 @@ describe('C9 key rotation through the migration runner', () => {
     const before = liveHandles()
     const m = new Migration(deps())
     const { recoveryKey } = await m.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     expect(liveHandles()).toBeGreaterThan(before)
     // What the lock sequence does (index.ts closeKeys), before the ring goes.
     m.discard()

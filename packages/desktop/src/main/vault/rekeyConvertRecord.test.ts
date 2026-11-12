@@ -63,14 +63,14 @@ describe('review C9 H1: a conversion cut short after its remote write', () => {
     const wizard = new Migration(deps())
     const p = await wizard.prepare(secretBytes(PASSWORD))
     if (p.kind !== 'recovery') throw new Error('expected a new vault')
-    await wizard.confirmRecovery(secretBytes(p.recoveryKey))
+    await wizard.confirmRecovery(p.recoveryKey)
     await wizard.run()
     settle()
     const first = opened.length === 0 ? (await unlockVault(dataDir, { password: secretBytes(PASSWORD) }, weak)).keyRing : opened[0]!.ring
     const notes = (await notesUnder(dataDir, () => ({ password: secretBytes(PASSWORD) }), weak))!
     const m = new Migration(deps('close'))
     const { recoveryKey } = await m.prepareRekey(first, 'convert', secretBytes(PASSWORD), secretBytes(FIPS_PASSWORD))
-    await m.confirmRecovery(secretBytes(recoveryKey))
+    await m.confirmRecovery(recoveryKey)
     // Review C9 M2: no conversion without one complete pull under the old keys first; nothing changed then.
     await expect(m.runRekey(first)).rejects.toThrow(/Sync must finish/)
     expect(await readRekeyRecord(dataDir)).toBeNull()
@@ -83,7 +83,7 @@ describe('review C9 H1: a conversion cut short after its remote write', () => {
       old: { label: 'old password', secret: () => ({ password: secretBytes(PASSWORD) }) },
       next: [
         { label: 'new password', secret: () => ({ password: secretBytes(FIPS_PASSWORD) }) },
-        { label: 'new recovery key', secret: () => ({ recoveryKey: secretBytes(recoveryKey) }) },
+        { label: 'new recovery key', secret: () => ({ recoveryKey: recoveryKey }) },
       ],
       notes,
       opts: weak,

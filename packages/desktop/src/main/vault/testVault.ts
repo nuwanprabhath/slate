@@ -45,7 +45,7 @@ export async function createEncryptedDataDir(
   profile: ProfileId = 'standard',
   /** 3 for the e2e hook: a new never-synced vault is v3 (PQ-B4), so no format update runs at its first unlock. */
   headerVersion: 2 | 3 = 2,
-): Promise<{ header: VaultHeader; mk: KeyHandle; recoveryKey: string }> {
+): Promise<{ header: VaultHeader; mk: KeyHandle; recoveryKey: SecretBytes }> {
   const plainFile = join(dataDir, 'slate.db')
   const plain = new DocStore(plainFile)
   const settings = readSettings(plain)

@@ -46,7 +46,7 @@ describe('C9 R-3: standard to fips-140-3', () => {
     const m = new Migration(deps)
     await expect(m.prepareRekey(u.keyRing, 'convert', secretBytes(manifest.password), secretBytes('too short'))).rejects.toThrow()
     const { recoveryKey } = await m.prepareRekey(u.keyRing, 'convert', secretBytes(manifest.password), secretBytes(FIPS_PASSWORD))
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     // Not latched until the notes are copied and the new pair is in place.
     expect(vaultNative().status().approvedKeysOnly).toBe(false)
     const next = await m.runRekey(u.keyRing)

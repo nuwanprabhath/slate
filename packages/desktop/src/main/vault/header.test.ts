@@ -71,21 +71,21 @@ describe('createVault and unlock', () => {
     expect(header.wraps.password.alg).toBe('aes-256-gcm')
     expect(parseHeader(clone(header), weak)).toEqual(header)
     expect(sameMaster(await unlockWithPassword(header, secretBytes('correct horse battery'), weak), mk)).toBe(true)
-    expect(sameMaster(unlockWithRecovery(header, secretBytes(recoveryKey!)), mk)).toBe(true)
+    expect(sameMaster(unlockWithRecovery(header, recoveryKey!), mk)).toBe(true)
     expect(verifyCheck(header, mk)).toBe(true)
   })
 
   it('a wrong password and a wrong recovery key both throw WrongSecret', async () => {
     const { header } = await vault()
     await expect(unlockWithPassword(header, secretBytes('wrong horse battery'), weak)).rejects.toThrow(WrongSecret)
-    expect(() => unlockWithRecovery(header, secretBytes(encodeRecovery(Buffer.alloc(32, 1))))).toThrow(WrongSecret)
+    expect(() => unlockWithRecovery(header, encodeRecovery(Buffer.alloc(32, 1)))).toThrow(WrongSecret)
   })
 
   it('can be created without a recovery slot', async () => {
     const { header, recoveryKey } = await createVault({ password: secretBytes('correct horse battery'), recovery: false, kdf: testKdf() }, weak)
     expect(recoveryKey).toBeNull()
     expect(header.wraps.recovery).toBeUndefined()
-    expect(() => unlockWithRecovery(header, secretBytes(encodeRecovery(Buffer.alloc(32))))).toThrow(WrongSecret)
+    expect(() => unlockWithRecovery(header, encodeRecovery(Buffer.alloc(32)))).toThrow(WrongSecret)
   })
 
   it('production parsing refuses the weak test KDF', async () => {
@@ -145,7 +145,7 @@ describe('tampering', () => {
         continue
       }
       await expect(unlockWithPassword(parsed, secretBytes(pw), weak), label).rejects.toThrow(WrongSecret)
-      expect(() => unlockWithRecovery(parsed, secretBytes(recoveryKey!)), label).toThrow(WrongSecret)
+      expect(() => unlockWithRecovery(parsed, recoveryKey!), label).toThrow(WrongSecret)
     }
   })
 
@@ -155,11 +155,11 @@ describe('tampering', () => {
     const swapped = clone(a.header)
     swapped.wraps = { password: a.header.wraps.recovery!, recovery: a.header.wraps.password }
     await expect(unlockWithPassword(swapped, secretBytes(pw), weak)).rejects.toThrow(WrongSecret)
-    expect(() => unlockWithRecovery(swapped, secretBytes(a.recoveryKey!))).toThrow(WrongSecret)
+    expect(() => unlockWithRecovery(swapped, a.recoveryKey!)).toThrow(WrongSecret)
     const moved = clone(b.header)
     moved.wraps = clone(a.header.wraps)
     await expect(unlockWithPassword(moved, secretBytes(pw), weak)).rejects.toThrow(WrongSecret)
-    expect(() => unlockWithRecovery(moved, secretBytes(a.recoveryKey!))).toThrow(WrongSecret)
+    expect(() => unlockWithRecovery(moved, a.recoveryKey!)).toThrow(WrongSecret)
   })
 
   it('a bad wrap and a bad check give the same error message', async () => {
@@ -183,7 +183,7 @@ describe('changes and choosing a base', () => {
     expect(next.vaultId).toBe(header.vaultId)
     await expect(unlockWithPassword(next, secretBytes(pw), weak)).rejects.toThrow(WrongSecret)
     expect(sameMaster(await unlockWithPassword(next, secretBytes('a whole new password'), weak), mk)).toBe(true)
-    expect(sameMaster(unlockWithRecovery(next, secretBytes(recoveryKey!)), mk)).toBe(true)
+    expect(sameMaster(unlockWithRecovery(next, recoveryKey!), mk)).toBe(true)
   })
 
   it('newRecoveryKey bumps the revision and retires the old key', async () => {
@@ -191,8 +191,8 @@ describe('changes and choosing a base', () => {
     const { header: next, recoveryKey: fresh } = newRecoveryKey(header, mk, await proveSecret(header, { password: secretBytes(pw) }, weak))
     expect(next.revision).toBe(2)
     expect(fresh).not.toBe(recoveryKey)
-    expect(() => unlockWithRecovery(next, secretBytes(recoveryKey!))).toThrow(WrongSecret)
-    expect(sameMaster(unlockWithRecovery(next, secretBytes(fresh)), mk)).toBe(true)
+    expect(() => unlockWithRecovery(next, recoveryKey!)).toThrow(WrongSecret)
+    expect(sameMaster(unlockWithRecovery(next, fresh), mk)).toBe(true)
     expect(sameMaster(await unlockWithPassword(next, secretBytes(pw), weak), mk)).toBe(true)
   })
 
@@ -296,7 +296,7 @@ describe('PQ-B1: header v3', () => {
     expect(verifyCheck(header, mk)).toBe(true)
     expect(parseHeader(clone(header), weak)).toEqual(header)
     expect(sameMaster(await unlockWithPassword(header, secretBytes('correct horse battery'), weak), mk)).toBe(true)
-    expect(sameMaster(unlockWithRecovery(header, secretBytes(recoveryKey!)), mk)).toBe(true)
+    expect(sameMaster(unlockWithRecovery(header, recoveryKey!), mk)).toBe(true)
     // The v2 header is not changed, and a v3 build from a header MK does not verify is refused.
     expect(v2.version).toBe(2)
     const other = await vault()
@@ -332,7 +332,7 @@ describe('PQ-B1: header v3', () => {
       // did not unwrap (keyRandom) is the wrong password's alone.
       const { keyRandom: _k, ...wrongWork } = Object.fromEntries(wrong.calls)
       expect(Object.fromEntries(bad.calls), label).toEqual(wrongWork)
-      expect(() => unlockWithRecovery(parsed, secretBytes(recoveryKey!)), label).toThrow(WrongSecret)
+      expect(() => unlockWithRecovery(parsed, recoveryKey!), label).toThrow(WrongSecret)
     }
   })
 

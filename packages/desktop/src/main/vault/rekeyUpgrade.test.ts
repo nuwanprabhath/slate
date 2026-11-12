@@ -34,13 +34,13 @@ describe('C9 R-5: a header-v1 vault upgrades to v2 by a rotation', () => {
       rowsBefore.close()
       const m = new Migration(deps({ crashAt: step }))
       const { recoveryKey } = await m.prepareRekey(u.keyRing, 'upgrade', pw())
-      await m.confirmRecovery(secretBytes(recoveryKey))
+      await m.confirmRecovery(recoveryKey)
       await expect(m.runRekey(u.keyRing)).rejects.toThrow(`Injected crash before ${step}`)
       closeOpened()
       if (u.keyRing.isOpen) u.keyRing.close()
       await expectNotesSurviveCrash(dataDir, {
         old: { label: 'password', secret: () => ({ password: pw() }) },
-        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: secretBytes(recoveryKey) }) }],
+        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: recoveryKey }) }],
         notes: docs,
         opts: weak,
       })
@@ -59,7 +59,7 @@ describe('C9 R-5: a header-v1 vault upgrades to v2 by a rotation', () => {
     expect(header()).toMatchObject({ version: 1 })
     const m = new Migration(deps())
     const { recoveryKey } = await m.prepareRekey(u.keyRing, 'upgrade', secretBytes(manifest.password))
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     const next = await m.runRekey(u.keyRing)
     opened.splice(0).forEach((o) => o.store.close())
     expect(header()).toMatchObject({ version: 3, suite: 2, keyEpoch: 1, profile: 'standard', pq: { kem: 'hybrid-only', minCapability: 1 } })
@@ -97,7 +97,7 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
     const c = counted(gitRemote())
     const m = new Migration(deps({ remote: () => c.remote, devices: async () => PQ_DEVICES }))
     const { recoveryKey } = await m.prepareRekey(ring, 'upgrade', pw())
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     const next = await m.runRekey(ring)
     opened.splice(0).forEach((o) => o.store.close())
     next.close()
@@ -107,7 +107,7 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
     expect(header()).toMatchObject(v3)
     expect(await readRekeyRecord(dataDir)).toMatchObject({ rekey: 'upgrade', step: 'repush', fromEpoch: 0, toEpoch: 1 })
     expect(JSON.parse(readFileSync(join(dataDir, PROFILE_FLOOR_FILE), 'utf8'))).toMatchObject({ minHeaderVersion: 3 })
-    expect(await notesUnder(dataDir, () => ({ recoveryKey: secretBytes(recoveryKey) }), weak)).toBe(docs)
+    expect(await notesUnder(dataDir, () => ({ recoveryKey: recoveryKey }), weak)).toBe(docs)
   })
 
   for (const step of REKEY_STEPS.slice(0, 7) as RekeyStep[]) {
@@ -116,7 +116,7 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
       const remote = gitRemote()
       const m = new Migration(deps({ remote: () => remote, devices: async () => PQ_DEVICES, crashAt: step }))
       const { recoveryKey } = await m.prepareRekey(ring, 'upgrade', pw())
-      expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+      expect(await m.confirmRecovery(recoveryKey)).toBe(true)
       await expect(m.runRekey(ring)).rejects.toThrow(`Injected crash before ${step}`)
       closeOpened()
       if (ring.isOpen) ring.close()
@@ -126,7 +126,7 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
       expect(snap !== null).toBe(step !== 'remote')
       await expectNotesSurviveCrash(dataDir, {
         old: { label: 'password', secret: () => ({ password: pw() }) },
-        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: secretBytes(recoveryKey) }) }],
+        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: recoveryKey }) }],
         notes: docs,
         opts: weak,
       })
@@ -139,7 +139,7 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
     let devices = OLD_DEVICES
     const m = new Migration(deps({ remote: () => remote, devices: async () => devices }))
     const { recoveryKey } = await m.prepareRekey(ring, 'upgrade', pw())
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     const next = await m.runRekey(ring)
     opened.splice(0).forEach((o) => o.store.close())
     expect(header()).toMatchObject({ version: 2, keyEpoch: 1 })
@@ -240,7 +240,7 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
       const notes = (await notesUnder(dataDir, () => ({ password: secretBytes(PASSWORD) }), weak))!
       const m = new Migration(deps({ remote: () => remote, devices: async () => PQ_DEVICES, ...(step ? { crashAt: step } : {}) }))
       const { recoveryKey } = await m.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))
-      expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+      expect(await m.confirmRecovery(recoveryKey)).toBe(true)
       if (!step) {
         ;(await m.runRekey(ring)).close()
         closeOpened()
@@ -255,7 +255,7 @@ describe('PQ-B4: v1 vaults and new vaults land on v3 (roadmap §3.6)', () => {
       if (step !== 'remote') expect(await remoteHeader(remote)).toMatchObject({ version: 3, keyEpoch: 1 })
       await expectNotesSurviveCrash(dataDir, {
         old: { label: 'password', secret: () => ({ password: secretBytes(PASSWORD) }) },
-        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: secretBytes(recoveryKey) }) }],
+        next: [{ label: 'new recovery key', secret: () => ({ recoveryKey: recoveryKey }) }],
         notes,
         opts: weak,
       })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CH } from '../shared/ipc'
+import { secretBytes } from '../shared/secret'
 import { createIpc, type Handler, type RawIpc } from './ipcGuard'
 import { VaultBusy } from './vault/busy'
 import { registerVaultSecretIpc, secretsIn, type VaultSecretDeps } from './vaultIpc'
@@ -58,13 +59,13 @@ function setup(state: State, fail: boolean, open = true) {
       if (fail) throw new Error('the vault step failed')
       return { ok: true, strength: 3 }
     },
-    prepare: (pw) => step({ kind: 'recovery' as const, recoveryKey: 'X' }, pw),
+    prepare: (pw) => step({ kind: 'recovery' as const, recoveryKey: secretBytes('X') }, pw),
     confirmRecovery: (k) => step(true, k),
     finishMigration: (pw) => step(undefined, pw),
     join: (s) => step(undefined, 'password' in s ? s.password : s.recoveryKey),
     changePassword: (c, n) => step(undefined, 'password' in c ? c.password : c.recoveryKey, n),
-    newRecoveryKey: (pw) => step('NEW-KEY', pw),
-    prepareRekey: (_kind, pw, next) => step('REKEY-KEY', pw, ...(next ? [next] : [])),
+    newRecoveryKey: (pw) => step(secretBytes('NEW-KEY'), pw),
+    prepareRekey: (_kind, pw, next) => step(secretBytes('REKEY-KEY'), pw, ...(next ? [next] : [])),
   }
   registerVaultSecretIpc(ipc, deps)
   return { handlers, busy, seen }

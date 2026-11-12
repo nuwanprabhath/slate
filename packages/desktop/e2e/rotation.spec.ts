@@ -38,10 +38,19 @@ async function configureGit(page: Page) {
   await expect(page.getByTestId('sync-settings')).toHaveCount(0, { timeout: 30_000 })
 }
 
+/**
+ * Settings -> Security. The waits here and in `rekey` carry an explicit budget because these cases are
+ * two-device key rotations that ask for 150-180 s of their own (`test.setTimeout` below), while an
+ * `expect` left alone waits only Playwright's default 5 s. On a loaded machine opening this panel can
+ * take longer than that, which failed `rekey` twice on the full suite and never on its own; how fast the
+ * panel appears is the perf suite's measurement, not this one's.
+ */
+const PANEL = { timeout: 30_000 }
+
 async function openSecurity(page: Page) {
   await page.getByTestId('activity-settings').click()
   await page.locator('.settings-nav-item', { hasText: 'Security' }).click()
-  await expect(page.getByTestId('settings-heading')).toHaveText('Security')
+  await expect(page.getByTestId('settings-heading')).toHaveText('Security', PANEL)
 }
 
 async function closeSettings(page: Page) {
@@ -66,7 +75,7 @@ async function lockWindow(app: ElectronApplication): Promise<Page> {
 /** A key change in Settings → Security: password(s), the new recovery key typed back, then the change. */
 async function rekey(page: Page, kind: 'rotate' | 'convert', password: string, newPassword?: string) {
   await openSecurity(page)
-  await expect(page.getByTestId('security-keys')).toBeVisible()
+  await expect(page.getByTestId('security-keys')).toBeVisible(PANEL)
   await page.getByTestId(`security-${kind}`).click({ timeout: 30_000 })
   await page.getByTestId('security-rekey-password').fill(password)
   if (newPassword) {

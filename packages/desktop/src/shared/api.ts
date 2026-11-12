@@ -183,7 +183,7 @@ export interface PasswordCheck {
   reason?: string
   strength: 0 | 1 | 2 | 3 | 4
 }
-export type PrepareEncryption = { kind: 'recovery'; recoveryKey: string } | { kind: 'join' }
+export type PrepareEncryption = { kind: 'recovery'; recoveryKey: SecretBytes } | { kind: 'join' }
 /** The migration's phases in order (main/vault/migration.ts `MIGRATION_PHASES`). */
 export interface EncryptProgress {
   phase: 'remote' | 'claim' | 'close' | 'copy' | 'bookkeeping' | 'switch' | 'cleanup' | 'open'
@@ -246,7 +246,7 @@ export interface VaultApi {
   /** §7.3 last bullet: wipes a plaintext remote and encrypts it with this vault. */
   encryptRemote(): Promise<UnlockResult>
   changePassword(current: VaultSecret, next: SecretBytes): Promise<UnlockResult>
-  newRecoveryKey(password: SecretBytes): Promise<{ ok: true; recoveryKey: string } | { ok: false; message: string }>
+  newRecoveryKey(password: SecretBytes): Promise<{ ok: true; recoveryKey: SecretBytes } | { ok: false; message: string }>
   onProgress(handler: (progress: EncryptProgress) => void): () => void
   /** The cryptographic module's state, measured once at launch. */
   moduleStatus(): Promise<CryptoModuleStatus>
@@ -263,7 +263,7 @@ export interface VaultApi {
    * key, shown once and typed back with `confirmRecovery`. `password` is the current one; `newPassword` (convert
    * only) the fips-140-3 vault's.
    */
-  prepareRekey(kind: RekeyKind, password: SecretBytes, newPassword?: SecretBytes): Promise<{ ok: true; recoveryKey: string } | { ok: false; message: string }>
+  prepareRekey(kind: RekeyKind, password: SecretBytes, newPassword?: SecretBytes): Promise<{ ok: true; recoveryKey: SecretBytes } | { ok: false; message: string }>
   /** C9: applies the prepared change: notes re-encrypted under new keys, the remote header replaced. */
   runRekey(): Promise<UnlockResult>
   /** C9 R-2 (git): the sync branch becomes one commit of its current, re-encrypted files. */

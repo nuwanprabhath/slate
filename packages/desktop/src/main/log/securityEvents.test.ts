@@ -105,14 +105,16 @@ describe('security audit events (audit §4.8)', () => {
     const adopted = await unlockVault(data, { password: secretBytes(NEXT) }, weak)
     expect(adopted.passwordChanged).toBe(true)
     securityEvent.unlockSucceeded({ method: 'password', headerRevision: adopted.headerRevision })
-    const recovered = await unlockVault(data, { recoveryKey: secretBytes(recoveryKey) }, weak)
+    const recovered = await unlockVault(data, { recoveryKey: recoveryKey }, weak)
     securityEvent.locked({ trigger: 'manual', destroyedHandles: 0 })
     adopted.keyRing.close()
     recovered.keyRing.close()
     const text = log.read()
     expect(text).toContain('vault.unlock.succeeded')
     expect(text).toContain('vault.header.adopted')
-    const canaries = [PASSWORD, NEXT, 'CANARY', 'wrong-3c3c', recoveryKey, recoveryKey.toLowerCase(), recoveryKey.replace(/-/g, ''), Buffer.from(PASSWORD).toString('base64'), Buffer.from(PASSWORD).toString('hex')]
+    // The key is bytes now (T-ZERO-09); the log is text, so the canaries are its text forms.
+    const keyText = new TextDecoder().decode(recoveryKey)
+    const canaries = [PASSWORD, NEXT, 'CANARY', 'wrong-3c3c', keyText, keyText.toLowerCase(), keyText.replace(/-/g, ''), Buffer.from(PASSWORD).toString('base64'), Buffer.from(PASSWORD).toString('hex')]
     for (const c of canaries) expect(text, c).not.toContain(c)
   })
 })

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CH } from '../../shared/ipc'
-import { secretBytes } from '../../shared/secret'
+import { secretBytes, type SecretBytes } from '../../shared/secret'
 import type { IpcRegistrar } from '../ipcGuard'
 import { DocStore } from '../store'
 import { registerVaultSecretIpc, type VaultSecretDeps } from '../vaultIpc'
@@ -79,7 +79,15 @@ async function textConversions(work: () => Promise<unknown>, includePolicy = fal
     })
   }
   wrap(TextDecoder.prototype, 'decode', (_self, [input]) => copy(input))
-  wrap(Buffer.prototype, 'toString', (self) => copy(self))
+  wrap(Buffer.prototype, 'toString', (self, args) => {
+    // `toString(encoding, start, end)` renders only that range. Copying the whole Buffer would blame a
+    // conversion for its own unused tail: `readJsonCapped` renders (0, n) of a 64 KiB read buffer, and
+    // pooled memory past n can hold anything, a freed recovery key among it now that the key is bytes.
+    const b = self as Buffer
+    const start = args.length > 1 ? Number(args[1] ?? 0) : 0
+    const end = args.length > 2 && args[2] !== undefined ? Number(args[2]) : b.length
+    copy(Number.isNaN(start) || Number.isNaN(end) ? b : b.subarray(start, end))
+  })
   for (const slice of ['utf8Slice', 'latin1Slice', 'asciiSlice', 'ucs2Slice', 'hexSlice', 'base64Slice', 'base64urlSlice']) {
     wrap(Buffer.prototype, slice, (self, [start, end]) => copy((self as Buffer).subarray(Number(start ?? 0), end === undefined ? undefined : Number(end))))
   }
@@ -145,40 +153,47 @@ describe('no text is made from a typed secret on any secret channel (Z-5, review
     })
     const send = (ch: string, ...args: unknown[]) => handlers.get(ch)!({}, ...args)
 
-    let firstKey = ''
-    let newKey = ''
-    let rotatedKey = ''
+    // The keys main returns are bytes now (T-ZERO-09), and `secretHandler` zeroes what it is given, so
+    // every send gets its own copy, exactly as the renderer encodes a fresh one from the text it shows.
+    const copy = (b: SecretBytes): SecretBytes => new Uint8Array(b)
+    const ungrouped = (b: SecretBytes): SecretBytes => Uint8Array.from([...b].filter((c) => c !== 0x2d))
+    let firstKey: SecretBytes = new Uint8Array(0)
+    let newKey: SecretBytes = new Uint8Array(0)
+    let rotatedKey: SecretBytes = new Uint8Array(0)
     const results: unknown[] = []
     const w = await textConversions(async () => {
       results.push(await send(CH.vaultCheckPassword, secretBytes(PASSWORD)))
-      const prepared = (await send(CH.vaultPrepare, secretBytes(PASSWORD))) as { kind: string; recoveryKey: string }
+      const prepared = (await send(CH.vaultPrepare, secretBytes(PASSWORD))) as { kind: string; recoveryKey: SecretBytes }
       firstKey = prepared.recoveryKey
-      results.push(await send(CH.vaultConfirmRecovery, secretBytes(firstKey)))
+      results.push(await send(CH.vaultConfirmRecovery, copy(firstKey)))
       results.push(await migration.run())
       state = 'locked'
       results.push(await send(CH.vaultUnlock, secretBytes(PASSWORD)))
       ring!.close()
-      results.push(await send(CH.vaultUnlockRecovery, secretBytes(firstKey)))
+      results.push(await send(CH.vaultUnlockRecovery, copy(firstKey)))
       state = 'unlocked'
       results.push(await send(CH.vaultQuickUnlockEnable, secretBytes(PASSWORD)))
       results.push(await send(CH.vaultJoin, { password: secretBytes(PASSWORD) }))
-      results.push(await send(CH.vaultJoin, { recoveryKey: secretBytes(firstKey) }))
-      const made = (await send(CH.vaultNewRecovery, secretBytes(PASSWORD))) as { ok: boolean; recoveryKey: string }
+      results.push(await send(CH.vaultJoin, { recoveryKey: copy(firstKey) }))
+      const made = (await send(CH.vaultNewRecovery, secretBytes(PASSWORD))) as { ok: boolean; recoveryKey: SecretBytes }
       newKey = made.recoveryKey
       results.push(made.ok)
-      results.push(await send(CH.vaultChangePassword, { recoveryKey: secretBytes(newKey) }, secretBytes(NEW_PASSWORD)))
+      results.push(await send(CH.vaultChangePassword, { recoveryKey: copy(newKey) }, secretBytes(NEW_PASSWORD)))
       // C9: a key rotation takes the password and gives a new recovery key, typed back before it counts.
-      const rekeyed = (await send(CH.vaultRekeyPrepare, 'rotate', secretBytes(NEW_PASSWORD))) as { ok: boolean; recoveryKey: string }
+      const rekeyed = (await send(CH.vaultRekeyPrepare, 'rotate', secretBytes(NEW_PASSWORD))) as { ok: boolean; recoveryKey: SecretBytes }
       rotatedKey = rekeyed.recoveryKey
       results.push(rekeyed.ok)
-      results.push(await send(CH.vaultConfirmRecovery, secretBytes(rotatedKey)))
+      results.push(await send(CH.vaultConfirmRecovery, copy(rotatedKey)))
       ring = await migration.runRekey(ring!)
       state = 'migrating'
       results.push(await send(CH.vaultFinishMigration, secretBytes(NEW_PASSWORD)))
     })
     ring!.close()
     expect(results).toEqual([{ ok: true, strength: expect.any(Number) }, true, { kind: 'done' }, { ok: true }, { ok: true }, { ok: true }, { ok: true }, { ok: true }, true, { ok: true }, true, true, { ok: true }])
-    const needles = [PASSWORD, NEW_PASSWORD, firstKey, firstKey.replace(/-/g, ''), newKey, newKey.replace(/-/g, ''), rotatedKey, rotatedKey.replace(/-/g, '')].map(secretBytes)
+    const needles = [
+      ...[PASSWORD, NEW_PASSWORD].map(secretBytes),
+      ...[firstKey, newKey, rotatedKey].flatMap((k) => [k, ungrouped(k)]),
+    ]
     expect(leaks(w, needles)).toBe(0)
   }, 60_000)
 

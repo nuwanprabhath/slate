@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RekeyKind, VaultKeysInfo } from '../../../../shared/api'
 import { zeroSecret } from '../../../../shared/secret'
+import { secretText } from '../../vault/secretText'
 import { errorText } from '../../vault/events'
 import { PasswordFields, type NewPasswordHandle } from '../../vault/PasswordFields'
 import { SecretArea, SecretField } from '../../vault/SecretField'
@@ -33,7 +34,7 @@ function RekeyFlow({ kind, onDone }: { kind: RekeyKind; onDone: (message: string
     try {
       const r = await sendSecrets([password, next], () => window.slate.vault.prepareRekey(kind, password, next ?? undefined))
       if (r.ok) {
-        setKey(r.recoveryKey)
+        setKey(secretText(r.recoveryKey))
         setMessage('')
         setStep('key')
       } else setMessage(r.message)

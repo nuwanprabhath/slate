@@ -68,7 +68,7 @@ export async function encrypted(remote: VaultRemote | null = null, over: Partial
   const m = new Migration(deps({ remote: () => remote, ...over }))
   const p = await m.prepare(secretBytes(PASSWORD))
   if (p.kind !== 'recovery') throw new Error('expected a new vault')
-  expect(await m.confirmRecovery(secretBytes(p.recoveryKey))).toBe(true)
+  expect(await m.confirmRecovery(p.recoveryKey)).toBe(true)
   await m.run()
   const first = opened.splice(0)[0]!
   first.store.close()
@@ -77,7 +77,7 @@ export async function encrypted(remote: VaultRemote | null = null, over: Partial
 
 export async function rotate(m: Migration, ring: KeyRing, kind: 'rotate' | 'upgrade' = 'rotate'): Promise<KeyRing> {
   const { recoveryKey } = await m.prepareRekey(ring, kind, secretBytes(PASSWORD))
-  expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+  expect(await m.confirmRecovery(recoveryKey)).toBe(true)
   const next = await m.runRekey(ring)
   opened.splice(0).forEach((o) => o.store.close())
   return next

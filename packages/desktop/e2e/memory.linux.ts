@@ -169,7 +169,12 @@ test('T-ZERO-09: after lock, the main process holds no copy of a recovery key it
 
     // Settings → Security's "new recovery key": main generates it, keeps the text for `saveRecoveryKey` (C4)
     // and shows it once. Nothing here is a secret this test chose, so the needles come from what main returned.
-    const made = await notes.evaluate((pw) => window.slate.vault.newRecoveryKey(new TextEncoder().encode(pw)), CANARY_PASSWORD)
+    const made = await notes.evaluate(async (pw) => {
+      const r = await window.slate.vault.newRecoveryKey(new TextEncoder().encode(pw))
+      // Main now hands the key over as bytes, which do not survive this boundary; the page turns it into
+      // text exactly as the real renderer does, and the needles are still main's own key.
+      return r.ok ? { ok: true as const, recoveryKey: new TextDecoder().decode(r.recoveryKey) } : { ok: false as const, message: r.message }
+    }, CANARY_PASSWORD)
     expect(made.ok, `newRecoveryKey failed: ${made.ok ? '' : made.message}`).toBe(true)
     const text = made.ok ? made.recoveryKey : ''
     const needles = [...recoveryTextNeedles(text), ...needlesFor('recovery-secret', decodeRecoveryText(text))]

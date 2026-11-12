@@ -1,6 +1,5 @@
 import { realpathSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, isAbsolute } from 'node:path'
-import { canonicalRecoveryText } from './recovery'
 
 /**
  * The real path of `path`, resolving symlinks in whatever part of it exists. `.native` also gives the
@@ -40,19 +39,4 @@ export function recoverySaveDialog(documentsDir: string): { defaultPath: string;
       'Documents may sync to iCloud or another cloud drive, putting the key next to your notes. Printing it or keeping it in a password manager is safer.',
     filters: [{ name: 'Text', extensions: ['txt'] }],
   }
-}
-
-/** The saved file's text; only a well-formed recovery key is ever written. */
-export function recoveryFileText(recoveryKey: string): string {
-  const key = canonicalRecoveryText(recoveryKey)
-  return [
-    'Slate recovery key',
-    '',
-    key,
-    '',
-    'With this key you can open your encrypted Slate notes if you forget your password.',
-    'Keep it somewhere safe and away from this computer. Anyone who has it and a copy of your',
-    'notes can read them.',
-    '',
-  ].join('\n')
 }

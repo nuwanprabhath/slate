@@ -91,7 +91,12 @@ test('T-ZERO-10: after lock, the main JavaScript heap retains no recovery key it
     await expect.poll(() => notes.evaluate(async () => (await window.slate.vault.status()).state), { timeout: 15_000 }).toBe('unlocked')
 
     // Settings → Security's "new recovery key": the text is main's, not one this test chose.
-    const made = await notes.evaluate((pw) => window.slate.vault.newRecoveryKey(new TextEncoder().encode(pw)), CANARY_PASSWORD)
+    const made = await notes.evaluate(async (pw) => {
+      const r = await window.slate.vault.newRecoveryKey(new TextEncoder().encode(pw))
+      // Main now hands the key over as bytes, which do not survive this boundary; the page turns it into
+      // text exactly as the real renderer does, and the needles are still main's own key.
+      return r.ok ? { ok: true as const, recoveryKey: new TextDecoder().decode(r.recoveryKey) } : { ok: false as const, message: r.message }
+    }, CANARY_PASSWORD)
     expect(made.ok, `newRecoveryKey failed: ${made.ok ? '' : made.message}`).toBe(true)
     const text = made.ok ? made.recoveryKey : ''
     const needles: Array<[string, string]> = [
@@ -99,9 +104,19 @@ test('T-ZERO-10: after lock, the main JavaScript heap retains no recovery key it
       ['recovery-text/ungrouped', text.replace(/-/g, '')],
     ]
 
-    // Control: main holds the key for `saveRecoveryKey`, so a snapshot finds it. Without this a clean result
-    // after the lock would prove only that the snapshot cannot see the text at all.
-    expect(found(await heapText(app, join(snapshots, 'recovery-retained.heapsnapshot')), needles)).not.toEqual([])
+    // Control: a string main is holding on purpose. It used to be the recovery key itself, because main
+    // kept the key as text for `saveRecoveryKey` -- the defect T-ZERO-09 measured on v0.7.0. Main now
+    // keeps the key as bytes, so a planted string is what proves the snapshot can still see one; without
+    // a control, a clean result below would prove only that the scan is blind.
+    const canary = 'T-ZERO-10 canary 9d41f0c7-2b85-4e3a-9f6d-1c0a7e5b84d2'
+    await app.evaluate((_electron, c) => {
+      ;(globalThis as unknown as { __zeroTenCanary?: string }).__zeroTenCanary = c
+    }, canary)
+    const retained = await heapText(app, join(snapshots, 'recovery-retained.heapsnapshot'))
+    expect(found(retained, [['canary', canary]]), 'the heap scan can see a string main holds').toEqual(['canary'])
+    // Stronger than this test could ask before: main holds the key it just generated and still has no
+    // text of it anywhere on its heap, so there is no string for a lock to have to clean up.
+    expect(found(retained, needles), 'main turns a generated recovery key into text at all').toEqual([])
 
     await notes.evaluate(() => window.slate.vault.lock())
     await expect

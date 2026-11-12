@@ -530,9 +530,9 @@ const PQ_V3 = { kem: 'hybrid-only', minCapability: 1 } as const
  * (`latchProfile`, review C5 M1). Only approved services run before that. Returns MK, which the caller owns.
  * Every KEK is destroyed and the recovery secret wiped here.
  */
-export async function createVault(input: CreateVaultInput & { headerVersion?: 2 }, opts?: WeakKdfOption): Promise<{ header: VaultHeaderV2; mk: KeyHandle; recoveryKey: string | null }>
-export async function createVault(input: CreateVaultInput, opts?: WeakKdfOption): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: string | null }>
-export async function createVault(input: CreateVaultInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: string | null }> {
+export async function createVault(input: CreateVaultInput & { headerVersion?: 2 }, opts?: WeakKdfOption): Promise<{ header: VaultHeaderV2; mk: KeyHandle; recoveryKey: SecretBytes | null }>
+export async function createVault(input: CreateVaultInput, opts?: WeakKdfOption): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: SecretBytes | null }>
+export async function createVault(input: CreateVaultInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: SecretBytes | null }> {
   const profile = input.profile ?? 'standard'
   checkProfileUsable(profile)
   const kdf: KdfParams = input.kdf === undefined ? await kdfForProfile(profile) : 'alg' in input.kdf ? input.kdf : { ...defaultKdf(), ...input.kdf }
@@ -555,7 +555,7 @@ export async function createVault(input: CreateVaultInput, opts: WeakKdfOption =
       wraps: { password: { alg: 'aes-256-gcm', nonce: '', ct: '' } },
     }
     body.wraps.password = seal(kek, mk, body, 'password')
-    let recoveryKey: string | null = null
+    let recoveryKey: SecretBytes | null = null
     if (input.recovery !== false) {
       const sealed = sealRecovery(mk, body)
       recoveryKey = sealed.recoveryKey
@@ -576,7 +576,7 @@ export async function createVault(input: CreateVaultInput, opts: WeakKdfOption =
  * A new recovery secret and its wrap of a fresh MK. The secret exists as JavaScript bytes only long enough to
  * become the text the user saves (an inherent residual, like the typed password), then the module wipes it.
  */
-function sealRecovery(mk: KeyHandle, body: Omit<VaultHeaderV2, 'check'>): { wrap: WrapV2; recoveryKey: string } {
+function sealRecovery(mk: KeyHandle, body: Omit<VaultHeaderV2, 'check'>): { wrap: WrapV2; recoveryKey: SecretBytes } {
   const secret = vaultNative().randomBytes(32)
   let kek: KeyHandle | null = null
   try {
@@ -701,7 +701,7 @@ export async function changePassword<H extends VaultHeader>(base: H, mk: KeyHand
 }
 
 /** A new recovery secret, shown once; MK moves to it from `proof`'s wrap. The secret and KEK_rc are wiped here. */
-export function newRecoveryKey<H extends VaultHeader>(base: H, mk: KeyHandle, proof: WrapProof): { header: H; recoveryKey: string } {
+export function newRecoveryKey<H extends VaultHeader>(base: H, mk: KeyHandle, proof: WrapProof): { header: H; recoveryKey: SecretBytes } {
   const body = next(base, mk)
   const secret = vaultNative().randomBytes(32)
   let kek: KeyHandle | null = null
@@ -856,7 +856,7 @@ export function deviceSlotsAllow(header: VaultHeader, profile: ProfileId): boole
  * and stay unopened by this build.
  * Returns the new MK, which the caller owns; the recovery secret and every KEK are wiped here.
  */
-export async function rekeyHeader(input: RekeyInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: string }> {
+export async function rekeyHeader(input: RekeyInput, opts: WeakKdfOption = {}): Promise<{ header: VaultHeaderV2 | VaultHeaderV3; mk: KeyHandle; recoveryKey: SecretBytes }> {
   const { kind, base, proof } = input
   if (!verifyCheck(base, input.mk)) throw new WrongSecret()
   // The proof must be the base's own password wrap: what moves into history is then the MK `check` just verified.

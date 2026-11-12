@@ -6,6 +6,20 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-12
+
+### Security
+
+- A recovery key Slate generated no longer survives in the main process's memory after you lock the
+  vault. T-ZERO-09, which first ran on v0.7.0's release build, found the key's text still in main's V8
+  heap after a lock and two full garbage collections: `encodeRecovery` built it as a JavaScript string,
+  and a string cannot be zeroed. The key is now written, kept, saved to file and handed to the window as
+  bytes, which are zeroed when the vault locks; only the window, whose process exits after unlock, turns
+  it into text. The 32-byte secret itself was never exposed (`docs/compliance/poam.md` POAM-10).
+- The Z-5 watch that checks no main-process path turns a secret into text now measures only the range a
+  conversion renders. It had been blaming `Buffer#toString(encoding, start, end)` for the whole buffer,
+  so the unused tail of a 64 KiB file-read buffer counted as a leak.
+
 ## [0.7.0] - 2026-11-12
 
 This release implements the architecture, performance and security review in

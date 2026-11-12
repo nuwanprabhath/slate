@@ -45,7 +45,7 @@ import { destroyKey, toHex, vaultNative } from './native'
 import { checkPassword } from './password'
 import { checkProfileUsable, fipsProfileAvailable, latchProfile, ProfileMismatch, profileRank, type ProfileId } from './profile'
 import { updateProfileFloor } from './profileFloor'
-import type { SecretBytes } from '../../shared/secret'
+import { zeroSecret, type SecretBytes } from '../../shared/secret'
 import type { VaultKeysInfo } from '../../shared/api'
 import { savePreunlock } from './preunlockSync'
 import { claimRemote, commitRekeyedHeader, sameHeader, updateRemoteHeader, type VaultRemote } from './remoteVault'
@@ -208,7 +208,7 @@ export interface DeviceRecord extends CapabilityRecord {
   lastSeen?: number
 }
 
-export type PrepareResult = { kind: 'recovery'; recoveryKey: string } | { kind: 'join' }
+export type PrepareResult = { kind: 'recovery'; recoveryKey: SecretBytes } | { kind: 'join' }
 
 /** Engine bookkeeping (packages/sync engine META, unscoped for OneDrive and `git:<remote>#<branch>:` for git). */
 const ENGINE_KEYS = "key LIKE 'git:%' OR key IN ('deviceRecord', 'deltaCursor', 'changedSeq') OR " + ['pushed', 'seq', 'chunks', 'snapshot', 'stale', 'base'].map((p) => `key LIKE '${p}:%'`).join(' OR ')
@@ -314,9 +314,16 @@ export class Migration {
   /**
    * C4: the recovery key this process just generated, kept so `vault:save-recovery` writes the file
    * from it. The page shows the same text, but never hands it back: a secret the renderer returns is
-   * a secret main has to trust. Dropped by `discard()`, so a lock or a quit takes it with them.
+   * a secret main has to trust. Zeroed and dropped by `discard()`, so a lock or a quit takes it with them:
+   * these are bytes and not a string precisely so that the zeroing is possible (POAM-10, T-ZERO-09).
    */
-  private pendingRecovery: string | null = null
+  private pendingRecovery: SecretBytes | null = null
+
+  /** Replaces the pending key, zeroing the one it displaces. */
+  private keepRecovery(key: SecretBytes): void {
+    zeroSecret(this.pendingRecovery)
+    this.pendingRecovery = key
+  }
 
   constructor(private readonly deps: MigrationDeps) {}
 
@@ -347,7 +354,7 @@ export class Migration {
     this.prepared = { header, mk, confirmed: false }
     // `createVault` always makes one for a new vault; a header with no recovery slot cannot be created here.
     if (recoveryKey === null || recoveryKey === undefined) throw new Error('The new vault has no recovery key')
-    this.pendingRecovery = recoveryKey
+    this.keepRecovery(recoveryKey)
     return { kind: 'recovery', recoveryKey }
   }
 
@@ -368,11 +375,12 @@ export class Migration {
   }
 
   /** The recovery key this process last generated and has not discarded; null when there is none to save. */
-  pendingRecoveryKey(): string | null {
+  pendingRecoveryKey(): SecretBytes | null {
     return this.pendingRecovery
   }
 
   discard(): void {
+    zeroSecret(this.pendingRecovery)
     this.pendingRecovery = null
     destroyKey(this.rekeyPrepared?.mk)
     this.rekeyPrepared = undefined
@@ -581,7 +589,7 @@ export class Migration {
    * memory and its new recovery key returned, to be shown once and typed back (`confirmRecovery`). `password` is
    * the current one; `newPassword` (convert only) the one the fips-140-3 vault will have, which must pass its rule.
    */
-  async prepareRekey(keyRing: KeyRing, kind: RekeyKind, password: SecretBytes, newPassword?: SecretBytes): Promise<{ recoveryKey: string }> {
+  async prepareRekey(keyRing: KeyRing, kind: RekeyKind, password: SecretBytes, newPassword?: SecretBytes): Promise<{ recoveryKey: SecretBytes }> {
     this.discard()
     const record = await readRekeyRecord(this.deps.dataDir)
     if (record) throw new RotationRefused('The last key change is still being synced. Let sync finish, then try again.')
@@ -624,7 +632,7 @@ export class Migration {
       const headerVersion = kind === 'upgrade' && (await pqGateBlocking(this.deps)) === null ? 3 : 2
       const made = await rekeyHeader({ kind, base, mk, proof, password: nextPassword, kdf, profile, headerVersion }, this.opts)
       this.rekeyPrepared = { kind, base, header: made.header, mk: made.mk, confirmed: false }
-      this.pendingRecovery = made.recoveryKey
+      this.keepRecovery(made.recoveryKey)
       return { recoveryKey: made.recoveryKey }
     } finally {
       destroyProof(proof)
@@ -1019,9 +1027,9 @@ export class Migration {
   }
 
   /** §10: a new recovery key; the old one stops working for new copies of the vault (§4). */
-  async newRecoveryKey(keyRing: KeyRing, password: SecretBytes): Promise<string> {
+  async newRecoveryKey(keyRing: KeyRing, password: SecretBytes): Promise<SecretBytes> {
     const { base, mk, proof } = await this.verified(keyRing, { password })
-    let recoveryKey = ''
+    let recoveryKey: SecretBytes | null = null
     try {
       await this.publish(base, mk, (b) => {
         const made = newRecoveryKey(b, mk, proof)
@@ -1031,7 +1039,9 @@ export class Migration {
     } finally {
       destroyProof(proof)
     }
-    this.pendingRecovery = recoveryKey
+    // `publish` ran its callback, so the key exists; the null is only what TypeScript can see.
+    if (recoveryKey === null) throw new Error('The vault change made no recovery key')
+    this.keepRecovery(recoveryKey)
     return recoveryKey
   }
 }

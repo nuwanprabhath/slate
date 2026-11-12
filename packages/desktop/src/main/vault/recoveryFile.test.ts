@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { encodeRecovery } from './recovery'
-import { recoveryFileText, recoverySaveDialog, refuseRecoveryPath } from './recoveryFile'
+import { secretBytes } from '../../shared/secret'
+import { recoverySaveDialog, refuseRecoveryPath } from './recoveryFile'
+import { writeRecoveryFile } from '../recoverySave'
 
 let dir: string
 beforeEach(() => {
@@ -41,13 +43,19 @@ describe('refuseRecoveryPath', () => {
   })
 })
 
-describe('recoveryFileText', () => {
-  it('holds the key in 14 groups and refuses anything that is not a recovery key', () => {
+describe('writeRecoveryFile', () => {
+  it('writes the key in 14 groups, owner-read-only, and refuses anything that is not a recovery key', async () => {
     const key = encodeRecovery(randomBytes(32))
-    const text = recoveryFileText(key)
-    expect(text).toContain(key)
-    expect(key.split('-')).toHaveLength(14)
-    expect(() => recoveryFileText('<script>not a key</script>')).toThrow()
+    const keyText = new TextDecoder().decode(key)
+    const path = join(mkdtempSync(join(tmpdir(), 'slate-recovery-')), 'key.txt')
+    await writeRecoveryFile(path, key)
+    // The written file carries the key; main holds it as bytes and zeroes them, because a string of
+    // the key could not be zeroed and would outlive the lock (POAM-10, T-ZERO-09).
+    const written = readFileSync(path)
+    expect(written.toString('latin1')).toContain(keyText)
+    expect(keyText.split('-')).toHaveLength(14)
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+    await expect(writeRecoveryFile(path, secretBytes('<script>not a key</script>'))).rejects.toThrow()
   })
 })
 

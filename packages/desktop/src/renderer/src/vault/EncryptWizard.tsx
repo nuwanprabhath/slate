@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { EncryptProgress, VaultProfile } from '../../../shared/api'
+import { secretText } from './secretText'
 import { errorText, onOpenEncryptWizard, openJoinDialog } from './events'
 import { PasswordFields, type NewPasswordHandle } from './PasswordFields'
 import { SecretArea } from './SecretField'
@@ -90,7 +91,7 @@ export function EncryptWizard() {
       if (!pw) return
       const r = await sendSecrets([pw], () => window.slate.vault.prepareEncryption(pw, fipsAvailable ? profile : 'standard'))
       if (r.kind === 'join') return toJoin()
-      setRecoveryKey(r.recoveryKey)
+      setRecoveryKey(secretText(r.recoveryKey))
       setStep('recovery')
     })
   const confirm = () =>

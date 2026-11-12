@@ -100,7 +100,7 @@ function deps(over: Partial<MigrationDeps> = {}): MigrationDeps {
 async function encrypt(m: Migration): Promise<void> {
   const prepared = await m.prepare(secretBytes(PASSWORD))
   if (prepared.kind !== 'recovery') throw new Error(`expected a recovery key, got ${prepared.kind}`)
-  expect(await m.confirmRecovery(secretBytes(prepared.recoveryKey))).toBe(true)
+  expect(await m.confirmRecovery(prepared.recoveryKey)).toBe(true)
   expect(await m.run()).toEqual({ kind: 'done' })
 }
 
@@ -196,7 +196,7 @@ describe('Migration', () => {
     try {
       const m = new Migration(deps())
       const prepared = await m.prepare(secretBytes(PASSWORD))
-      await m.confirmRecovery(secretBytes(prepared.kind === 'recovery' ? prepared.recoveryKey : ''))
+      await m.confirmRecovery(prepared.kind === 'recovery' ? prepared.recoveryKey : new Uint8Array(0))
       await expect(m.run()).rejects.toThrow('Another program has your notes open')
     } finally {
       other.exec('ROLLBACK')
@@ -214,7 +214,7 @@ describe('Migration', () => {
     store.close()
     const m = new Migration(deps())
     const prepared = await m.prepare(secretBytes(PASSWORD))
-    await m.confirmRecovery(secretBytes(prepared.kind === 'recovery' ? prepared.recoveryKey : ''))
+    await m.confirmRecovery(prepared.kind === 'recovery' ? prepared.recoveryKey : new Uint8Array(0))
     const err = (await m.run().catch((e: unknown) => e)) as Error
     expect(err.message).toMatch(/1 note/)
     expect(err.message).not.toContain('not-a-uuid')
@@ -257,7 +257,7 @@ describe('Migration', () => {
       await gitRemote(`a-${how}`).claim(theirs.header, null)
       const m = new Migration(deps({ remote: () => gitRemote(`b-${how}`) }))
       await expect(m.join({ password: secretBytes('nope nope nope') })).rejects.toThrow("That password didn't work")
-      await m.join(how === 'password' ? { password: secretBytes('their password 123') } : { recoveryKey: secretBytes(theirs.recoveryKey!) })
+      await m.join(how === 'password' ? { password: secretBytes('their password 123') } : { recoveryKey: theirs.recoveryKey! })
       expect(parseHeader(JSON.parse(readFileSync(join(dataDir, VAULT_FILE), 'utf8')), weak).vaultId).toBe(theirs.header.vaultId)
       expect(await noteAfterUnlock('their password 123')).toBe('SECRET-NOTE')
     }

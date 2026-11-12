@@ -208,7 +208,7 @@ describe('review C9 L5: one stale or replayed read never drops a committed key c
     }
     const m = new Migration(deps({ remote: () => dying }))
     const { recoveryKey } = await m.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     await expect(m.runRekey(ring)).rejects.toThrow('killed')
     closeOpened()
     if (ring.isOpen) ring.close()
@@ -249,7 +249,7 @@ describe('review C9 M4: this device’s own unpublished key change never wins ov
     }
     const m = new Migration(deps({ remote: () => dying }))
     const { recoveryKey } = await m.prepareRekey(ring, 'rotate', secretBytes(PASSWORD))
-    expect(await m.confirmRecovery(secretBytes(recoveryKey))).toBe(true)
+    expect(await m.confirmRecovery(recoveryKey)).toBe(true)
     await expect(m.runRekey(ring)).rejects.toThrow('killed')
     closeOpened()
     if (ring.isOpen) ring.close()

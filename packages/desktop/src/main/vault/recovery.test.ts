@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { BadRecoveryKey, decodeRecovery, encodeRecovery } from './recovery'
-import { secretBytes } from '../../shared/secret'
+import { secretBytes, type SecretBytes } from '../../shared/secret'
 import { destroyKey, vaultNative } from './native'
 import { samePasswordKey } from '../../../test/vaultKeys'
 
@@ -24,11 +24,26 @@ function decodesTo(text: string, key: Uint8Array): boolean {
 
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
+/** The displayed key as the test reads it. Production never does this in main: that is the point of T-ZERO-09. */
+const asText = (key: SecretBytes): string => Buffer.from(key).toString('latin1')
+
 describe('recovery key', () => {
+  it('T-ZERO-09: hands main zeroable bytes, never a string, and the bytes zero', () => {
+    const key = randomBytes(32)
+    const made = encodeRecovery(key)
+    // A V8 string cannot be zeroed, so a generated key main keeps as text survives in the heap after the
+    // lock drops it (POAM-10, measured by T-ZERO-09 on 2026-11-12: 2 hits in [anon:v8-sandbox]).
+    expect(made, 'encodeRecovery must return bytes main can zero').toBeInstanceOf(Uint8Array)
+    expect(typeof made).not.toBe('string')
+    expect(asText(made)).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){13}$/)
+    made.fill(0)
+    expect(made.some((b) => b !== 0)).toBe(false)
+  })
+
   it('is 14 groups of 4 Crockford characters and round-trips', () => {
     for (let i = 0; i < 200; i++) {
       const key = randomBytes(32)
-      const text = encodeRecovery(key)
+      const text = asText(encodeRecovery(key))
       expect(text).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){13}$/)
       expect(decodesTo(text, key)).toBe(true)
     }
@@ -36,14 +51,14 @@ describe('recovery key', () => {
 
   it('ignores case, spaces and dashes and maps O/I/L', () => {
     const key = randomBytes(32)
-    const text = encodeRecovery(key)
+    const text = asText(encodeRecovery(key))
     const sloppy = text.toLowerCase().replace(/-/g, ' ').replace(/0/g, 'o').replace(/1/g, 'l')
     expect(decodesTo(`  ${sloppy} `, key)).toBe(true)
     expect(decodesTo(text.replace(/1/g, 'I').replace(/-/g, ''), key)).toBe(true)
   })
 
   it('refuses wrong lengths and unknown characters', () => {
-    const text = encodeRecovery(randomBytes(32))
+    const text = asText(encodeRecovery(randomBytes(32)))
     expect(() => decodeRecovery(secretBytes(text.slice(0, -1)))).toThrow(BadRecoveryKey)
     expect(() => decodeRecovery(secretBytes(text + 'A'))).toThrow(BadRecoveryKey)
     expect(() => decodeRecovery(secretBytes('U' + text.slice(1)))).toThrow(BadRecoveryKey)
@@ -55,7 +70,7 @@ describe('recovery key', () => {
     // Fixed keys and substitutions: a 20-bit checksum lets one random change in 2^20 through, so
     // random cases would fail now and then; these are checked once and stay checked.
     for (let n = 0; n < 20; n++) {
-      const chars = encodeRecovery(createHash('sha256').update(`recovery-typo-${n}`).digest()).replace(/-/g, '')
+      const chars = asText(encodeRecovery(createHash('sha256').update(`recovery-typo-${n}`).digest())).replace(/-/g, '')
       for (let i = 0; i < chars.length; i++) {
         const c = ALPHABET[(ALPHABET.indexOf(chars[i]!) + 1 + ((n + i) % 31)) % 32]!
         const typo = chars.slice(0, i) + c + chars.slice(i + 1)
@@ -69,7 +84,7 @@ describe('recovery key', () => {
   })
 
   it('C7: the typed text is decoded in the module; the caller keeps its bytes, the module wipes its copy', () => {
-    const text = secretBytes(encodeRecovery(randomBytes(32)))
+    const text = encodeRecovery(randomBytes(32))
     const copy = new Uint8Array(text)
     const before = vaultNative().status().liveHandles
     const handle = decodeRecovery(text)

@@ -26,7 +26,7 @@ import {
 import type { KeyHandle } from '@slate/native'
 import type { QuickUnlockInfo, UnlockResult, VaultSecret, VaultStatus } from '../shared/api'
 import { CH } from '../shared/ipc'
-import { secretBytes, type SecretBytes } from '../shared/secret'
+import { secretBytes, zeroSecret, type SecretBytes } from '../shared/secret'
 import { registerPqIpc } from './pqIpc'
 import { registerVaultSecretIpc } from './vaultIpc'
 import { DEFAULT_SETTINGS } from '../shared/settings/schema'
@@ -67,7 +67,8 @@ import { initialVaultState, KEY_FILE_MISSING_MESSAGE, notesOpen, VaultStateMachi
 import { finishMigrationAtUnlock, Migration, MIGRATION_FILE } from './vault/migration'
 import { removeStrayDatabases } from './db/migrateToEncrypted'
 import { checkPassword } from './vault/password'
-import { recoveryFileText, recoverySaveDialog, refuseRecoveryPath } from './vault/recoveryFile'
+import { recoverySaveDialog, refuseRecoveryPath } from './vault/recoveryFile'
+import { writeRecoveryFile } from './recoverySave'
 import { checkRemoteVault } from './vault/vaultCheck'
 import { VaultBusy } from './vault/busy'
 import { nextCompletedSync, startPqUpgrade } from './vault/pqUpgrade'
@@ -906,14 +907,15 @@ void app.whenReady().then(async () => {
   ipc.handle(CH.vaultSaveRecovery, async (e) => {
     const key = migration.pendingRecoveryKey()
     if (key === null) return { saved: false, message: 'There is no recovery key to save. Make a new one in Settings \u2192 Security.' }
-    const text = recoveryFileText(key)
     const win = BrowserWindow.fromWebContents(e.sender)
     const opts = recoverySaveDialog(app.getPath('documents'))
     const picked = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
     if (picked.canceled || !picked.filePath) return { saved: false }
     const refused = refuseRecoveryPath(picked.filePath, dataDir)
     if (refused) return { saved: false, message: refused }
-    await writeFile(picked.filePath, text, { mode: 0o600 })
+    // Assembles and writes the file as bytes, and zeroes them: a string of the key could not be
+    // zeroed and would outlive the lock in main's heap (POAM-10, T-ZERO-09).
+    await writeRecoveryFile(picked.filePath, key)
     return { saved: true }
   })
   ipc.handle(CH.vaultEncrypt, () => {

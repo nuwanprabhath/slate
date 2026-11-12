@@ -84,7 +84,7 @@ describe('C5 criterion 2: a fips-140-3 vault never touches suite 0x01, Argon2id 
     destroyProof(proof)
     byPassword.keyRing.close()
     writeFileSync(join(d, VAULT_FILE), JSON.stringify(renewed.header))
-    const byRecovery = await unlockVault(d, { recoveryKey: secretBytes(renewed.recoveryKey) }, weak)
+    const byRecovery = await unlockVault(d, { recoveryKey: renewed.recoveryKey }, weak)
     byRecovery.keyRing.close()
     const byNewPassword = await unlockVault(d, { password: secretBytes('another fips profile password') }, weak)
     byNewPassword.keyRing.close()

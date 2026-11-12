@@ -37,7 +37,7 @@ describe('T-PQ-B3-03: an upgrade cut short at any step loses nothing', () => {
       d.ring.close()
       const secrets = {
         old: { label: 'password', secret: () => ({ password: secretBytes(TEST_PASSWORD) }) },
-        next: [{ label: 'recovery key', secret: () => ({ recoveryKey: secretBytes(d.recoveryKey) }) }] as const,
+        next: [{ label: 'recovery key', secret: () => ({ recoveryKey: d.recoveryKey }) }] as const,
         notes: 3,
         opts: weak,
       }
