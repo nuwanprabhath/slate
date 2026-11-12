@@ -6,8 +6,9 @@ import { writeFakeConverter } from '../../../../importer/test/fakeOne2html'
 import { fcRuns, forAll, fuzzTimeout, type Rng } from '../../../test/fuzz'
 import { BackupSource, scanBackup } from './backup'
 
-// T-F3D-01..03: BackupSource.resource serves only files inside a conversion folder. It does not
-// assert that pageContent stays inside the folder: that fails today (M4) and belongs to FX-4.
+// T-F3D-01..03: BackupSource.resource serves only files inside a conversion folder. The page files
+// listPages hands to pageContent are held inside it by the same predicate, asserted in
+// backupContainment.test.ts beside the fix.
 const TREE = join(__dirname, '../../../../importer/test/fixtures/one2html')
 const PREFIX = 'backup-file:'
 const SECRET = 'outside-secret'
