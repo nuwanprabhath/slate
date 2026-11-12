@@ -4,6 +4,7 @@ export const LOCKED_MESSAGE = 'Slate is locked or not running. Unlock Slate to g
 
 type Message = { jsonrpc?: string; id?: string | number | null; method?: string; params?: { protocolVersion?: string } }
 
+const NEWLINE = Buffer.from('\n')
 const line = (m: object) => JSON.stringify(m) + '\n'
 
 function parse(text: string): Message | null {
@@ -43,7 +44,7 @@ export function lockedReply(message: object): object | null {
 export function runProxy(opts: { input: Readable; output: Writable; connect: () => Promise<Duplex> }): Promise<void> {
   const { input, output, connect } = opts
   let socket: Duplex | null = null
-  let initLine: string | null = null
+  let initLine: Buffer | null = null
   let queue = Promise.resolve()
   // Requests the app has not answered: a lock can close the socket after reading one, and the
   // client would otherwise wait on it forever.
@@ -57,22 +58,22 @@ export function runProxy(opts: { input: Readable; output: Writable; connect: () 
     } catch {
       return false
     }
-    const initId = replay && initLine ? parse(initLine)?.id : undefined
+    const initId = replay && initLine ? parse(initLine.toString('utf8'))?.id : undefined
     let swallowing = initId !== undefined
-    let pending = ''
+    let pending: Buffer = Buffer.alloc(0)
     s.on('data', (chunk: Buffer) => {
-      pending += chunk.toString('utf8')
+      pending = Buffer.concat([pending, chunk])
       let nl: number
-      while ((nl = pending.indexOf('\n')) >= 0) {
-        const text = pending.slice(0, nl + 1)
-        pending = pending.slice(nl + 1)
-        const m = parse(text)
+      while ((nl = pending.indexOf(0x0a)) >= 0) {
+        const bytes = pending.subarray(0, nl + 1)
+        pending = pending.subarray(nl + 1)
+        const m = parse(bytes.toString('utf8'))
         if (swallowing) {
           if (m && m.id === initId && m.method === undefined) swallowing = false
           continue
         }
         if (m && m.method === undefined && m.id !== undefined) unanswered.delete(key(m.id))
-        output.write(text)
+        output.write(bytes)
       }
     })
     const dropped = () => {
@@ -89,21 +90,22 @@ export function runProxy(opts: { input: Readable; output: Writable; connect: () 
     s.on('error', () => s.destroy())
     socket = s
     if (initId !== undefined) {
-      s.write(initLine!.endsWith('\n') ? initLine! : initLine + '\n')
+      s.write(initLine!)
       s.write(line({ jsonrpc: '2.0', method: 'notifications/initialized' }))
       output.write(line({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }))
     }
     return true
   }
 
-  const handle = async (text: string) => {
-    const m = parse(text)
+  // `bytes` is one client line without its newline; only the parse sees it as text.
+  const handle = async (bytes: Buffer) => {
+    const m = parse(bytes.toString('utf8'))
     const isInit = m?.method === 'initialize'
-    if (isInit) initLine = text
+    if (isInit) initLine = Buffer.concat([bytes, NEWLINE])
     if (!socket && m && (isInit || (initLine && m.id !== undefined))) await attach(!isInit)
     if (socket) {
       if (m && m.method && m.id !== undefined && m.id !== null) unanswered.set(key(m.id), m)
-      socket.write(text + '\n')
+      socket.write(Buffer.concat([bytes, NEWLINE]))
       return
     }
     const reply = m && lockedReply(m)
@@ -111,14 +113,15 @@ export function runProxy(opts: { input: Readable; output: Writable; connect: () 
   }
 
   return new Promise((resolve) => {
-    let buffered = ''
+    let buffered: Buffer = Buffer.alloc(0)
     input.on('data', (chunk: Buffer) => {
-      buffered += chunk.toString('utf8')
+      buffered = Buffer.concat([buffered, chunk])
       let nl: number
-      while ((nl = buffered.indexOf('\n')) >= 0) {
-        const text = buffered.slice(0, nl).replace(/\r$/, '')
-        buffered = buffered.slice(nl + 1)
-        if (text.trim()) queue = queue.then(() => handle(text))
+      while ((nl = buffered.indexOf(0x0a)) >= 0) {
+        const end = nl > 0 && buffered[nl - 1] === 0x0d ? nl - 1 : nl
+        const bytes = buffered.subarray(0, end)
+        buffered = buffered.subarray(nl + 1)
+        if (bytes.toString('utf8').trim()) queue = queue.then(() => handle(bytes))
       }
     })
     input.on('end', () => {
