@@ -32,16 +32,15 @@ describe('GraphHttp Retry-After fuzz', () => {
   it('T-F3C-11: the named hostile values wait between 0 and MAX_RETRY_AFTER_MS', async () => {
     const past = new Date(Date.now() - 3_600_000).toUTCString()
     const far = new Date(Date.now() + 10 * 365 * 86_400_000).toUTCString()
-    // Open finding F3C-2: a negative Retry-After (-1, -99999999999) becomes a negative sleep; excluded until fixed.
-    for (const v of ['-0', 'abc', '', ' ', 'NaN', 'Infinity', '-Infinity', '1e999', '86400', '0', '1.5', '0x10', past, far, null]) inBounds(await waitFor(v))
+    for (const v of ['-0', '-1', '-99999999999', '-1e-120', 'abc', '', ' ', 'NaN', 'Infinity', '-Infinity', '1e999', '86400', '0', '1.5', '0x10', past, far, null])
+      inBounds(await waitFor(v))
     inBounds(await waitFor('86400', 503))
   })
 
   it('T-F3C-12: any header value waits between 0 and MAX_RETRY_AFTER_MS', async () => {
-    // F3C-2 excludes negative numbers: the integer and double arms start at 0.
     const value = fc.oneof(
-      fc.integer({ min: 0, max: 1e9 }).map(String),
-      fc.double({ min: 0 }).map(String),
+      fc.integer({ min: -1e9, max: 1e9 }).map(String),
+      fc.double().map(String),
       fc.string({ maxLength: 12 }).map((s) => s.replace(/[^\x20-\x7e]/g, '')),
       fc.date({ min: new Date(0), max: new Date(4e12), noInvalidDate: true }).map((d) => d.toUTCString()),
     )
