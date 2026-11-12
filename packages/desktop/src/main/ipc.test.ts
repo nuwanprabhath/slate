@@ -5,25 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CH } from '../shared/ipc'
 import type { BackupPick, SearchQuery } from '../shared/api'
 import { MAX_UPDATE_BYTES } from '../shared/ipcValidators'
-import { clearBackupPick, isSearchQuery, registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
-import { registerCopyIpc, type CopyClipboard } from './copyHtml'
-import { registerThemeIpc } from './theme/ipc'
-import type { ThemeStore } from './theme/themeStore'
-import type { BlobStore } from './blobs'
-import type { AuthService } from './onenote/auth'
-import type { ImportService } from './onenote/importService'
-import type { Handler, IpcRegistrar } from './ipcGuard'
+import { clearBackupPick, isSearchQuery, registerSearchIpc } from './ipc'
 import type { SearchIndex } from './search/searchIndex'
-import type { DocStore } from './store'
-import type { SyncService } from './sync/syncService'
-
-// The golden-path example for a handler (docs/architecture/golden-paths.md#ipc): it checks every
-// argument from the untrusted renderer before main acts on it, and is tested with a fake registrar.
-function fakeRegistrar() {
-  const handlers = new Map<string, Handler>()
-  const ipc: IpcRegistrar = { handle: (channel, handler) => void handlers.set(channel, handler), on: () => () => {} }
-  return { ipc, handlers }
-}
+import { allHandlers, fakeRegistrar } from '../../test/ipcHarness'
 
 const good: SearchQuery = { text: 'zeta', matchCase: false, wholeWord: false, regex: false, scope: { kind: 'all' } }
 
@@ -59,41 +43,6 @@ describe('registerSearchIpc', () => {
 const uuid = '3f2504e0-4f89-41d3-9a0c-0305e82c3301'
 const docId = `page:${uuid}`
 const git = { remoteUrl: 'https://example.invalid/notes.git', branch: 'main', auth: 'system' }
-
-/** Any method call on a service means the arguments got past the validator. */
-function tracingServices() {
-  const reached: string[] = []
-  const service = <T>(name: string): T =>
-    new Proxy(
-      {},
-      {
-        get:
-          (_target, key) =>
-          (...args: unknown[]) => {
-            reached.push(`${name}.${String(key)}(${args.length})`)
-            return undefined
-          },
-      },
-    ) as T
-  return { reached, service }
-}
-
-function allHandlers() {
-  const { ipc, handlers } = fakeRegistrar()
-  const { reached, service } = tracingServices()
-  registerIpc(
-    ipc,
-    () => service<DocStore>('store'),
-    () => service<BlobStore>('blobs'),
-    () => reached.push('onAppend'),
-    () => reached.push('onRemove'),
-  )
-  registerSyncIpc(ipc, () => service<SyncService>('sync'))
-  registerOneNoteIpc(ipc, service<AuthService>('auth'), () => service<ImportService>('importer'), () => reached.push('setClientId'))
-  registerCopyIpc(ipc, () => service<BlobStore>('blobs'), service<CopyClipboard>('clipboard'), () => reached.push('onCopied'))
-  registerThemeIpc(ipc, { open: () => ({ db: service<DocStore>('db'), themes: service<ThemeStore>('themes') }), preunlock: () => null }, false)
-  return { handlers, reached }
-}
 
 const malformed: Array<[channel: string, args: unknown[]]> = [
   [CH.docsList, ['page']],
