@@ -21,6 +21,15 @@
 const MAX_STRING = 512
 
 /**
+ * The patterns see at most this much (M3): two of them are quadratic in the text they scan, and a
+ * failed git command's whole stderr is a log field. A secret starting inside the 512 characters kept
+ * still has at least 16384 - 512 = 15872 characters before the cut, more than any rule's minimum match
+ * and more than a whole PEM private key (RSA-8192 PKCS#8 is about 6.5 KB), so the bound cannot leave
+ * a kept secret unrecognised.
+ */
+const MAX_SCANNED = 16 * 1024
+
+/**
  * Secret shapes, checked before path rewriting so a token containing a slash is not mangled into
  * something that no longer matches. Each is deliberately narrow: a rule that redacts too much
  * makes the log useless, and a log nobody can read gets turned off.
@@ -72,13 +81,15 @@ function escapeRe(value: string): string {
 
 /** Redacts one string: secrets first, then home directories, then length. */
 export function redactString(value: string, { home }: RedactOptions = {}): string {
-  let out = value
+  const unscanned = Math.max(0, value.length - MAX_SCANNED)
+  let out = unscanned > 0 ? value.slice(0, MAX_SCANNED) : value
   for (const { pattern, as } of SECRETS) out = out.replace(pattern, as)
   out = out.replace(BASE64_RUN, (run) => (looksLikeBase64(run) ? '[redacted-base64]' : run))
   if (home !== undefined && home !== '') out = out.replace(new RegExp(escapeRe(home), 'g'), '~')
   // Any other account's home directory too: a path from a synced device is still somebody's name.
   out = out.replace(HOME_LIKE, '$1~')
-  return out.length > MAX_STRING ? `${out.slice(0, MAX_STRING)}…[+${String(out.length - MAX_STRING)} chars]` : out
+  const dropped = Math.max(0, out.length - MAX_STRING) + unscanned
+  return dropped > 0 ? `${out.slice(0, MAX_STRING)}…[+${String(dropped)} chars]` : out
 }
 
 /**
