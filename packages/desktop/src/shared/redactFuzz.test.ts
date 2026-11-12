@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { redact, redactString } from './redact'
-import { fcParams } from '../../test/fuzz'
+import { fcParams, fcRuns } from '../../test/fuzz'
 
 // F4e: properties of log redaction (shared/redact.ts) over generated credentials, noise and graphs.
 // The generators are exported for FX-3, which reuses them to measure how redactString's cost grows
@@ -202,6 +202,20 @@ describe('T-F4E-02: output length', () => {
         if (out.length > 512) expect(out.slice(512)).toMatch(/^…\[\+\d{1,5} chars\]$/)
       }),
       fcParams,
+    )
+  })
+})
+
+describe('T-FX3-02: the scan bound (M3) leaves no kept secret unredacted', () => {
+  it('a secret starting anywhere in the kept 512 characters, before a 32 KiB tail, is gone', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 511 }), fc.oneof(...Object.values(SECRET_SHAPES)), (at, secret) => {
+        const out = redactString(`${' '.repeat(at)}${secret.full} ${'sync failed '.repeat(2800)}`)
+        expect(out).toMatch(/…\[\+\d+ chars\]$/)
+        expect(out).not.toContain(secret.body)
+        for (const part of secret.parts ?? []) expect(out).not.toContain(part)
+      }),
+      fcRuns(4),
     )
   })
 })
