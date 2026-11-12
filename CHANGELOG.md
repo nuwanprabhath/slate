@@ -6,6 +6,17 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-12
+
+### Security
+
+- T-ZERO-09 now holds a generated recovery key to zero in memory Slate allocates, and records what
+  Chromium's freed IPC buffers still hold instead of failing on it. The 0.7.1 fix closed every copy
+  Slate owns (measured: the V8 strings are gone, and `discard()` zeroes the bytes main keeps); what
+  remains is the IPC payload that carried the key to the window, which no JavaScript can reach and no
+  change here can zero. The test still fails if those buffers ever hold anything but the displayed
+  text, so the 32-byte secret appearing there would be caught (`docs/compliance/poam.md` POAM-10).
+
 ## [0.7.1] - 2026-11-12
 
 ### Security

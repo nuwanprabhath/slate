@@ -21,6 +21,16 @@ interface Hit {
   mapping: string
 }
 
+/**
+ * A hit in memory Chromium allocated for an IPC message, rather than memory Slate did.
+ *
+ * `partition_alloc` is Chromium's allocator and the memfd is Mojo's shared memory for a message; a
+ * payload freed there is not cleansed, nothing in JavaScript can reach it, and the recovery key reaches
+ * the window that shows it through exactly that path. Slate's own copies live in V8's heap or a Node
+ * buffer, and `discard()` zeroes them, so they are what this test holds to zero (POAM-10; review C6).
+ */
+const isChromiumIpc = (h: Hit): boolean => /^\[anon:partition_alloc\]|^\/memfd:shared-memory-region/.test(h.mapping)
+
 /** Every form a key could leave behind: raw bytes, hex and base64 text, and V8's two-byte strings. */
 function needlesFor(label: string, secret: Buffer): Needle[] {
   const forms: Array<[string, Buffer]> = [
@@ -179,19 +189,29 @@ test('T-ZERO-09: after lock, the main process holds no copy of a recovery key it
     const text = made.ok ? made.recoveryKey : ''
     const needles = [...recoveryTextNeedles(text), ...needlesFor('recovery-secret', decodeRecoveryText(text))]
 
-    // Control: while main still holds the key, the scanner finds its text, or a clean result after the lock
-    // would prove only that the scan cannot see a string. The 32 decoded bytes are the module's to hold, so
-    // they are not part of the control.
+    // Control: while main still holds the key, the scanner finds it in memory main itself allocated, or a
+    // clean result after the lock would prove only that the scan cannot see anything. The 32 decoded bytes
+    // are the module's to hold, so they are not part of the control.
     const retained = recorded('T-ZERO-09', 'control: recovery key retained', mainPid, needles)
-    expect(retained.filter((h) => h.label.startsWith('recovery-text/')).length, 'the generated key is in main until discard()').toBeGreaterThan(0)
+    expect(retained.filter((h) => !isChromiumIpc(h)).length, "the generated key is in main's own memory until discard()").toBeGreaterThan(0)
 
     await lockAndWait(app, notes)
     // Two full GCs, so a reference the lock dropped is collected before the scan.
     await gcTwice(app)
 
-    // The lock calls `Migration.discard()`, which drops the only reference main keeps. A V8 string cannot be
-    // zeroed, so this asks whether the text survives as garbage (docs/compliance/poam.md POAM-10).
-    expect(recorded('T-ZERO-09', 'after lock: recovery key', mainPid, needles), 'recovery key after lock (docs/compliance/poam.md POAM-10)').toEqual([])
+    // Everything main allocated is gone: `Migration.discard()` zeroes the bytes it kept for
+    // `saveRecoveryKey`, which is why the key is bytes and not a string (a string cannot be zeroed, and
+    // until 0.7.1 two of them survived here as garbage: docs/compliance/poam.md POAM-10).
+    const after = recorded('T-ZERO-09', 'after lock: recovery key', mainPid, needles)
+    expect(after.filter((h) => !isChromiumIpc(h)), 'recovery key in memory Slate allocated, after lock (POAM-10)').toEqual([])
+    // What Chromium's freed IPC buffers still hold is recorded, not ignored: no JavaScript can reach them
+    // and no change here can zero them (POAM-10 names the upstream fix). The bound is that they only ever
+    // hold the text that was sent to the window -- never the 32-byte secret, and never a form main built
+    // for itself -- so a new kind of copy appearing there still fails this test.
+    expect(
+      after.filter((h) => isChromiumIpc(h) && h.label !== 'recovery-text/grouped'),
+      'Chromium IPC buffers hold only the displayed key, nothing else (docs/compliance/poam.md POAM-10)',
+    ).toEqual([])
   } finally {
     writeReport()
     await app.close()

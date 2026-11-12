@@ -14,7 +14,12 @@ test('switching it on writes a version line with no home directory in it', async
   const text = await page.evaluate(() => window.slate.diagnostics.read())
   expect(text).toMatch(/ info {2}\[app\] diagnostic log on \{"version":"[^"]+","platform":"\w+","arch":"\w+"/)
   expect(text).not.toContain(homedir())
-  expect(readFileSync(join(userData, 'logs', 'slate.log'), 'utf8')).toBe(text)
+  // What the screen showed is the start of the real file, not necessarily the whole of it: the log only
+  // grows, and the app writes to it on its own schedule, so a line can land between these two reads.
+  // Seen in CI on 2026-11-12, where the file watcher logged `[watch] external updates` 1 ms after the
+  // line the screen ended on and an equality check failed. A prefix still proves the screen shows the
+  // real log, in order, from the beginning.
+  expect(readFileSync(join(userData, 'logs', 'slate.log'), 'utf8').startsWith(text), 'the screen shows the start of the log file').toBe(true)
 })
 
 test('it logs again at the next start while on, and stops when switched off', async ({ userData, app, page }) => {
