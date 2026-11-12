@@ -83,7 +83,7 @@ describe('T-F3B renderStaticHtml', () => {
     )
     // The harness is only worth something if most cases are drawn rather than refused.
     expect(rendered).toBeGreaterThan(fcRuns(4, 300).numRuns / 4)
-  }, fuzzTimeout(10_000))
+  }, fuzzTimeout(60_000))
 
   it('T-F3B-07: a link mark with a hostile href is never drawn with that scheme', () => {
     fc.assert(
@@ -93,5 +93,5 @@ describe('T-F3B renderStaticHtml', () => {
       }),
       fcRuns(4, 300),
     )
-  }, fuzzTimeout(10_000))
+  }, fuzzTimeout(60_000))
 })

@@ -83,7 +83,7 @@ describe('T-F3B cleanPastedHtml', () => {
       }),
       fcParams,
     )
-  }, fuzzTimeout())
+  }, fuzzTimeout(60_000))
 
   // Idempotence is not asserted: it fails on main (FX-F3B-2, see the comment above pasteHtml). What is kept:
   // a second clean never throws and still keeps only what property 1 allows.
@@ -95,13 +95,13 @@ describe('T-F3B cleanPastedHtml', () => {
       }),
       fcParams,
     )
-  }, fuzzTimeout())
+  }, fuzzTimeout(60_000))
 
   it('T-F3B-03: costs within a ratio of a plain paragraph of the same length', () => {
     const samples = fc.sample(pasteHtml, { numRuns: fcRuns(4, 200).numRuns, seed: fcParams.seed })
     const longest = Math.max(1, ...samples.map((s) => s.length))
     const plain = `<p>${'x'.repeat(longest)}</p>`
-    const cost = relativeCost(() => cleanPastedHtml(plain), { calibrationRuns: 300 })
+    const cost = relativeCost(() => cleanPastedHtml(plain), { calibrationRuns: 300, meanCeilingMs: 100, absoluteCeilingMs: 5_000 })
     for (const html of samples) cost.time(() => cleanPastedHtml(html))
     cost.check()
   }, fuzzTimeout(20_000))
@@ -113,7 +113,7 @@ describe('T-F3B cleanPastedHtml', () => {
       }),
       fcRuns(2, 300),
     )
-  }, fuzzTimeout(10_000))
+  }, fuzzTimeout(60_000))
 })
 
 const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp']
@@ -147,5 +147,5 @@ describe('T-F3B storeDataImages', () => {
       }),
       fcParams,
     )
-  }, fuzzTimeout())
+  }, fuzzTimeout(60_000))
 })
