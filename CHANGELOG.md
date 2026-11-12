@@ -6,6 +6,65 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-11-13
+
+### Fixed
+
+- Find and search refuse more regular expressions that could freeze the app. 0.7.3 refused a pattern
+  whose groups repeat unboundedly, like `(a+)+$`, but that covered only one shape: an audit measured
+  `(a|a)+$` taking 5.1 s against 26 characters, `(.*a){12}$` never returning at all, and `a.*b.*c`
+  taking 339 s against 20,000. Overlapping alternatives under a quantifier, a bounded repeat of a
+  variable-width group, and chained `.*` are now refused too, and the find bar shows them as an error
+  the way it already did. A static rule cannot be complete and this one over-refuses a little:
+  `(cat|car)+` and `(\w+\s){3}` are now refused, while `(foo|bar)+`, `\w+@\w+`, `a+b+`,
+  `[A-Z]{2,4}-\d+` and `https?://\S+` still work.
+- Importing a OneNote page with thousands of hyperlink field codes in one paragraph no longer fails.
+  The importer restarted its scan of the whole page after each field code and recursed to do it, so
+  8,000 codes (a 320 KB page) threw `Maximum call stack size exceeded`; 1,000 took 148 ms and 3,000
+  took 1.16 s. It now makes one pass, and 50,000 codes complete.
+- A huge error message from a git remote no longer stalls the app for minutes. Every failed git
+  command's whole output is written to the diagnostic log, where it passes through redaction, and two
+  redaction rules were quadratic in the length of the text: 1 MiB of a dotted string took 151 s, of
+  which 703 ms per 132 KB came from the `scheme://user:password@` rule alone. Redaction now reads at
+  most 16 KiB of a field and says how much it dropped. The length is chosen by the remote, so a broken
+  or hostile server could trigger it.
+- A OneNote backup whose converter index names a page outside its own folder no longer reads that
+  file, and an image or attachment whose name begins with two dots is no longer shown as broken: the
+  containment test accepted a path escaping the folder in one place and rejected a legitimate name in
+  another, and both now use one predicate.
+- The MCP server no longer corrupts text an agent reads or writes. The proxy decoded each chunk of the
+  stream on its own, so a character split across two chunks became replacement characters -- `5€`
+  arrived as `5` and three of them -- which meant an agent could read text the notes never held. The
+  relay now stays in bytes.
+- A sync provider that answers `Retry-After: -1` no longer removes the backoff entirely. The wait was
+  clamped only at the top, so a negative value gave a negative delay, which retries at once and made
+  the retry budget look larger than it was.
+
+### Changed
+
+- The TipTap editor suite moves to 3.32.3 (Dependabot #13). Clearing formatting on a nested list now
+  turns every level into paragraphs, and code highlighting no longer re-runs when only the selection
+  changes.
+
+### Added
+
+- A fuzzing layer across every boundary where Slate reads bytes it did not write: 21 new harnesses
+  covering the document store and save queue, the native crypto core under AddressSanitizer and
+  UndefinedBehaviorSanitizer, the N-API boundary, sync against a hostile remote and over the real
+  database, the paste sanitiser and static rendering, the OneNote importer and backup boundary, the
+  IPC handlers and validators, the MCP transport, proxy and private boxes, log redaction, the search
+  index and the update feed parsers. They run on every pull request with a fixed seed and at depth
+  nightly (`docs/reviews/2026-11-12-fuzzing-plan.md`).
+
+### Documentation
+
+- POAM-10 is corrected. The three hits the 0.7.1 and 0.7.2 measurements recorded in Chromium's
+  allocator came substantially from the test itself: it returned the recovery key over Playwright's
+  protocol, which the main process serves, so every call pushed another copy through main's IPC
+  buffers. With that return masked, the 0.7.3 run finds no copy of the key anywhere in main after a
+  lock -- 0 hits in every mapping. The earlier conclusion that a freed Chromium IPC payload keeps a
+  copy past a lock is not supported.
+
 ## [0.7.3] - 2026-11-12
 
 ### Fixed
