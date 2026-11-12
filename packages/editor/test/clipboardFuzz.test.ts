@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import { DOMParser as PMDOMParser, DOMSerializer } from '@tiptap/pm/model'
 import { cleanPastedHtml, storeDataImages } from '../src/clipboard'
@@ -15,6 +15,17 @@ const DROPPED = ['script', 'style', 'meta', 'link', 'title', 'font', 'span']
 const KEEP_PASTE_ATTRS = new Set(['href', 'src', 'alt', 'start', 'colspan', 'rowspan'])
 // Image src may be the blob store's address; links are http, https and mailto (TipTap's Link refuses the rest).
 const SCHEMES = ['http', 'https', 'mailto', 'slate-image']
+
+// happy-dom reports every parsed <iframe> it refuses to load on the original console, which vitest hands it
+// before a test can spy on it; thousands of hostile inputs make over a megabyte, which overflows the Stop
+// hook's spawnSync buffer. Only that line is dropped; the refusal itself is what we want.
+beforeAll(() => {
+  const write = process.stderr.write.bind(process.stderr)
+  vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) =>
+    String(chunk).includes('Iframe page loading is disabled') ? true : write(chunk),
+  )
+})
+afterAll(() => vi.restoreAllMocks())
 
 const parse = (html: string): Document => new DOMParser().parseFromString(html, 'text/html')
 
