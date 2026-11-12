@@ -2,7 +2,7 @@ import { env } from '../testHooks'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { normalizeOne2HtmlPage, parseOne2HtmlSection, type GraphSource, type OneNoteNotebook, type OneNotePageMeta } from '@slate/importer'
 
 /** Mapping keys of backup imports start with this, so they never collide with Graph ids. */
@@ -85,6 +85,12 @@ function sniffMime(bytes: Uint8Array): string {
   return 'application/octet-stream'
 }
 
+/** True for a path strictly below `dir`. A name that merely starts with two dots ("..dots.bin") is inside. */
+function within(dir: string, file: string): boolean {
+  const rel = relative(dir, file)
+  return rel !== '' && rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel)
+}
+
 interface Converted {
   dir: string
   pages: Array<{ title: string; level: number; file: string }>
@@ -127,11 +133,14 @@ export class BackupSource implements GraphSource {
     if (!section) throw new Error(`Unknown backup section ${sectionId}`)
     const converted = await this.convert(section)
     const lastModified = new Date(section.mtimeMs).toISOString()
-    return converted.pages.map((p, order) => {
-      const id = `${sectionId}/${basename(p.file)}`
-      this.pageFiles.set(id, join(converted.dir, p.file))
-      return { id, title: p.title, level: p.level, order, lastModified }
-    })
+    // The index comes from the converter, so an entry that points outside its folder is dropped.
+    return converted.pages
+      .filter((p) => within(converted.dir, resolve(converted.dir, p.file)))
+      .map((p, order) => {
+        const id = `${sectionId}/${basename(p.file)}`
+        this.pageFiles.set(id, resolve(converted.dir, p.file))
+        return { id, title: p.title, level: p.level, order, lastModified }
+      })
   }
 
   async pageContent(pageId: string): Promise<string> {
@@ -144,7 +153,7 @@ export class BackupSource implements GraphSource {
   async resource(url: string): Promise<{ bytes: Uint8Array; mime: string }> {
     const file = url.startsWith(RESOURCE_PREFIX) ? url.slice(RESOURCE_PREFIX.length) : ''
     // Only files inside a conversion directory: page HTML comes from a file the user picked.
-    const inside = [...this.dirs].some((d) => !relative(d, file).startsWith('..') && file.startsWith(d + sep))
+    const inside = [...this.dirs].some((d) => within(d, file))
     if (!inside) throw new Error('Not a converted backup file')
     const bytes = new Uint8Array(readFileSync(file))
     return { bytes, mime: sniffMime(bytes) }
