@@ -41,7 +41,8 @@ describe('T-FX5: the MCP proxy relays bytes', () => {
     await tick()
     socket.push(b)
     await tick()
-    expect(Buffer.concat(out).equals(reply)).toBe(true)
+    // Compared as hex, so a failure shows which bytes changed (a replacement character is efbfbd).
+    expect(Buffer.concat(out).toString('hex')).toBe(reply.toString('hex'))
   })
 
   it('T-FX5-02: a request holding café split inside the character is forwarded byte for byte', async () => {
@@ -57,6 +58,6 @@ describe('T-FX5: the MCP proxy relays bytes', () => {
     await tick()
     input.write(b)
     await tick()
-    expect(Buffer.concat(received).equals(Buffer.concat([Buffer.from(INIT), req]))).toBe(true)
+    expect(Buffer.concat(received).toString('hex')).toBe(Buffer.concat([Buffer.from(INIT), req]).toString('hex'))
   })
 })
