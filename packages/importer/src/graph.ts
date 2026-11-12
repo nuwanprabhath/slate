@@ -149,7 +149,9 @@ export class GraphHttp {
         const header = res.headers.get('retry-after')
         const seconds = header === null ? NaN : Number(header)
         const asked = Number.isFinite(seconds) ? seconds * 1000 : 2 ** attempt * 1000
-        const wait = Math.min(asked, MAX_RETRY_AFTER_MS)
+        // Clamped at both ends: a negative Retry-After would otherwise retry with no backoff at all,
+        // and would also make the budget check below more permissive than it looks.
+        const wait = Math.min(Math.max(asked, 0), MAX_RETRY_AFTER_MS)
         if (Date.now() - startedAt + wait > RETRY_BUDGET_MS) {
           throw new GraphOfflineError(`Graph ${path} kept asking Slate to wait for more than ${RETRY_BUDGET_MS} ms`)
         }
