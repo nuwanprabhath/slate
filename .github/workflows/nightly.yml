@@ -19,9 +19,17 @@ concurrency:
 
 jobs:
   fuzz-soak:
-    name: Fuzz soak (every Fuzz and Model file, 200,000 runs)
+    # Two jobs, not two steps: the first run put every harness in one job and it was cancelled at its cap
+    # with the main-process half never started. Bounded workers because the files are memory-hungry at this
+    # depth -- unbounded, one worker reached a 4 GB heap and aborted the run (contentFuzz alone holds about
+    # 2 GB at 20,000 property runs).
+    name: Fuzz soak (${{ matrix.half }}, 200,000 runs)
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        half: [unit, main]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,15 +52,19 @@ jobs:
       # the seed and fast-check's shrunk counterexample, which becomes a fixed case in the same file. The kit
       # (packages/desktop/test/fuzz.ts) reads these, and fcRuns(divisor) scales with SLATE_FUZZ_RUNS, so every
       # file runs 100x its PR depth here: F4d's private-box model and F2d's sync-over-store model among them.
+      # 200k runs per property take minutes, not vitest's default 5 s per test. A synchronous fc.assert
+      # blocks its worker, so this timeout is only recorded after the property returns: it bounds nothing
+      # while a run is in flight, which is why the job's own cap matters.
       - name: Fuzz soak (core, editor, sync, importer, mcp, desktop unit)
-        # 200k runs per property take minutes, not vitest's default 5 s per test.
-        run: npx vitest run --testTimeout=1800000 Fuzz.test Model.test privateCanary simulationFaults
+        if: matrix.half == 'unit'
+        run: npx vitest run --testTimeout=1800000 --maxWorkers=2 Fuzz.test Model.test privateCanary simulationFaults
         env:
           SLATE_FUZZ_RUNS: 200000
           SLATE_SIM_RUNS: 20000
           SLATE_FUZZ_SEED: ${{ github.run_number }}
       - name: Fuzz soak (main process)
-        run: npm run test:main -- --testTimeout=1800000 Fuzz.test Model.test privateCanaryStateful src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
+        if: matrix.half == 'main'
+        run: npm run test:main -- --testTimeout=1800000 --maxWorkers=2 Fuzz.test Model.test privateCanaryStateful src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
         env:
           SLATE_FUZZ_RUNS: 200000
           SLATE_SIM_RUNS: 20000
