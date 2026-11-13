@@ -127,26 +127,47 @@ export async function quiesce(devices: Dev[]): Promise<void> {
   }
 }
 
+/**
+ * What one play of a scenario did, in a form two plays compare by: what each action acted on and how each sync
+ * ended, then the quiescent state. Neither the clock nor a Loro peer id is in it (the engine picks its own peer for
+ * a restored box), so equal outcomes mean the plan was replayed, not merely that it converged again.
+ */
+export interface Outcome {
+  trace: string[]
+  /** Per device: its page and notebook, its conflict records, how many boxes it restored, the faults that fired. */
+  devices: Array<{ docs: unknown[]; conflicts: unknown[]; restored: number; fired: Record<FaultKind, number> }>
+  remote: string[]
+}
+
 export async function run(s: Scenario): Promise<void> {
+  await play(s)
+}
+
+export async function play(s: Scenario): Promise<Outcome> {
   const { shared, devices } = world(s.plans)
   let nextPeer = 1000n
   const edited: Edited = { notes: [], boxes: new Map<string, string[]>(), deleted: new Set<string>() }
+  const trace: string[] = []
 
   for (const [step, a] of s.actions.entries()) {
     const d = devices[a.dev]!
     const boxIds = () => new PageDoc(d.local.doc(PAGE)).listBoxes().map((b) => b.id)
     const some = () => boxIds()[a.pick % Math.max(1, boxIds().length)]
     switch (a.op) {
-      case 'sync':
-        await syncWithFaults(d)
+      case 'sync': {
+        const result = await syncWithFaults(d)
+        trace.push(`sync ${d.id} ${typeof result === 'string' ? result : `${result.status} pushed ${result.pushed} pulled ${result.pulled} conflicts ${result.conflicts}`}`)
         break
+      }
       case 'box': {
         const id = editPage(d.local, PAGE, (p) => addTextBox(p, `b${step}`, { x: a.pick, y: 0 }), nextPeer++)
         edited.boxes.set(id, [`b${step}`])
+        trace.push(`box ${d.id} ${id}`)
         break
       }
       case 'text': {
         const id = some()
+        trace.push(`text ${d.id} ${id ?? 'no box'}`)
         if (id === undefined) break
         const token = `${d.id}:${step} `
         editPage(d.local, PAGE, (p) => appendText(p, id, token), nextPeer++)
@@ -155,12 +176,14 @@ export async function run(s: Scenario): Promise<void> {
       }
       case 'move': {
         const id = some()
+        trace.push(`move ${d.id} ${id ?? 'no box'}`)
         if (id !== undefined) editPage(d.local, PAGE, (p) => p.updateBox(id, { y: a.pick * 20 }), nextPeer++)
         break
       }
       case 'del': {
         const id = some()
         if (id === undefined || boxIds().length < 2) break
+        trace.push(`del ${d.id} ${id}`)
         editPage(d.local, PAGE, (p) => p.deleteBox(id), nextPeer++)
         edited.deleted.add(id)
         break
@@ -180,6 +203,16 @@ export async function run(s: Scenario): Promise<void> {
   if ([...shared.files.keys()].some((path) => path.includes('/snapshot-'))) totals.compacted++
   for (const d of devices) for (const k of FAULT_KINDS) totals.fired[k] += d.drive.fired[k]
   verify(devices, edited)
+  return {
+    trace,
+    devices: devices.map((d) => ({
+      docs: [PAGE, NOTEBOOK].map((docId) => d.local.doc(docId).toJSON() as unknown),
+      conflicts: d.local.conflicts.map((c) => ({ ...c, at: 0 })),
+      restored: d.local.notes.length,
+      fired: { ...d.drive.fired }
+    })),
+    remote: [...shared.files.keys()].sort()
+  }
 }
 
 export function verify(devices: Dev[], edited: Edited): void {
