@@ -12,6 +12,8 @@
 #error "binding.c must never be compiled with SCC_KAT_BUILD"
 #endif
 
+/* Only for a call that builds a result. A caller's value is read through the get_* helpers below, whose
+ * refusal is SCC_ERR_ARG: a failure thrown from here carries no SCC_ code (FX-28). */
 #define CHECK(call) do { if ((call) != napi_ok) { napi_throw_error(env, "SLATE_NATIVE", #call); return NULL; } } while (0)
 
 static napi_value throw_code(napi_env env, int rc) {
@@ -88,6 +90,11 @@ static int get_uint_in(napi_env env, napi_value v, uint32_t min, uint32_t max, u
   return 1;
 }
 
+/* A flag is exactly true or false (FX-28): null, a number or a Boolean object is refused, never coerced. */
+static int get_bool(napi_env env, napi_value v, bool *out) {
+  return napi_get_value_bool(env, v, out) == napi_ok;
+}
+
 /* A key usage named by JavaScript: "data", "master", "db" or "kek" (C4). A password-class key is never
  * named: only the password KDFs make one. */
 static int get_usage(napi_env env, napi_value v, int *usage) {
@@ -113,7 +120,7 @@ static napi_value Init(napi_env env, napi_callback_info info) {
   if (!get_args(env, info, 3, argv)) return throw_rc(env, SCC_ERR_ARG);
   /* A path that would not fit, or holds a NUL, is refused rather than shortened into some other file. */
   if (!get_string(env, argv[0], path, sizeof path, &n) || !get_string(env, argv[1], dir, sizeof dir, &n)) return throw_rc(env, SCC_ERR_ARG);
-  CHECK(napi_get_value_bool(env, argv[2], &require_fips));
+  if (!get_bool(env, argv[2], &require_fips)) return throw_rc(env, SCC_ERR_ARG);
   int rc = scc_init(path, dir, require_fips);
   return rc == SCC_OK ? u32(env, 0) : throw_rc(env, rc);
 }
@@ -129,7 +136,7 @@ static napi_value PostBegin(napi_env env, napi_callback_info info) {
 
 static napi_value PostEnd(napi_env env, napi_callback_info info) {
   napi_value argv[1]; bool passed;
-  if (!get_args(env, info, 1, argv) || napi_get_value_bool(env, argv[0], &passed) != napi_ok) return throw_rc(env, SCC_ERR_ARG);
+  if (!get_args(env, info, 1, argv) || !get_bool(env, argv[0], &passed)) return throw_rc(env, SCC_ERR_ARG);
   if (!passed) slate_sqlite_close_all();
   int rc = scc_post_end(passed);
   return rc == SCC_OK ? u32(env, 0) : throw_rc(env, rc);
@@ -283,7 +290,7 @@ static napi_value KbkdfFromSecret(napi_env env, napi_callback_info info) {
   if (!get_password_args(env, info, 4, argv, &pw, &pw_len)) goto out;
   if (!get_string(env, argv[1], label, sizeof label, &n)) goto out;
   if (!get_bytes(env, argv[2], &ctx, &ctx_len)) goto out;
-  if (napi_get_value_bool(env, argv[3], &approved) != napi_ok) goto out;
+  if (!get_bool(env, argv[3], &approved)) goto out;
   rc = scc_kbkdf_secret(pw, pw_len, label, n, ctx, ctx_len, approved, &out);
 out:
   if (pw != NULL) OPENSSL_cleanse(pw, pw_len);
@@ -351,7 +358,7 @@ static napi_value KbkdfFromRecovery(napi_env env, napi_callback_info info) {
   if (!get_handle(env, argv[0], &key)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_string(env, argv[1], label, sizeof label, &n)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_bytes(env, argv[2], &ctx, &ctx_len)) return throw_rc(env, SCC_ERR_ARG);
-  if (napi_get_value_bool(env, argv[3], &approved) != napi_ok) return throw_rc(env, SCC_ERR_ARG);
+  if (!get_bool(env, argv[3], &approved)) return throw_rc(env, SCC_ERR_ARG);
   int rc = scc_kbkdf_recovery(key, label, n, ctx, ctx_len, approved, &out);
   return rc == SCC_OK ? u32(env, out) : throw_rc(env, rc);
 }
@@ -498,7 +505,7 @@ static napi_value GcmSeal(napi_env env, napi_callback_info info) {
   napi_value argv[4], ab, res; napi_valuetype t; uint32_t key; unsigned char *iv = NULL, *aad, *pt, *out; size_t iv_len = 0, aad_len, pt_len;
   if (!get_args(env, info, 4, argv)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_handle(env, argv[0], &key)) return throw_rc(env, SCC_ERR_ARG);
-  CHECK(napi_typeof(env, argv[1], &t));
+  if (napi_typeof(env, argv[1], &t) != napi_ok) return throw_rc(env, SCC_ERR_ARG);
   if (t != napi_null && (!get_bytes(env, argv[1], &iv, &iv_len) || iv_len != 12)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_bytes(env, argv[2], &aad, &aad_len) || !get_bytes(env, argv[3], &pt, &pt_len)) return throw_rc(env, SCC_ERR_ARG);
   if (aad_len > SCC_MAX_INPUT || pt_len > SCC_MAX_INPUT) return throw_rc(env, SCC_ERR_TOO_LARGE);
@@ -557,7 +564,7 @@ static napi_value GcmSealKey(napi_env env, napi_callback_info info) {
   if (!get_args(env, info, 4, argv)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_handle(env, argv[0], &kek)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_handle(env, argv[1], &key)) return throw_rc(env, SCC_ERR_ARG);
-  CHECK(napi_typeof(env, argv[2], &t));
+  if (napi_typeof(env, argv[2], &t) != napi_ok) return throw_rc(env, SCC_ERR_ARG);
   if (t != napi_null && (!get_bytes(env, argv[2], &iv, &iv_len) || iv_len != 12)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_bytes(env, argv[3], &aad, &aad_len)) return throw_rc(env, SCC_ERR_ARG);
   CHECK(napi_create_arraybuffer(env, 12 + 32 + 16, (void **)&out, &ab));
@@ -643,7 +650,7 @@ static napi_value AesEcbBlock(napi_env env, napi_callback_info info) {
   if (!get_args(env, info, 3, argv)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_handle(env, argv[0], &key)) return throw_rc(env, SCC_ERR_ARG);
   if (!get_bytes(env, argv[1], &in, &len) || len != 16) return throw_rc(env, SCC_ERR_ARG);
-  CHECK(napi_get_value_bool(env, argv[2], &enc));
+  if (!get_bool(env, argv[2], &enc)) return throw_rc(env, SCC_ERR_ARG);
   CHECK(napi_create_arraybuffer(env, 16, (void **)&out, &ab));
   int rc = scc_aes_ecb_block(key, in, enc, out);
   if (rc != SCC_OK) return throw_rc(env, rc);
