@@ -238,6 +238,10 @@ jobs:
         run: npm run -w @slate/native test:kat -- --report ${{ github.workspace }}/test-reports/kat-${{ matrix.target }}.json
       - name: Native KATs under ASan/UBSan
         run: npm run -w @slate/native test:kat:asan
+      # Every native harness under ASan/UBSan with the standalone driver: the committed corpus, then 20,000
+      # seeded mutations each. libFuzzer itself runs nightly (nightly.yml, fuzz-native).
+      - name: Native fuzz smoke (corpus replay and seeded mutation)
+        run: npm run -w @slate/native fuzz:smoke
       - name: Native KATs through the FIPS provider
         run: node packages/native/scripts/kat.mjs --fips --report ${{ github.workspace }}/test-reports/kat-fips-${{ matrix.target }}.json
       - name: T-KAT-01 cross-implementation vectors

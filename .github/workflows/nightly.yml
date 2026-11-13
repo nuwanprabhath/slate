@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   fuzz-soak:
-    name: Fuzz soak (T-FUZZ, 200,000 runs)
+    name: Fuzz soak (every Fuzz and Model file, 200,000 runs)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -41,13 +41,91 @@ jobs:
           npm run -w @slate/native build:sqlcipher
           npm run -w @slate/native build:addon
       # A new seed every night (the run number), so the soak explores beyond CI's fixed 0x51a7e; a failure prints
-      # the seed and fast-check's shrunk counterexample, which becomes a fixed case in the same file.
-      - name: Fuzz soak
+      # the seed and fast-check's shrunk counterexample, which becomes a fixed case in the same file. The kit
+      # (packages/desktop/test/fuzz.ts) reads these, and fcRuns(divisor) scales with SLATE_FUZZ_RUNS, so every
+      # file runs 100x its PR depth here: F4d's private-box model and F2d's sync-over-store model among them.
+      - name: Fuzz soak (core, editor, sync, importer, mcp, desktop unit)
         # 200k runs per property take minutes, not vitest's default 5 s per test.
-        run: npm run test:main -- --testTimeout=1800000 src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
+        run: npx vitest run --testTimeout=1800000 Fuzz.test Model.test privateCanary simulationFaults
         env:
           SLATE_FUZZ_RUNS: 200000
+          SLATE_SIM_RUNS: 20000
           SLATE_FUZZ_SEED: ${{ github.run_number }}
+      - name: Fuzz soak (main process)
+        run: npm run test:main -- --testTimeout=1800000 Fuzz.test Model.test privateCanaryStateful src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
+        env:
+          SLATE_FUZZ_RUNS: 200000
+          SLATE_SIM_RUNS: 20000
+          SLATE_FUZZ_SEED: ${{ github.run_number }}
+
+  fuzz-native:
+    name: Native libFuzzer (${{ matrix.harness }}, 10 min)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [recovery, gcm, wrap, ops, mldsa]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      # On ubuntu-24.04, clang-18's libFuzzer runtime (libclang_rt.fuzzer) is in libclang-rt-18-dev. fuzz.mjs
+      # compiles with `cc`, so clang goes first on PATH under that name.
+      - name: Install clang and its libFuzzer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libclang-rt-18-dev
+          mkdir -p "$RUNNER_TEMP/cc"
+          ln -s "$(command -v clang-18)" "$RUNNER_TEMP/cc/cc"
+          echo "$RUNNER_TEMP/cc" >> "$GITHUB_PATH"
+      - run: npm ci
+      - name: Build libcrypto
+        run: npm run -w @slate/native build:openssl -- --only openssl
+      - name: Restore the evolving corpus
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: packages/native/build/fuzz/corpus-${{ matrix.harness }}
+          key: fuzz-native-${{ matrix.harness }}-${{ github.run_id }}
+          restore-keys: fuzz-native-${{ matrix.harness }}-
+      - name: libFuzzer (the committed corpus plus the cached one)
+        run: npm run -w @slate/native fuzz -- --harness ${{ matrix.harness }} --seconds 600
+      # A crash input is a working reproducer and a public repository's artefacts are downloadable, so only the
+      # sanitizer log (in the job log) and each input's SHA-256 leave the runner (plan section 2.5).
+      - name: Crash input hashes
+        if: failure()
+        run: sha256sum packages/native/build/fuzz/crashes-${{ matrix.harness }}/* > "$RUNNER_TEMP/crash-sha256.txt" || true
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-native-${{ matrix.harness }}
+          path: ${{ runner.temp }}/crash-sha256.txt
+          retention-days: 30
+
+  fuzz-converter:
+    name: one2html black-box fuzz (F3d)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Rust nightly (for the one2html converter)
+        run: rustup toolchain install nightly --profile minimal
+      - run: npm run build:one2html
+      # The real converter over mutated .one files, never yet run against the binary: this answers whether M4
+      # was reachable through one2html. The budget stops new runs inside the job's slot.
+      - name: Fuzz one2html
+        run: node packages/desktop/scripts/fuzz-one2html.mjs --runs 2000 --seed ${{ github.run_number }} --budget 1200
 
   memory-evidence:
     name: Memory evidence (T-ZERO-04, T-ZERO-06, Linux)
