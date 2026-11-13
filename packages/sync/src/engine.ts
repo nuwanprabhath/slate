@@ -65,8 +65,9 @@ const META = {
   device: 'deviceRecord',
   cursor: 'deltaCursor',
   /**
-   * The local append sequence this remote has considered. Empty means "consider every doc": set
-   * that way by `forgetPushed` and by a `selfCheck` reset, which both need a full scan next run.
+   * The local append sequence at the start of the last sync that finished its pull. Docs appended to since are
+   * considered again by every run until one finishes: their `base` moves only then. Empty means "consider every
+   * doc": set that way by `forgetPushed` and by a `selfCheck` reset, which both need a full scan next run.
    */
   changed: 'changedSeq'
 }
@@ -105,6 +106,8 @@ export class SyncEngine {
   private readonly capabilities: Record<string, number>
   private readonly beforeUpload: (() => Promise<void>) | undefined
   private signal: AbortSignal | undefined
+  /** `forgetPushed` ran since the current sync read its cursor: that sync must not write the cursor back. */
+  private forgotten = false
 
   constructor(opts: SyncEngineOptions) {
     this.local = opts.local
@@ -130,14 +133,13 @@ export class SyncEngine {
       // Every write below (uploads and removals alike) comes after this.
       await this.beforeUpload?.()
       const pushedAt = new Map<string, VersionVector>()
+      this.forgotten = false
       const changed = await this.changedDocs()
       for (const docId of changed.ids) pushedAt.set(docId, await this.pushDoc(docId, counts))
-      // Only after every push landed: a run that threw leaves the cursor where it was and retries.
-      await this.local.setMeta(META.changed, String(changed.seq))
       await this.pushBlobs()
       await this.writeDevice()
       await this.flush()
-      await this.pull(counts, pushedAt)
+      await this.pull(counts, pushedAt, changed.seq)
       await this.flush()
       return { status: 'idle-synced', ...counts, at: Date.now() }
     } catch (err) {
@@ -255,6 +257,7 @@ export class SyncEngine {
    * rotation must re-push notes pulled under the old keys (C9).
    */
   async forgetPushed(): Promise<void> {
+    this.forgotten = true
     for (const docId of await this.local.docIds()) await this.local.setBytesMeta(META.pushed(docId), new VersionVector(null).encode())
     await this.local.setMeta(META.changed, '')
   }
@@ -338,7 +341,8 @@ export class SyncEngine {
     for (let i = 0; i < missing.length; i++) await this.local.notify(RESTORED_MESSAGE)
   }
 
-  private async pull(counts: Counts, pushedAt: Map<string, VersionVector>): Promise<void> {
+  /** `changedSeq` is the cursor to store once the docs in `pushedAt` have had their `base` moved. */
+  private async pull(counts: Counts, pushedAt: Map<string, VersionVector>, changedSeq: number): Promise<void> {
     const cursor = (await this.local.getMeta(META.cursor)) ?? null
     const page = await this.transfer(() => this.remote.delta(cursor, this.signal))
     const states = new Map<string, PullState>()
@@ -405,6 +409,9 @@ export class SyncEngine {
         await this.local.setBytesMeta(META.base(docId), bytes)
       }
     }
+    // Not when the pushes landed: a run whose pull then threw would leave those docs out of every later `pushedAt`,
+    // and their pushed edits would stay "mine" however many syncs finished. Before `selfCheck`, which may reset it.
+    if (!this.forgotten) await this.local.setMeta(META.changed, String(changedSeq))
     await this.selfCheck(ownDeleted, cursor === null ? ownPresent : undefined)
     if (unverified > 0) await this.local.notify(unverifiedMessage(unverified))
   }

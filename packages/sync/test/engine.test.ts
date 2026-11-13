@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { PageDoc } from '@slate/core'
 import { SyncAborted, SyncEngine } from '../src/engine'
 import { parseRemotePath } from '../src/paths'
+import { OfflineError, type RemoteDrive } from '../src/types'
 import { memoryDrive, type MemoryDrive } from './memoryDrive'
 import { addTextBox, appendText, boxText, editPage, memoryLocal, type MemoryLocal } from './memoryLocal'
 
@@ -428,6 +429,49 @@ describe('SyncEngine incremental push (B3, F3)', () => {
     const c = device(remote, 'C')
     await c.engine.syncOnce()
     expect(json(c.local)).toEqual(json(a.local))
+  })
+
+  it('considers a doc again after a sync that pushed it and lost its pull, until a sync finishes (FX-24)', async () => {
+    const remote = memoryDrive()
+    const local = memoryLocal()
+    const link = { pullFails: true }
+    const delta: RemoteDrive['delta'] = (cursor, signal) => (link.pullFails ? Promise.reject(new OfflineError()) : remote.delta(cursor, signal))
+    const engine = new SyncEngine({ local, remote: { ...remote, delta }, deviceId: 'A', deviceName: 'A' })
+    const untouched = 'page:33333333-3333-4333-8333-333333333333'
+    editPage(local, untouched, (p) => addTextBox(p, 'synced before'))
+    link.pullFails = false
+    await engine.syncOnce()
+    editPage(local, PAGE, (p) => addTextBox(p, 'typed'))
+    link.pullFails = true
+    expect(await engine.syncOnce()).toMatchObject({ status: 'offline', pushed: 1 })
+
+    const loaded = counting(local)
+    link.pullFails = false
+    // Its upload is not repeated; only the doc that sync pushed is decoded, to move its conflict base.
+    expect(await engine.syncOnce()).toMatchObject({ status: 'idle-synced', pushed: 0 })
+    expect(loaded).toEqual([PAGE])
+    expect(await engine.syncOnce()).toMatchObject({ status: 'idle-synced', pushed: 0 })
+    expect(loaded).toEqual([PAGE])
+    expect(filesOf(remote, 'A', 'chunk')).toHaveLength(2)
+  })
+
+  it('forgetPushed during a sync outlives it: the next sync still scans every doc', async () => {
+    const remote = memoryDrive()
+    const local = memoryLocal()
+    const link = { forget: false }
+    const delta: RemoteDrive['delta'] = async (cursor, signal) => {
+      if (link.forget) await engine.forgetPushed()
+      return remote.delta(cursor, signal)
+    }
+    const engine: SyncEngine = new SyncEngine({ local, remote: { ...remote, delta }, deviceId: 'A', deviceName: 'A' })
+    editPage(local, PAGE, (p) => addTextBox(p, 'one'))
+    await engine.syncOnce()
+    link.forget = true
+    expect(await engine.syncOnce()).toMatchObject({ status: 'idle-synced', pushed: 0 })
+    link.forget = false
+    const loaded = counting(local)
+    expect(await engine.syncOnce()).toMatchObject({ status: 'idle-synced', pushed: 1 })
+    expect(loaded).toEqual([PAGE])
   })
 
   it('pushes the blobs a remote lacks with one set difference, and each blob once', async () => {
