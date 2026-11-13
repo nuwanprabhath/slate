@@ -28,7 +28,10 @@ const appLike = fc.oneof(
 
 const inside = (full: string): boolean => {
   const rel = relative(ROOT, full)
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel) && !full.includes('\0')
+  // `startsWith('..')` without the separator also rejects a legitimate name that begins with two
+  // dots: `app://slate/....` resolves to `<root>/....`, which is inside. The soak found it at seed 1
+  // after 1,315 cases, and it is the same mistake FX-16 fixed in main/onenote/backup.ts.
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) && !full.includes('\0')
 }
 
 const dirs: string[] = []
