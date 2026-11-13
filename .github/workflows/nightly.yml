@@ -68,7 +68,10 @@ jobs:
           SLATE_FUZZ_SEED: ${{ github.run_number }}
       - name: Fuzz soak (main process)
         if: matrix.half == 'main'
-        run: npm run test:main -- --testTimeout=1800000 --maxWorkers=2 Fuzz.test Model.test privateCanaryStateful src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
+        # Two `--`, not one: `test:main` is `npm run test -w @slate/desktop`, so npm eats an appended
+        # *flag* and only positional filters reach vitest. With one `--` the timeout and worker count
+        # below are silently dropped and every property runs under the config's 15 s default.
+        run: npm run test:main -- -- --testTimeout=1800000 --maxWorkers=2 Fuzz.test Model.test privateCanaryStateful src/main/vault/fuzz.test.ts src/main/vault/envelope2.test.ts src/main/vault/localJsonCaps.test.ts
         env:
           SLATE_FUZZ_RUNS: 200000
           SLATE_SIM_RUNS: 20000
