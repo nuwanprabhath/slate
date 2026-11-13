@@ -6,6 +6,43 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-11-14
+
+### Fixed
+
+- An edit made while a sync's pull failed no longer stays "mine" for ever. The cursor that says which
+  documents a run considers was stored as soon as the pushes landed, so a run whose pull then failed --
+  offline, a stall, a crash -- left that document out of every later run: nothing was appended to it, no
+  later sync moved its conflict base, and the pushed edit stayed unsynced however many syncs finished
+  afterwards. A change another device made after pulling that edit was then reported as a conflict, and a
+  box that device deleted came back as a restored copy. The cursor now moves only once the pull has moved
+  the bases, so the document is considered again (decoded, not uploaded a second time) until one sync
+  finishes. Found by the sync fault simulation (FX-24); the failing scenario is pinned as a test.
+- The crypto module answers a non-boolean flag with its own error code instead of a raw N-API failure.
+  `aesEcbBlock` and `init` read their flag through a macro meant for building results, so `null`, a
+  number or a `Boolean` object arrived in JavaScript as a `SLATE_NATIVE` error naming an internal
+  function, with no `SCC_` code for a caller to handle. Every flag is now read strictly and refused with
+  `SCC_1`, and nothing changes for a valid argument (FX-28).
+
+### Changed
+
+- The TipTap editor suite moves to 3.33.0, Playwright to 1.65.0, and `@hono/node-server` to 2.1.8 for a
+  moderate advisory (Dependabot #14 and #15, folded into this release). `@hono/node-server` is a
+  development dependency of the MCP server's test harness and is not shipped.
+
+### Internal
+
+- The sync fault simulation replays exactly from its seed. Box and conflict ids were drawn from the
+  system's random source rather than the plan, so a failing plan could not be reproduced, shrunk or
+  pinned; they now come from the seed, and three replay properties check it (FX-25).
+- The nightly fuzz soak runs as it was meant to. Its main half silently dropped the timeout and worker
+  count npm ate from the command line, and ran without the FIPS provider, so fifteen vault suites failed
+  on every cryptographic operation. Both are fixed, and the soak is split into two jobs so neither half
+  runs out of time.
+- The content fuzz harness releases the documents it builds, and a path oracle in the IPC fuzz tests no
+  longer rejects a legitimate name beginning with two dots -- the same mistake the backup containment
+  check had, now one predicate in both places.
+
 ## [0.7.4] - 2026-11-13
 
 ### Fixed
