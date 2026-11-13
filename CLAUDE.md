@@ -28,6 +28,7 @@ build plan: `docs/superpowers/plans/2026-10-21-phase-1-local-editor.md`.
 | MCP server for agents | `bin/slate-mcp` (build first); register with `claude mcp add slate -- $PWD/bin/slate-mcp` |
 | Lint (whole repo; this branch's files) | `npm run lint`; `npm run lint:changed` |
 | Guard tests (and the lint rules' own tests) | `npm run guards` |
+| Fuzz: one harness deeper, or a seed again; the native harnesses | `SLATE_FUZZ_SEED=<n> SLATE_FUZZ_RUNS=<n> npx vitest run <file>`; `npm run -w @slate/native fuzz:smoke` |
 | UI scenarios and screenshots on one page (`ui-review/index.html`) | `npm run ui:review` |
 
 ## Never
@@ -76,6 +77,7 @@ explain it under "Guardrail conflicts" in your report; the maintainer decides. B
 | No type escape hatches | `tsc` (`strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noImplicitReturns`); `@typescript-eslint/no-explicit-any`, `ban-ts-comment`, `no-floating-promises`, `no-misused-promises`, `switch-exhaustiveness-check`, `no-non-null-assertion` (vault) | G1 |
 | Tests cannot be quietly shrunk: no `.only`; a skip says why and the skip count only shrinks; a test with no assertion fails; test configs and scripts are pinned; no package loses test files; a behaviour change has a test that fails without it | `vitest/no-focused-tests`, `slate/skip-needs-reason`; `expect.requireAssertions` in every project; `tools/guards/testConfig.test.ts`; Stop hook (`definition-of-done.mjs`, `testsFailOnBase.mjs`) | G1; Stop hook phase 1 |
 | Tests are registered unconditionally: no `it`/`test`/`describe` under an if, ternary, `&&`/`||`, switch or try at module or describe level (loops allowed); a test that cannot run yet is a WP-named `it.todo` | `slate/tests-registered-unconditionally` (`tools/eslint-rules/tests-registered-unconditionally.test.mjs`) | C8 |
+| Fuzz harnesses stay deterministic and their corpus only grows: every `fc.assert` takes `fcParams`/`fcRuns(`/a literal seed; every `test/corpus/<target>` folder is replayed by `replayCorpus` and not empty; corpus files are hash-named, at most 64 KiB (1 MiB a folder) and never deleted; shipped code never imports fast-check or a kit file | `tools/guards/fuzzCorpus.test.ts`; golden-paths "Fuzzing" | F5b |
 | Comments cannot switch a guard off: only line disables, with a reason, of ordinary rules | `eslint-comments/no-use` (no inline config, `/* global */`, block disables), `require-description`, `no-unlimited-disable`, `no-unused-disable`, `no-restricted-disable`; `tools/eslint-rules/config.test.mjs` | G1 |
 | Exception lists only shrink: allowlists (and the names inside them) and `eslint-suppressions.json` | `tools/guards/ratchet.test.ts` | G1 |
 | Every dependency is approved with a reason; registry versions with integrity hashes only | `tools/guards/dependencies.test.ts` (`allowlists/dependencies.json`) | G1 |
@@ -180,7 +182,7 @@ from the main checkout, when the worktree's `package-lock.json` matches main's:
 
 ```sh
 cd <worktree>
-for d in node_modules tools/lint/node_modules packages/*/node_modules packages/native/build packages/native/fips packages/native/prebuilds; do
+for d in node_modules tools/lint/node_modules packages/*/node_modules packages/native/build packages/native/fips packages/native/prebuilds packages/native/.build; do
   [ -e "<main>/$d" ] && cp -Rc "<main>/$d" "$d"
 done
 ```

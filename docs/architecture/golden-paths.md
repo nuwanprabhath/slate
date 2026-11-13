@@ -173,3 +173,21 @@ Add `packages/desktop/e2e/<name>.spec.ts` using `test` and `expect` from `./fixt
 `smoke.spec.ts`): the fixture launches the built app with `SLATE_E2E=1` (hidden window) and a
 throwaway data folder. Run it with `npm run e2e -- <name>.spec.ts`; afterwards no Electron process
 from the checkout may be left running.
+
+## Fuzzing
+
+A stateless property goes in `<subject>Fuzz.test.ts`, a state machine in `<subject>Model.test.ts`, with
+titles starting `T-<task>-<nn>:`. Take runs and the seed from the kit in `packages/desktop/test/fuzz.ts`:
+`fc.assert(prop, fcParams)`, or `fcRuns(divisor)` when one run is expensive. Never read `process.env`,
+`Math.random` or `Date.now` for a seed; CI pins `0x51a7e`, and the nightly soak sets `SLATE_FUZZ_SEED`,
+`SLATE_FUZZ_RUNS` and `SLATE_SIM_RUNS` through the kit. Time oracles are ratios (`relativeCost`).
+
+Byte inputs that once broke a parser live in `packages/<pkg>/test/corpus/<target>/`, each named by the
+first 16 hex of the SHA-256 of its own bytes plus an extension, at most 64 KiB, the folder at most 1 MiB,
+and replayed by `replayCorpus('<pkg>', '<target>', …)` (`packages/desktop/test/fuzzCorpus.ts`) so each is
+its own test case. The native harnesses' corpus is `packages/native/fuzz/corpus/<harness>/`, replayed by
+`npm run -w @slate/native fuzz:smoke`. A corpus only grows. Shipped code never imports `fast-check` or a
+kit file. `tools/guards/fuzzCorpus.test.ts` checks all of this.
+
+When a harness finds something, commit the seed first (a fixed `it` case or a corpus file), fix on the
+same branch, and never narrow a generator to get green; an exclusion names its open finding (`FX-…`).

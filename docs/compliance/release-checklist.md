@@ -55,3 +55,7 @@ before you tag `v0.2.0`.
 After tagging, check that the GitHub release carries `latest-mac.yml`, `latest-linux.yml` and their signatures. A
 0.1.x app does not check signatures and will offer 0.2.0 as before: remind users to update every device
 (README, "Upgrading to 0.2.0").
+
+Before announcing a release, check the Nightly workflow's run on the tagged commit (it starts on `v*` tags:
+the fuzz soak, `fuzz-native`, `fuzz-converter` and the memory evidence). It does not block the release
+workflow, so it must be green, or its failure recorded here with the finding it opened.
