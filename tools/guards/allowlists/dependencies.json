@@ -31,7 +31,7 @@
   "electron-vite": "Build: bundles main, preload and renderer.",
   "eslint": "Lint: the linter that runs the slate/* guard rules.",
   "eslint-plugin-react-hooks": "Lint: React's hook rules.",
-  "fast-check": "devDependency only (audit C11, §6.4): property-based fuzzing of every parser that sees untrusted bytes (T-FUZZ in vault/fuzz.test.ts), with shrinking counterexamples; never in app code.",
+  "fast-check": "devDependency only (audit C11, §6.4): property-based fuzzing of every parser that sees untrusted bytes (T-FUZZ in vault/fuzz.test.ts, and every *Fuzz.test.ts and *Model.test.ts harness through the kit in packages/desktop/test/fuzz.ts), with shrinking counterexamples; never in app code (tools/guards/fuzzCorpus.test.ts rule 5).",
   "globals": "Lint: the global names of Node and the browser.",
   "happy-dom": "A DOM for the editor's unit tests.",
   "hash-wasm": "devDependency only since C4: the independent Argon2id reference for T-KAT-02 (kdf.test.ts) and T-ZERO-04; the app derives in @slate/native, and slate/crypto-through-native refuses it in source.",
