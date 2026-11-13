@@ -5,12 +5,13 @@
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FUZZ_SEED, fcRuns } from '../../desktop/test/fuzz'
-import { play, scenario } from './faultScenario'
+import { play, scenario, type Scenario } from './faultScenario'
+import { noFaults } from './faultyDrive'
 import { NOTEBOOK, PAGE, simulate } from './simulation'
 
 /** Plays of each plan. Two would show a difference; a third costs little and catches an id source that alternates. */
 const REPLAYS = 3
-// A plan here is three plays; the fault suite's own divisor would make this file as slow as that one.
+// A plan here is three plays; the fault suite's own run count would make this file slower than that one.
 const params = fcRuns(40, 25)
 
 describe('replaying a simulation', () => {
@@ -22,8 +23,8 @@ describe('replaying a simulation', () => {
     vi.useRealTimers()
   })
 
-  // About 10 ms a play on a quiet machine; 3 s a plan is a hundred times its three plays.
-  it(`plays a generated fault plan the same way ${REPLAYS} times, over ${params.numRuns} plans`, { timeout: Math.max(120_000, params.numRuns * 3_000) }, async () => {
+  // Measured: 39 ms a plan (its three plays) over 4,000 plans; 4 s a plan is a hundred times that.
+  it(`plays a generated fault plan the same way ${REPLAYS} times, over ${params.numRuns} plans`, { timeout: Math.max(120_000, params.numRuns * 4_000) }, async () => {
     let chose = 0
     await fc.assert(
       fc.asyncProperty(scenario, async (s) => {
@@ -36,6 +37,29 @@ describe('replaying a simulation', () => {
       params
     )
     expect(chose, 'plans that chose among several boxes').toBeGreaterThan(params.numRuns / 2)
+  })
+
+  // The engine names the copy it restores, and that copy is in the list the next action indexes. About 1 generated
+  // plan in 60 restores a box, too few for the plans above to promise one, so this plan does: d1 edits a box that d2
+  // deletes, and gets it back as a copy when it pulls the delete.
+  it('gives the box the engine restores the same id on every play', async () => {
+    const restoring: Scenario = {
+      plans: [noFaults(), noFaults(), noFaults()],
+      ids: 25,
+      actions: [
+        { op: 'box', dev: 1, pick: 0 },
+        { op: 'box', dev: 1, pick: 1 },
+        { op: 'sync', dev: 1, pick: 0 },
+        { op: 'sync', dev: 0, pick: 0 },
+        { op: 'text', dev: 0, pick: 0 },
+        { op: 'del', dev: 1, pick: 0 },
+        { op: 'sync', dev: 1, pick: 0 },
+        { op: 'sync', dev: 0, pick: 0 }
+      ]
+    }
+    const first = await play(restoring)
+    expect(first.devices.map((d) => d.restored)).toEqual([1, 0, 0])
+    for (let replay = 1; replay < REPLAYS; replay++) expect(await play(restoring), `replay ${replay}`).toEqual(first)
   })
 
   it('plays one seed of the three-device simulation to the same documents twice', { timeout: 120_000 }, async () => {

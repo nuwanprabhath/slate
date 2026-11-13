@@ -9,7 +9,7 @@ import type { SyncReport } from '../src/types'
 import { FAULT_KINDS, faultyDrive, type CallFault, type DeltaFault, type FaultKind, type FaultPlan, type FaultyDrive, type HangKind } from './faultyDrive'
 import { memoryDrive, type MemoryDrive } from './memoryDrive'
 import { addTextBox, appendText, boxText, editPage, memoryLocal, type MemoryLocal } from './memoryLocal'
-import { NOTEBOOK, PAGE } from './simulation'
+import { NOTEBOOK, PAGE, withSeededIds } from './simulation'
 
 /** How long a sync may wait on one call before the harness aborts it. */
 export const DEADLINE_MS = 30_000
@@ -24,6 +24,8 @@ export interface Action {
 export interface Scenario {
   plans: FaultPlan[]
   actions: Action[]
+  /** Seeds every id the play makes (`withSeededIds`), so that `pick` means the same box on every play. */
+  ids: number
 }
 
 // Weighted by repetition; syncs are common enough that faults land inside them.
@@ -45,7 +47,9 @@ export const plan: fc.Arbitrary<FaultPlan> = fc
   .map(({ calls, deltas }) => ({ calls: Object.fromEntries(calls), deltas: Object.fromEntries(deltas) }))
 export const scenario: fc.Arbitrary<Scenario> = fc.record({
   plans: fc.tuple(plan, plan, plan),
-  actions: fc.array(fc.record({ op: fc.constantFrom(...OPS), dev: fc.nat(2), pick: fc.nat(99) }), { minLength: 10, maxLength: 28 })
+  actions: fc.array(fc.record({ op: fc.constantFrom(...OPS), dev: fc.nat(2), pick: fc.nat(99) }), { minLength: 10, maxLength: 28 }),
+  // Last, so it draws after the plans and actions: a fast-check seed's plans and actions are the same with or without it.
+  ids: fc.nat()
 })
 
 export interface Dev {
@@ -143,7 +147,11 @@ export async function run(s: Scenario): Promise<void> {
   await play(s)
 }
 
-export async function play(s: Scenario): Promise<Outcome> {
+export function play(s: Scenario): Promise<Outcome> {
+  return withSeededIds(s.ids, () => playActions(s))
+}
+
+async function playActions(s: Scenario): Promise<Outcome> {
   const { shared, devices } = world(s.plans)
   let nextPeer = 1000n
   const edited: Edited = { notes: [], boxes: new Map<string, string[]>(), deleted: new Set<string>() }
