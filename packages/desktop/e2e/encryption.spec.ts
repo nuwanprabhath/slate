@@ -233,7 +233,9 @@ test.describe.serial('Encrypt my notes with git sync', () => {
     await b.getByTestId('vault-join-open').click()
     await b.getByTestId('vault-join-password').fill('not the password')
     await b.getByTestId('vault-join-submit').click()
-    await expect(b.getByTestId('vault-join-error')).toHaveText("That password didn't work")
+    // 30 s like its neighbours: a join attempt is a real unlock against the remote vault, and this is
+    // the only wait in the file that had the 5 s default. It timed out once under four-worker load.
+    await expect(b.getByTestId('vault-join-error')).toHaveText("That password didn't work", { timeout: 30_000 })
     await b.getByTestId('vault-join-password').fill(PASSWORD)
     await b.getByTestId('vault-join-submit').click()
     await expect(b.getByTestId('canvas')).toContainText(MARKER, { timeout: 60_000 })
