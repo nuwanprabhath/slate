@@ -3,6 +3,7 @@ import { LoroDoc } from 'loro-crdt'
 import { PageDoc } from '@slate/core'
 import { boxesTouched, boxMarkdown } from '../src/conflicts'
 import { SyncEngine } from '../src/engine'
+import { OfflineError, type RemoteDrive } from '../src/types'
 import { memoryDrive, type MemoryDrive } from './memoryDrive'
 import { addTextBox, appendText, boxText, editPage, memoryLocal } from './memoryLocal'
 
@@ -110,5 +111,50 @@ describe('conflicts', () => {
     const onA = new PageDoc(a.local.doc(PAGE))
     expect(onA.listBoxes().map((box) => boxText(onA, box.id))).toContain('base kept')
     expect(a.local.doc(PAGE).toJSON()).toEqual(b.local.doc(PAGE).toJSON())
+  })
+})
+
+// FX-24: an edit stops being "mine" when a sync finishes, whichever sync pushed it.
+describe('an edit whose push landed in a sync that lost its pull', () => {
+  /** A has typed into `x`; its sync uploaded the edit and was then refused the delta call. */
+  async function pushedWithoutPull() {
+    const { remote, a, b, x, y } = await shared()
+    const link = { pullFails: true }
+    const delta: RemoteDrive['delta'] = (cursor, signal) => (link.pullFails ? Promise.reject(new OfflineError()) : remote.delta(cursor, signal))
+    const engine = new SyncEngine({ local: a.local, remote: { ...remote, delta }, deviceId: 'A', deviceName: 'A' })
+    editPage(a.local, PAGE, (p) => appendText(p, x, ' alpha'))
+    expect(await engine.syncOnce()).toMatchObject({ status: 'offline', pushed: 1 })
+    link.pullFails = false
+    return { a: { local: a.local, engine }, b, x, y }
+  }
+
+  it('is still mine for the first pull that finishes: an edit made elsewhere meanwhile is a conflict', async () => {
+    const { a, b, x } = await pushedWithoutPull()
+    editPage(b.local, PAGE, (p) => appendText(p, x, ' beta'))
+    await b.engine.syncOnce()
+    expect(await a.engine.syncOnce()).toMatchObject({ status: 'idle-synced', conflicts: 1 })
+    expect(a.local.conflicts[0]).toMatchObject({ boxId: x, device: 'B', mine: 'base alpha' })
+  })
+
+  it('is synced once a sync finishes: a later edit by a device that pulled it records nothing', async () => {
+    const { a, b, x } = await pushedWithoutPull()
+    expect(await a.engine.syncOnce()).toMatchObject({ status: 'idle-synced', pushed: 0 })
+    await b.engine.syncOnce()
+    expect(boxMarkdown(b.local.doc(PAGE), x)).toBe('base alpha')
+    editPage(b.local, PAGE, (p) => appendText(p, x, ' beta'))
+    await b.engine.syncOnce()
+    expect(await a.engine.syncOnce()).toMatchObject({ status: 'idle-synced', pulled: 1, conflicts: 0 })
+    expect(a.local.conflicts).toEqual([])
+  })
+
+  it('is synced once a sync finishes: a box deleted by a device that pulled it stays deleted', async () => {
+    const { a, b, x, y } = await pushedWithoutPull()
+    expect(await a.engine.syncOnce()).toMatchObject({ status: 'idle-synced', pushed: 0 })
+    await b.engine.syncOnce()
+    editPage(b.local, PAGE, (p) => p.deleteBox(x))
+    await b.engine.syncOnce()
+    expect(await a.engine.syncOnce()).toMatchObject({ status: 'idle-synced', pulled: 1 })
+    expect(a.local.notes).toEqual([])
+    expect(new PageDoc(a.local.doc(PAGE)).listBoxes().map((box) => box.id)).toEqual([y])
   })
 })

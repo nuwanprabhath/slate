@@ -7,7 +7,7 @@ import { PageDoc } from '@slate/core'
 import { SyncAborted, SyncEngine } from '../src/engine'
 import type { SyncReport } from '../src/types'
 import { FAULT_KINDS, faultyDrive, type CallFault, type DeltaFault, type FaultKind, type FaultPlan, type FaultyDrive, type HangKind } from './faultyDrive'
-import { memoryDrive } from './memoryDrive'
+import { memoryDrive, type MemoryDrive } from './memoryDrive'
 import { addTextBox, appendText, boxText, editPage, memoryLocal, type MemoryLocal } from './memoryLocal'
 import { NOTEBOOK, PAGE } from './simulation'
 
@@ -96,16 +96,41 @@ export async function syncWithFaults(d: Dev): Promise<SyncReport | 'aborted' | '
   return first.report
 }
 
-export async function run(s: Scenario): Promise<void> {
+/** The three devices over one shared drive, each behind its own fault plan. */
+export function world(plans: readonly FaultPlan[]): { shared: MemoryDrive; devices: Dev[] } {
   const shared = memoryDrive()
-  let nextPeer = 1000n
-  const edited: Edited = { notes: [], boxes: new Map<string, string[]>(), deleted: new Set<string>() }
   const devices: Dev[] = DEVICES.map((id, i) => {
     const local = memoryLocal()
-    const drive = faultyDrive(shared, s.plans[i]!)
+    const drive = faultyDrive(shared, plans[i]!)
     const restart = () => new SyncEngine({ local, remote: drive, deviceId: id, deviceName: id, compactAfter: 1 })
     return { id, local, drive, engine: restart(), restart }
   })
+  return { shared, devices }
+}
+
+/**
+ * Faults stop and every device syncs until nothing moves. Twice reaches everyone; a box restored on pulling a delete
+ * is a new local change, so rounds continue until one pushes nothing. That round cannot itself restore a box: a
+ * restore needs an edit made since the device's last finished sync, and after the first round the only such edits
+ * are earlier restores, which no other device has seen and so cannot have deleted (FX-24).
+ */
+export async function quiesce(devices: Dev[]): Promise<void> {
+  for (const d of devices) d.drive.enabled = false
+  for (let round = 0, pushed = 1; round < 2 || pushed > 0; round++) {
+    if (round >= 8) throw new Error('devices did not reach quiescence in 8 rounds')
+    pushed = 0
+    for (const d of devices) {
+      const report = await d.engine.syncOnce()
+      if (report.status !== 'idle-synced') throw new Error(`quiescent sync failed: ${report.status} ${report.message ?? ''}`)
+      pushed += report.pushed
+    }
+  }
+}
+
+export async function run(s: Scenario): Promise<void> {
+  const { shared, devices } = world(s.plans)
+  let nextPeer = 1000n
+  const edited: Edited = { notes: [], boxes: new Map<string, string[]>(), deleted: new Set<string>() }
 
   for (const [step, a] of s.actions.entries()) {
     const d = devices[a.dev]!
@@ -149,18 +174,7 @@ export async function run(s: Scenario): Promise<void> {
     }
   }
 
-  // Faults stop. Twice reaches everyone; a box restored on pulling a delete is a new local change, so rounds
-  // continue until one pushes nothing.
-  for (const d of devices) d.drive.enabled = false
-  for (let round = 0, pushed = 1; round < 2 || pushed > 0; round++) {
-    if (round >= 8) throw new Error('devices did not reach quiescence in 8 rounds')
-    pushed = 0
-    for (const d of devices) {
-      const report = await d.engine.syncOnce()
-      if (report.status !== 'idle-synced') throw new Error(`quiescent sync failed: ${report.status} ${report.message ?? ''}`)
-      pushed += report.pushed
-    }
-  }
+  await quiesce(devices)
 
   totals.runs++
   if ([...shared.files.keys()].some((path) => path.includes('/snapshot-'))) totals.compacted++
