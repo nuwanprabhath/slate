@@ -482,4 +482,34 @@ describe('T-F1B: the N-API boundary under generated values', () => {
     }
     settled()
   })
+
+  it('T-F1B-08 (FX-28): a flag is exactly true or false; null, numbers, strings and objects are refused with SCC_1 in every boolean slot', () => {
+    const run = new Run(native)
+    const refuse = expect.objectContaining({ code: 'SCC_1' })
+    try {
+      const key = run.key('data')
+      const block = run.bytes(16, 248)
+      // The soak's counterexample (seed 1, 200000 runs): null where aesEcbBlock reads its direction.
+      expect(() => native.aesEcbBlock(key, run.bytes(16, 248), null as unknown as boolean)).toThrow(refuse)
+      // Truthy and falsy values alike: nothing is coerced into a direction or an approved flag.
+      const notBooleans = [...hostileNumbers.filter((v) => typeof v !== 'boolean'), 'true', 'false', Object(true), new Uint8Array(1)]
+      expect(notBooleans.length).toBeGreaterThanOrEqual(22)
+      for (const bad of notBooleans) {
+        const flag = bad as boolean
+        expect(() => native.aesEcbBlock(key, run.bytes(16, 248), flag), `aesEcbBlock ${String(bad)}`).toThrow(refuse)
+        // The secret is cleansed by the call, so each call gets its own.
+        expect(() => native.kbkdfFromSecret(run.bytes(32), 'slate/fuzz', run.bytes(8), flag), `kbkdfFromSecret ${String(bad)}`).toThrow(refuse)
+        expect(() => native.kbkdfFromRecovery(key, 'slate/fuzz', run.bytes(8), flag), `kbkdfFromRecovery ${String(bad)}`).toThrow(refuse)
+        // init reads its arguments before it looks at the module, so a refused flag never restarts it.
+        expect(() => native.init(join(tmp, 'none.cnf'), tmp, flag), `init ${String(bad)}`).toThrow(refuse)
+      }
+      // A real flag still picks the direction: the refusals changed nothing for a valid call.
+      const sealed = native.aesEcbBlock(key, block, true)
+      expect(Array.from(sealed)).not.toEqual(Array.from(block))
+      expect(Array.from(native.aesEcbBlock(key, sealed, false))).toEqual(Array.from(block))
+    } finally {
+      run.cleanup()
+    }
+    settled()
+  })
 })
