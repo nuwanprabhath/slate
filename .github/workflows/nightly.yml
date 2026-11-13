@@ -43,9 +43,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libasound2t64
       - run: npm ci
-      - name: Build @slate/native (libcrypto, SQLCipher, addon)
+      # The FIPS provider too, exactly as verify.yml builds it: the main-process half runs harnesses that
+      # need approved mode (addonFuzz goes through the addon, storeModel and syncStoreModel open keyed
+      # SQLCipher databases). With `--only openssl` they all fail at once with "Cryptographic operation
+      # failed". The old job ran three vault fuzz files, which do not need it.
+      - name: Build @slate/native (libcrypto, FIPS Provider 3.1.2, SQLCipher, addon)
         run: |
-          npm run -w @slate/native build:openssl -- --only openssl
+          npm run -w @slate/native build:openssl -- --update-pin
           npm run -w @slate/native build:sqlcipher
           npm run -w @slate/native build:addon
       # A new seed every night (the run number), so the soak explores beyond CI's fixed 0x51a7e; a failure prints
