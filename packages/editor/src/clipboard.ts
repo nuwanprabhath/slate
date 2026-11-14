@@ -22,26 +22,31 @@ export function isSafeImageSrc(src: string): boolean {
 export const MAX_PASTE_DEPTH = 32
 
 // Where a table's parts may stand; anything else a re-parse would move out (foster parenting) or drop.
-const TABLE_CHILDREN: Record<string, Set<string>> = {
-  TABLE: new Set(['CAPTION', 'COLGROUP', 'THEAD', 'TBODY', 'TFOOT', 'TR']),
-  THEAD: new Set(['TR']),
-  TBODY: new Set(['TR']),
-  TFOOT: new Set(['TR']),
-  TR: new Set(['TD', 'TH']),
-  COLGROUP: new Set(['COL']),
-}
-const TABLE_PARTS = /^(CAPTION|COLGROUP|COL|THEAD|TBODY|TFOOT|TR|TD|TH)$/
-const TABLE_PARENTS: Record<string, RegExp> = {
-  CAPTION: /^TABLE$/,
-  COLGROUP: /^TABLE$/,
-  THEAD: /^TABLE$/,
-  TBODY: /^TABLE$/,
-  TFOOT: /^TABLE$/,
-  TR: /^(TABLE|THEAD|TBODY|TFOOT)$/,
-  TD: /^TR$/,
-  TH: /^TR$/,
-  COL: /^COLGROUP$/,
-}
+const TABLE_CHILDREN: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['TABLE', new Set(['CAPTION', 'COLGROUP', 'THEAD', 'TBODY', 'TFOOT', 'TR'])],
+  ['THEAD', new Set(['TR'])],
+  ['TBODY', new Set(['TR'])],
+  ['TFOOT', new Set(['TR'])],
+  ['TR', new Set(['TD', 'TH'])],
+  ['COLGROUP', new Set(['COL'])],
+])
+const TABLE_PARENTS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['CAPTION', new Set(['TABLE'])],
+  ['COLGROUP', new Set(['TABLE'])],
+  ['THEAD', new Set(['TABLE'])],
+  ['TBODY', new Set(['TABLE'])],
+  ['TFOOT', new Set(['TABLE'])],
+  ['TR', new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT'])],
+  ['TD', new Set(['TR'])],
+  ['TH', new Set(['TR'])],
+  ['COL', new Set(['COLGROUP'])],
+])
+
+/**
+ * An HTML element's tag name, and '' for an svg or MathML element. There tagName keeps the source's case, a
+ * `table` or `tr` is no part of a table, and a selector still finds it, so the table rules ask this (FX-46).
+ */
+const htmlTag = (el: Element | null): string => (el?.namespaceURI === 'http://www.w3.org/1999/xhtml' ? el.tagName : '')
 
 /**
  * Makes table markup what a parser would read back unchanged: a cell, row or section outside its
@@ -50,16 +55,28 @@ const TABLE_PARENTS: Record<string, RegExp> = {
  */
 function settleTables(body: HTMLElement): void {
   for (const el of Array.from(body.querySelectorAll('*')).reverse()) {
-    if (TABLE_PARTS.test(el.tagName) && !TABLE_PARENTS[el.tagName]!.test(el.parentElement?.tagName ?? '')) unwrap(el)
+    const parents = TABLE_PARENTS.get(htmlTag(el))
+    if (parents && !parents.has(htmlTag(el.parentElement))) unwrap(el)
   }
   for (const el of Array.from(body.querySelectorAll('table, thead, tbody, tfoot, tr, colgroup'))) {
-    const allowed = TABLE_CHILDREN[el.tagName]!
-    const table = el.closest('table')!
+    const allowed = TABLE_CHILDREN.get(htmlTag(el))
+    const table = el.closest('table')
+    if (!allowed || !table) continue
     for (const child of Array.from(el.childNodes)) {
-      const misplaced = child.nodeType === 1 ? !allowed.has((child as Element).tagName) : child.nodeType === 3 && /\S/.test(child.textContent ?? '')
+      const misplaced = child.nodeType === 1 ? !allowed.has(htmlTag(child as Element)) : child.nodeType === 3 && /\S/.test(child.textContent ?? '')
       if (misplaced) table.before(child)
     }
   }
+}
+
+/**
+ * Where bold or italic set on `el` is written. On a table, section or row it goes into the cells: a wrapper
+ * between a table's parts is moved out by settleTables, and it would take the cells with it.
+ */
+function emphasised(el: Element): Element[] {
+  if (!TABLE_CHILDREN.has(htmlTag(el))) return [el]
+  const table = el.closest('table')
+  return Array.from(el.querySelectorAll('td, th, caption')).filter((cell) => cell.closest('table') === table)
 }
 
 /** Unwraps elements deeper than MAX_PASTE_DEPTH, deepest first, so their text stays and the nesting does not. */
@@ -92,8 +109,39 @@ const ALIGNABLE = /^(P|H[1-6])$/
 // So is a paragraph's indent (WP-C2), kept as a pixel left margin.
 const indentMargin = (el: HTMLElement): string => (ALIGNABLE.test(el.tagName) && /^\d+(\.\d+)?px$/.test(el.style.marginLeft) ? el.style.marginLeft : '')
 
+// Ordinary markup settles on the first cleaning (the second only confirms it), and every hostile shape the
+// fuzz harness makes within three. A paste still changing after this many is not one a person copied.
+export const MAX_CLEAN_PASSES = 8
+
+/** What a paste that never settles is replaced with: its text, which a parser reads back as it was written. */
+function textOnly(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  doc.body.textContent = (doc.body.textContent ?? '').replace(/^[\t\n\f\r ]+/, '')
+  return doc.body.innerHTML
+}
+
+/**
+ * Cleans a paste until cleaning changes nothing. The editor parses the returned string again, and only the
+ * parser knows what it will read differently from the tree that was cleaned (a link inside a link, a block
+ * an unwrap left in a paragraph, a row the depth cap unwrapped), so the string is read back and cleaned
+ * again until it holds still (FX-47). `settled` is false when it never did and the text alone is returned.
+ */
+export function settlePaste(html: string, passes = MAX_CLEAN_PASSES): { html: string; settled: boolean } {
+  let cleaned = cleanOnce(html)
+  for (let pass = 1; pass < passes; pass++) {
+    const again = cleanOnce(cleaned)
+    if (again === cleaned) return { html: cleaned, settled: true }
+    cleaned = again
+  }
+  return { html: textOnly(cleaned), settled: false }
+}
+
 /** Default paste: keep structure and bold/italic, drop the source's fonts, sizes, colours and classes. */
 export function cleanPastedHtml(html: string): string {
+  return settlePaste(html).html
+}
+
+function cleanOnce(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   doc.querySelectorAll('style, script, meta, link, title').forEach((e) => e.remove())
   // Comments carry nothing a page keeps (Word's conditional blocks) and a CDATA-turned-comment re-parses differently.
@@ -107,8 +155,9 @@ export function cleanPastedHtml(html: string): string {
       unwrap(el)
       continue
     }
-    if (/^(bold|bolder|[6-9]00)$/.test(weight) && !/^(B|STRONG|H[1-6]|TH)$/.test(el.tagName)) wrapContents(el, 'strong')
-    if (el.style.fontStyle === 'italic' && !/^(I|EM)$/.test(el.tagName)) wrapContents(el, 'em')
+    const into = emphasised(el)
+    if (/^(bold|bolder|[6-9]00)$/.test(weight)) for (const to of into) if (!/^(B|STRONG|H[1-6]|TH)$/.test(to.tagName)) wrapContents(to, 'strong')
+    if (el.style.fontStyle === 'italic') for (const to of into) if (!/^(I|EM)$/.test(to.tagName)) wrapContents(to, 'em')
   }
   for (const el of Array.from(doc.body.querySelectorAll<HTMLElement>('*'))) {
     const align = ALIGNABLE.test(el.tagName) && ALIGNMENTS.has(el.style.textAlign) ? el.style.textAlign : ''

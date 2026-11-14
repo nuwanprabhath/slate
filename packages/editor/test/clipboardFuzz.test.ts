@@ -4,7 +4,7 @@ import fc from 'fast-check'
 import { setFlagsFromString } from 'node:v8'
 import { runInNewContext } from 'node:vm'
 import { DOMParser as PMDOMParser, DOMSerializer } from '@tiptap/pm/model'
-import { cleanPastedHtml, IMAGE_SCHEMES, isSafeImageSrc, storeDataImages } from '../src/clipboard'
+import { cleanPastedHtml, IMAGE_SCHEMES, isSafeImageSrc, MAX_PASTE_DEPTH, settlePaste, storeDataImages } from '../src/clipboard'
 import { schema } from '../src/extensions'
 import { fcParams, fcRuns, fuzzTimeout, relativeCost } from '../../desktop/test/fuzz'
 import { LINK_SCHEMES, hostileHtml, unsafeMarkup } from '../../desktop/test/fuzzHtml'
@@ -35,8 +35,23 @@ const parse = (html: string): Document => new DOMParser().parseFromString(html, 
 // loop next turns; a full GC alone frees none of it. A synchronous property never turns the loop, so at soak depth
 // (200,000 cases) the worker ran out of V8 heap. Every property here yields a macrotask every YIELD_EVERY cases,
 // which bounds what is held to a few hundred documents whatever the depth.
+//
+// The turn alone does not free a document holding an element with a hyphen in its name (<annotation-xml>, <-->):
+// happy-dom takes it for a custom element not yet defined and parks a callback bound to it in the window's registry
+// (HTMLElement.js, connectedToDocument) until the element leaves its document, which a parsed document's never do.
+// About 4% of hostile cases, a whole document each. The registry's list is emptied at every yield.
 const YIELD_EVERY = 250
-const turnEventLoop = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
+function forgetUndefinedCustomElements(): void {
+  // happy-dom's PropertySymbol.callbacks, found by its description: the symbol itself is not part of its public API.
+  const registry = window.customElements as unknown as Record<symbol, unknown>
+  const key = Object.getOwnPropertySymbols(registry).find((symbol) => symbol.description === 'callbacks')
+  const pending = key === undefined ? undefined : registry[key]
+  if (pending instanceof Map) pending.clear()
+}
+const turnEventLoop = (): Promise<void> => {
+  forgetUndefinedCustomElements()
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
 
 /** A property over pasted HTML that lets happy-dom release its documents as it goes (FX-42). */
 function releasing<T>(arb: fc.Arbitrary<T>, check: (value: T) => void | Promise<void>): fc.IAsyncProperty<[T]> {
@@ -87,7 +102,8 @@ const text = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 // the parser makes a foreign-namespace element with no `.content`, so innerHTML throws a TypeError. The HTML
 // serialisation algorithm special-cases only the HTML-namespace template, so a real DOM serialises it normally.
 // Excluded here only because the test environment cannot serialise it; F3f's Chromium run covers it.
-const pasteHtml = hostileHtml.filter((h) => !/<(svg|math)\b[\s\S]*<template/i.test(h))
+const foreignTemplate = (h: string): boolean => /<(svg|math)\b[\s\S]*<template/i.test(h)
+const pasteHtml = hostileHtml.filter((h) => !foreignTemplate(h))
 describe('T-F3B clipboard corpus', () => {
   replayCorpus('editor', 'paste-html', (bytes) => {
     const cleaned = cleanPastedHtml(text(bytes))
@@ -110,7 +126,9 @@ describe('T-F3B cleanPastedHtml', () => {
   it('T-F3B-02: never throws, and cleaning its own output changes nothing', async () => {
     await fc.assert(
       releasing(pasteHtml, (html) => {
-        const once = cleanPastedHtml(html)
+        // Falling back to the text would make the second line true of anything, so the fallback is itself a failure.
+        const { html: once, settled } = settlePaste(html)
+        expect(settled).toBe(true)
         expect(cleanPastedHtml(once)).toBe(once)
       }),
       fcParams,
@@ -152,6 +170,9 @@ const dataSrc = fc
 const imagesHtml = fc
   .array(fc.oneof(dataSrc.map((src) => `<img src="${src.replace(/"/g, '')}">`), pasteHtml), { maxLength: 6 })
   .map((parts) => parts.join(''))
+  // FX-F3B-3 again: joining puts one part's <svg in front of another's <template, which no part holds alone
+  // (seed 1, path "2409" of T-F3B-05). The same happy-dom serialiser fault, so the same exclusion.
+  .filter((h) => !foreignTemplate(h))
 
 describe('T-F3B storeDataImages', () => {
   it('T-F3B-05: stores only the five picture types, leaves no data: src, never throws', async () => {
@@ -240,10 +261,88 @@ describe('T-F3B fixed findings', () => {
     expect(perCase).toBeLessThan(2_000)
   }, fuzzTimeout(60_000))
 
+  // The same oracle for the documents the event loop does not free: one with a hyphenated element stayed whole
+  // (about 30 KB), which only showed once every property here ran to soak depth in one worker.
+  it('FX-42: a paste property keeps nothing per case for an element with a hyphen in its name', async () => {
+    const cases = 6_000
+    let run = 0
+    const heap: number[] = []
+    const check = (html: string): void => {
+      cleanPastedHtml(html)
+      if (++run !== cases / 2 && run !== cases) return
+      fullGc()
+      heap.push(process.memoryUsage().heapUsed)
+    }
+    await fc.assert(releasing(fc.constant('<annotation-xml><p>a</p></annotation-xml><-->b</-->'), check), { ...fcParams, numRuns: cases })
+    expect(run).toBe(cases)
+    const perCase = (heap[1]! - heap[0]!) / (cases / 2)
+    expect(perCase).toBeLessThan(2_000)
+  }, fuzzTimeout(60_000))
+
   it('FX-12: cleaning is idempotent for a cell outside a table', () => {
     const once = cleanPastedHtml('<table><td>cell')
     expect(once).toContain('cell')
     expect(cleanPastedHtml(once)).toBe(once)
+  })
+
+  // Seed 1, path "174276". Inside svg the parser makes `table` and `tr` in the SVG namespace, where tagName keeps its
+  // case: a selector finds them, the uppercase table maps do not, and they are no part of any HTML table.
+  it('FX-46: table-named elements inside svg are not table parts, and settling them never throws', () => {
+    const found =
+      "<svg is='\t&#x61;pp&#58;text/html,<script>alert(1)</script>' href=\u0000File&colon;alert(1) srcdoc=alert(1)><table></foreignObject><foreignObject xlink:href=\" h\nttps\n\n&colon;//user:pass@%2e%2e%2f%2e%2e%2f\" src=\"color: red; background: url(javascript:alert(1))\" width=><tr><img src='dAta%3a//evil.example@alert(1)'><iframe/></link>"
+    expect(() => cleanPastedHtml(found)).not.toThrow()
+    // The smallest of it: the svg `table` holds an element, which the lookup by its lowercase name missed.
+    const once = cleanPastedHtml('<table><tr><td>cell</td></tr></table><svg><table><tr>x</tr></table></svg>')
+    expect(once).toBe('<table><tbody><tr><td>cell</td></tr></tbody></table><svg><table><tr>x</tr></table></svg>')
+    expect(cleanPastedHtml(once)).toBe(once)
+  })
+
+  // Seed 1, path "7418". The textarea and the `<<tr` are noise: what a second parse read differently was a link
+  // inside a link, which a parser builds when a table foster-parents the inner one and never reads back.
+  it('FX-47: a link the parser put inside a link is settled before the paste is returned', () => {
+    const found =
+      "<a onclick=\u0001&#x6a;avascript://user:pass@example.com/ onload=\" &#x6a;avascript&colon;abc123\" data='alert(1)'><textarea is='' class=\"alert(1)\"/><table></template><script id=\" mailto://evil.example@example.com/\" width=\u0000javascRipt&#58;//evil.example@abc123/><<tr formaction=\"alert(1)\"><a href='color: red; background: url(javascript:alert(1))' onload=javascript%3a%2e%2e%2f%2e%2e%2f></i>"
+    const hostile = cleanPastedHtml(found)
+    expect(cleanPastedHtml(hostile)).toBe(hostile)
+    const nested = cleanPastedHtml('<a href="https://a.example/">one<table><a href="https://b.example/">two</a></table></a>')
+    expect(cleanPastedHtml(nested)).toBe(nested)
+    expect(parse(nested).querySelector('a a')).toBeNull()
+    expect(parse(nested).body.textContent).toBe('onetwo')
+  })
+
+  // The same class, found by hand next to FX-47: an unwrap (span, font, the depth cap) leaves a child where no
+  // parser lets it stand. Which of these a parser restructures differs between happy-dom and Chromium.
+  it('FX-47: what an unwrap leaves where a parser would not is settled too', () => {
+    const shapes = [
+      '<p><span><div>x</div></span></p>',
+      '<li><span><li>x</li></span></li>',
+      '<h1><font><h1>x</h1></font></h1>',
+      '<div>'.repeat(MAX_PASTE_DEPTH - 1) + '<table><tr><td>x</td></tr></table>',
+    ]
+    for (const html of shapes) {
+      const once = cleanPastedHtml(html)
+      expect(cleanPastedHtml(once), html).toBe(once)
+      expect(parse(once).body.textContent, html).toBe('x')
+    }
+  })
+
+  it('FX-47: a paste that never settles lands as its text', () => {
+    const nested = '<a href="https://a.example/">one<table><a href="https://b.example/">two</a></table></a>'
+    expect(settlePaste(nested).settled).toBe(true)
+    // A single pass is never confirmed by a second, which stands in for an input that changes on every parse.
+    const unsettled = settlePaste(`  ${nested}<p>a &amp; b &lt;i&gt;</p>`, 1)
+    expect(unsettled).toEqual({ html: 'onetwoa &amp; b &lt;i&gt;', settled: false })
+    expect(settlePaste(unsettled.html)).toEqual({ html: unsettled.html, settled: true })
+  })
+
+  // Found with FX-47: the wrapper stood between the table's parts, so settling moved it out, and the cells with it.
+  it('FX-47: bold or italic set on a table, section or row goes into its cells, which stay in the table', () => {
+    expect(cleanPastedHtml('<table><tbody><tr style="font-weight:bold"><td>x</td><th>h</th></tr><tr><td>y</td></tr></tbody></table>')).toBe(
+      '<table><tbody><tr><td><strong>x</strong></td><th>h</th></tr><tr><td>y</td></tr></tbody></table>',
+    )
+    expect(cleanPastedHtml('<table style="font-style:italic"><tbody><tr><td>x<table><tbody><tr><td>in</td></tr></tbody></table></td></tr></tbody></table>')).toBe(
+      '<table><tbody><tr><td><em>x<table><tbody><tr><td>in</td></tr></tbody></table></em></td></tr></tbody></table>',
+    )
   })
 
   it('FX-14: a 2,000-deep div paste lands with its text', () => {
