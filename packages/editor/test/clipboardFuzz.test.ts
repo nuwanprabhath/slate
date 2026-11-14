@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
+import { setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 import { DOMParser as PMDOMParser, DOMSerializer } from '@tiptap/pm/model'
 import { cleanPastedHtml, IMAGE_SCHEMES, isSafeImageSrc, storeDataImages } from '../src/clipboard'
 import { schema } from '../src/extensions'
@@ -28,6 +30,26 @@ beforeAll(() => {
 afterAll(() => vi.restoreAllMocks())
 
 const parse = (html: string): Document => new DOMParser().parseFromString(html, 'text/html')
+
+// FX-42: happy-dom keeps every document its DOMParser makes (about 30 KB, more for a cleaned paste) until the event
+// loop next turns; a full GC alone frees none of it. A synchronous property never turns the loop, so at soak depth
+// (200,000 cases) the worker ran out of V8 heap. Every property here yields a macrotask every YIELD_EVERY cases,
+// which bounds what is held to a few hundred documents whatever the depth.
+const YIELD_EVERY = 250
+const turnEventLoop = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
+
+/** A property over pasted HTML that lets happy-dom release its documents as it goes (FX-42). */
+function releasing<T>(arb: fc.Arbitrary<T>, check: (value: T) => void | Promise<void>): fc.IAsyncProperty<[T]> {
+  let run = 0
+  return fc.asyncProperty(arb, async (value) => {
+    await check(value)
+    if (++run % YIELD_EVERY === 0) await turnEventLoop()
+  })
+}
+
+setFlagsFromString('--expose_gc')
+// The flag takes effect for new contexts; a fresh one hands over its `gc`.
+const fullGc = runInNewContext('gc') as () => void
 
 /** Property 1: what survives cleanPastedHtml, read back by a parser. */
 function cleanViolations(cleaned: string): string[] {
@@ -76,18 +98,18 @@ describe('T-F3B clipboard corpus', () => {
 })
 
 describe('T-F3B cleanPastedHtml', () => {
-  it('T-F3B-01: keeps no dropped element and no attribute outside the kept set', () => {
-    fc.assert(
-      fc.property(pasteHtml, (html) => {
+  it('T-F3B-01: keeps no dropped element and no attribute outside the kept set', async () => {
+    await fc.assert(
+      releasing(pasteHtml, (html) => {
         expect(cleanViolations(cleanPastedHtml(html))).toEqual([])
       }),
       fcParams,
     )
   }, fuzzTimeout(60_000))
 
-  it('T-F3B-02: never throws, and cleaning its own output changes nothing', () => {
-    fc.assert(
-      fc.property(pasteHtml, (html) => {
+  it('T-F3B-02: never throws, and cleaning its own output changes nothing', async () => {
+    await fc.assert(
+      releasing(pasteHtml, (html) => {
         const once = cleanPastedHtml(html)
         expect(cleanPastedHtml(once)).toBe(once)
       }),
@@ -95,18 +117,22 @@ describe('T-F3B cleanPastedHtml', () => {
     )
   }, fuzzTimeout(60_000))
 
-  it('T-F3B-03: costs within a ratio of a plain paragraph of the same length', () => {
+  it('T-F3B-03: costs within a ratio of a plain paragraph of the same length', async () => {
     const samples = fc.sample(pasteHtml, { numRuns: fcRuns(4, 200).numRuns, seed: fcParams.seed })
     const longest = Math.max(1, ...samples.map((s) => s.length))
     const plain = `<p>${'x'.repeat(longest)}</p>`
     const cost = relativeCost(() => cleanPastedHtml(plain), { calibrationRuns: 300, meanCeilingMs: 100, absoluteCeilingMs: 5_000 })
-    for (const html of samples) cost.time(() => cleanPastedHtml(html))
+    // The loop turns between timings, never inside one (FX-42).
+    for (const [i, html] of samples.entries()) {
+      cost.time(() => cleanPastedHtml(html))
+      if ((i + 1) % YIELD_EVERY === 0) await turnEventLoop()
+    }
     cost.check()
   }, fuzzTimeout(20_000))
 
-  it('T-F3B-04: end to end through the schema, nothing that can run survives', () => {
-    fc.assert(
-      fc.property(pasteHtml, (html) => {
+  it('T-F3B-04: end to end through the schema, nothing that can run survives', async () => {
+    await fc.assert(
+      releasing(pasteHtml, (html) => {
         expect(unsafe(throughSchema(html))).toEqual([])
       }),
       fcRuns(2, 300),
@@ -130,7 +156,7 @@ const imagesHtml = fc
 describe('T-F3B storeDataImages', () => {
   it('T-F3B-05: stores only the five picture types, leaves no data: src, never throws', async () => {
     await fc.assert(
-      fc.asyncProperty(imagesHtml, async (html) => {
+      releasing(imagesHtml, async (html) => {
         const types: string[] = []
         const out = await storeDataImages(html, async (_bytes, mime) => {
           types.push(mime)
@@ -194,6 +220,25 @@ describe('T-F3B fixed findings', () => {
     const parsed = PMDOMParser.fromSchema(schema).parse(parse('<img src="file:///x.png">').body)
     expect(JSON.stringify(parsed.toJSON())).not.toContain('file:')
   })
+
+  // A synchronous property kept about 38 KB a case, so 200,000 soak cases ran the worker out of heap. Bytes, not
+  // time: the bound is a twentieth of what one case kept, and a case that releases keeps none.
+  it('FX-42: a paste property keeps nothing per case while it runs', async () => {
+    const cases = 6_000
+    let run = 0
+    const heap: number[] = []
+    // Read inside the property, at its middle and last case: what the whole run holds, not what is left after it.
+    const check = (html: string): void => {
+      cleanPastedHtml(cleanPastedHtml(html))
+      if (++run !== cases / 2 && run !== cases) return
+      fullGc()
+      heap.push(process.memoryUsage().heapUsed)
+    }
+    await fc.assert(releasing(fc.constant('<p>a<b>b</b></p>'), check), { ...fcParams, numRuns: cases })
+    expect(run).toBe(cases)
+    const perCase = (heap[1]! - heap[0]!) / (cases / 2)
+    expect(perCase).toBeLessThan(2_000)
+  }, fuzzTimeout(60_000))
 
   it('FX-12: cleaning is idempotent for a cell outside a table', () => {
     const once = cleanPastedHtml('<table><td>cell')
