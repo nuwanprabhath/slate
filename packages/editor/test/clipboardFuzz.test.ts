@@ -161,3 +161,34 @@ describe('T-F3B storeDataImages', () => {
     )
   }, fuzzTimeout(60_000))
 })
+
+describe('T-F3B fixed findings', () => {
+  it('FX-11: a pasted image whose src is not http, https, data or slate-blob is dropped', () => {
+    for (const src of ['javascript:alert(1)', 'java&#9;script:alert(1)', 'file:///etc/passwd', 'vbscript:x', 'relative.png']) {
+      expect(cleanPastedHtml(`<p>a</p><img src="${src}"><p>b</p>`)).toBe('<p>a</p><p>b</p>')
+    }
+    for (const src of ['https://example.com/a.png', 'http://example.com/a.png', 'slate-blob://img/abc', 'data:image/png;base64,AAAA']) {
+      expect(cleanPastedHtml(`<img src="${src}">`)).toBe(`<img src="${src}">`)
+    }
+  })
+
+  it('FX-11: the Image node neither parses nor draws an unsafe src', () => {
+    const img = schema.nodes.image!.create({ src: 'javascript:alert(1)' })
+    const host = document.createElement('div')
+    host.append(DOMSerializer.fromSchema(schema).serializeNode(img, { document }))
+    expect(host.innerHTML).not.toContain('javascript')
+    const parsed = PMDOMParser.fromSchema(schema).parse(parse('<img src="file:///x.png">').body)
+    expect(JSON.stringify(parsed.toJSON())).not.toContain('file:')
+  })
+
+  it('FX-12: cleaning is idempotent for a cell outside a table', () => {
+    const once = cleanPastedHtml('<table><td>cell')
+    expect(once).toContain('cell')
+    expect(cleanPastedHtml(once)).toBe(once)
+  })
+
+  it('FX-14: a 2,000-deep div paste lands with its text', () => {
+    const deep = '<div>'.repeat(2000) + 'deep text' + '</div>'.repeat(2000)
+    expect(throughSchema(deep).textContent).toContain('deep text')
+  })
+})
