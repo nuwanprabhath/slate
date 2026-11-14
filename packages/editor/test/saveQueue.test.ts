@@ -38,7 +38,7 @@ describe('SaveQueue', () => {
     reloaded.importBatch(store.stored)
     expect(reloaded.getText('t').toString()).toBe('abc')
     expect(q.state).toBe('saved')
-    q.close()
+    void q.close()
   })
 
   it('re-exports from the last acknowledged version, so a rejected append loses nothing', async () => {
@@ -56,7 +56,7 @@ describe('SaveQueue', () => {
     const reloaded = new LoroDoc()
     reloaded.importBatch(store.stored)
     expect(reloaded.getText('t').toString()).toBe('one two ')
-    q.close()
+    void q.close()
   })
 
   it('backs off instead of spinning while the store keeps rejecting', async () => {
@@ -69,7 +69,7 @@ describe('SaveQueue', () => {
     // 250 ms then 500 ms: the first attempt plus the first retry, not a tight loop.
     expect(store.calls).toBeGreaterThanOrEqual(2)
     expect(store.calls).toBeLessThan(6)
-    q.close()
+    void q.close()
   })
 
   it('reports the worst open document and waits for all of them', async () => {
@@ -90,8 +90,8 @@ describe('SaveQueue', () => {
     await allSavesIdle(3000)
     expect(saveStatus.state()).toBe('saved')
     expect(saveStatus.error()).toBeUndefined()
-    a.close()
-    b.close()
+    void a.close()
+    void b.close()
     expect(saveStatus.state()).toBe('saved')
   })
 
@@ -107,7 +107,7 @@ describe('SaveQueue', () => {
     expect(seen).toContain('saving')
     expect(seen).toContain('unsaved')
     off()
-    q.close()
+    void q.close()
   })
 
   it('still writes the edit made just before it was closed', async () => {
@@ -115,10 +115,41 @@ describe('SaveQueue', () => {
     const store = sink()
     const q = new SaveQueue('d', doc, store)
     edit(doc, 'last')
-    q.close()
+    void q.close()
     await tick(10)
     const reloaded = new LoroDoc()
     reloaded.importBatch(store.stored)
     expect(reloaded.getText('t').toString()).toBe('last')
+  })
+})
+
+describe('SaveQueue.close (FX-45)', () => {
+  it('resolves only once the queue will never touch its document again, and still writes the last edit', async () => {
+    const doc = new LoroDoc()
+    const stored: Uint8Array[] = []
+    let first = true
+    // The first append is still in flight when the page closes; the second edit is pending behind it.
+    const slow = {
+      append: async (_id: string, u: Uint8Array) => {
+        await tick(first ? 30 : 5)
+        first = false
+        stored.push(u)
+      },
+    }
+    const q = new SaveQueue('d', doc, slow)
+    edit(doc, 'a')
+    await tick()
+    edit(doc, 'b')
+    await q.close()
+    const touched: string[] = []
+    const commit = doc.commit.bind(doc)
+    const exp = doc.export.bind(doc)
+    doc.commit = (...a: Parameters<LoroDoc['commit']>) => (touched.push('commit'), commit(...a))
+    doc.export = (...a: Parameters<LoroDoc['export']>) => (touched.push('export'), exp(...a))
+    await tick(100)
+    expect(touched, 'document calls after close() resolved').toEqual([])
+    const reloaded = new LoroDoc()
+    reloaded.importBatch(stored)
+    expect(reloaded.getText('t').toString(), 'the edit made just before closing is stored').toBe('ab')
   })
 })

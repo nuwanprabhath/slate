@@ -3,7 +3,7 @@ import fc from 'fast-check'
 import * as loro from 'loro-crdt'
 import { LoroDoc } from 'loro-crdt'
 import { SaveQueue, type SaveSink } from '../src/saveQueue'
-import { fcParams } from '../../desktop/test/fuzz'
+import { fcParams, fuzzTimeout } from '../../desktop/test/fuzz'
 
 // T-F2B: a SaveQueue over a live LoroDoc and a scripted sink. The model is the list of updates the sink
 // acknowledged; the real queue must never store an update that depends on one the sink rejected.
@@ -99,7 +99,7 @@ const closeCmd = (): Cmd => ({
   check: (m) => !m.closed,
   toString: () => 'close()',
   run: async (m) => {
-    m.q.close()
+    void m.q.close()
     m.closed = true
     await flush()
   },
@@ -161,7 +161,7 @@ describe('SaveQueue model', () => {
       fc.asyncProperty(fc.commands(commands, { maxCommands: 25 }), run),
       { ...fcParams, numRuns: Math.max(100, Math.floor(fcParams.numRuns / 10)) },
     )
-  })
+  }, fuzzTimeout())
 
   it("T-F2B-02: a run gives back the Loro documents it built, so Loro's WebAssembly heap stops growing (FX-44)", async () => {
     const cmds: Cmd[] = [
@@ -203,10 +203,12 @@ async function run(cmds: Iterable<Cmd>): Promise<void> {
     }
     checkStored(m)
   } finally {
-    q.close()
-    // A run's pending timers (a late append, a retry) would fire in a later run's advance and reach this doc after
-    // free(): "null pointer passed to rust" at 20,000 runs. Each run's timers end with it.
-    vi.clearAllTimers()
+    // free() only once close() says the queue is done with the doc: its last flush may still be waiting on a
+    // late append or a retry, whose fake timers would otherwise fire in a later run's advance and reach the
+    // freed doc ("null pointer passed to rust", FX-45).
+    const closing = q.close()
+    await vi.runAllTimersAsync()
+    await closing
     doc.free()
     // free() releases nothing while a handle read from the doc (the commands' getText) is alive; only Loro's
     // FinalizationRegistry frees those, in a task of its own. The test's fake timers replace setImmediate, so the

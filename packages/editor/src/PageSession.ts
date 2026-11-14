@@ -65,7 +65,8 @@ export class PageSession {
     })
     this.snapshot = page.listBoxes()
     this.saves = new SaveQueue(pageDocId(pageId), page.doc, persistence)
-    this.cleanup.push(() => this.saves.close())
+    // Not awaited: nothing frees the page's doc, so the final write may finish after the view goes.
+    this.cleanup.push(() => void this.saves.close())
     this.cleanup.push(
       page.doc.subscribe((batch) => {
         // Event paths are absolute: ['boxes'] or ['boxes', id] is a box added, removed, moved or
@@ -172,7 +173,7 @@ export class PageSession {
       return edit(page)
     } finally {
       await saves.idle(STORE_TIMEOUT_MS)
-      saves.close()
+      await saves.close()
     }
   }
 
