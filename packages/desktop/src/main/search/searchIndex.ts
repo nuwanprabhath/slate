@@ -1,4 +1,4 @@
-import { compileQuery, contentToJSON, hasNestedUnboundedQuantifier, matchAll, NotebookDoc, PageDoc, type PMJSON, type TreeItem } from '@slate/core'
+import { compileQuery,hasNestedUnboundedQuantifier, matchAll, NotebookDoc, PageDoc, type PMJSON, type TreeItem } from '@slate/core'
 import type { SearchMatch, SearchPageResult, SearchQuery, SearchResults } from '../../shared/api'
 import type { DocCursor, DocStore, SearchRow } from '../store'
 import { snippetAround } from './snippet'
@@ -49,8 +49,7 @@ export function pageRows(page: PageDoc): SearchRow[] {
   const rows: SearchRow[] = []
   const boxes = page.listBoxes().sort((a, b) => a.y - b.y || a.x - b.x)
   for (const box of boxes) {
-    const content = page.contentMap(box.id)
-    const json = content ? contentToJSON(content) : null
+    const json = page.boxContent(box.id)
     const texts: string[] = []
     if (json) blockTexts(json, texts)
     for (const text of texts) if (text !== '') rows.push({ boxId: box.id, ord: rows.length, text })

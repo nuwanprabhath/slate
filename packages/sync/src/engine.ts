@@ -1,5 +1,5 @@
 import { LoroDoc, VersionVector } from 'loro-crdt'
-import { contentToJSON, isDocId, newId, PageDoc, type BoxState, type PMJSON } from '@slate/core'
+import { isDocId, newId, PageDoc, type BoxState, type PMJSON } from '@slate/core'
 import { boxesTouched, boxMarkdown } from './conflicts'
 import { chunkPath, parseRemotePath, snapshotPath } from './paths'
 import type { LocalStore, RemoteDrive, SyncReport, SyncStatus } from './types'
@@ -308,8 +308,7 @@ export class SyncEngine {
     for (const id of touched.deleted) {
       const box = page.getBox(id)
       if (!state.localEdited.has(id) || state.restores.has(id) || !box) continue
-      const content = page.contentMap(id)
-      state.restores.set(id, { box, content: content ? contentToJSON(content) : null })
+      state.restores.set(id, { box, content: page.boxContent(id) })
     }
   }
 

@@ -1,5 +1,5 @@
-import { LoroMap, type LoroDoc, type LoroEventBatch } from 'loro-crdt'
-import { contentToJSON, PageDoc, toMarkdown } from '@slate/core'
+import type { LoroDoc, LoroEventBatch } from 'loro-crdt'
+import { PageDoc, toMarkdown } from '@slate/core'
 
 export interface BoxesTouched {
   contentEdited: Set<string>
@@ -20,14 +20,18 @@ export function boxesTouched(base: LoroDoc, update: Uint8Array): BoxesTouched {
       }
     }
   }
-  fork.subscribe(record)
-  fork.import(update)
-  return touched
+  try {
+    fork.subscribe(record)
+    fork.import(update)
+    return touched
+  } finally {
+    // A fork holds memory as a document does, until freed or collected in a later task.
+    fork.free()
+  }
 }
 
 /** A box's content as Markdown; '' when the box is gone or empty. */
 export function boxMarkdown(doc: LoroDoc, boxId: string): string {
-  const content = new PageDoc(doc).contentMap(boxId)
-  const json = content instanceof LoroMap ? contentToJSON(content) : null
+  const json = new PageDoc(doc).boxContent(boxId)
   return json ? toMarkdown([json]) : ''
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SCHEDULE_V1 } from '../vault/suite'
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -227,6 +227,32 @@ describe('SyncService', () => {
     await a.service.resolve('c1', 'theirs')
     expect(boxText(PageDoc.fromUpdates(a.store.load(PAGE)), boxId)).toBe('their text')
     expect(await a.service.conflicts(PAGE)).toEqual([])
+  })
+
+  it('frees the content handle it wrote a resolved conflict through (FX-37)', async () => {
+    const a = await device('A')
+    const boxId = writePage(a.store, 'merged text')
+    a.store.addConflict({ id: 'c1', pageId: PAGE, boxId, device: 'B', mine: 'mine text', theirs: 'their text', merged: 'merged text', at: 1 })
+    const realContentMap = PageDoc.prototype.contentMap
+    const frees: Array<ReturnType<typeof vi.fn>> = []
+    const spy = vi.spyOn(PageDoc.prototype, 'contentMap').mockImplementation(function (this: PageDoc, id: string) {
+      const map = realContentMap.call(this, id)
+      if (map) {
+        const realFree = map.free.bind(map)
+        const free = vi.fn(() => realFree())
+        map.free = free
+        frees.push(free)
+      }
+      return map
+    })
+    try {
+      await a.service.resolve('c1', 'mine')
+    } finally {
+      spy.mockRestore()
+    }
+    expect(frees).toHaveLength(1)
+    expect(frees[0], 'the content handle is freed').toHaveBeenCalledTimes(1)
+    expect(boxText(PageDoc.fromUpdates(a.store.load(PAGE)), boxId)).toBe('mine text')
   })
 
   it('with a key ring, writes only e2ee files and still delivers pages and blobs', async () => {

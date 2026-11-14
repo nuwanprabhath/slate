@@ -792,12 +792,18 @@ export class SyncService {
     if (choice !== 'merged') {
       const page = PageDoc.fromUpdates(this.store.load(conflict.pageId))
       const root = page.contentMap(conflict.boxId)
-      if (root) {
-        const from = page.doc.oplogVersion()
-        writeContent(root, markdownToBlocks(choice === 'mine' ? conflict.mine : conflict.theirs), page.doc)
-        page.doc.commit()
-        this.store.append(conflict.pageId, page.doc.export({ mode: 'update', from }))
-        this.edited()
+      try {
+        if (root) {
+          const from = page.doc.oplogVersion()
+          writeContent(root, markdownToBlocks(choice === 'mine' ? conflict.mine : conflict.theirs), page.doc)
+          page.doc.commit()
+          this.store.append(conflict.pageId, page.doc.export({ mode: 'update', from }))
+          this.edited()
+        }
+      } finally {
+        // A live handle keeps the whole page in Loro's heap until a later task; nothing reads the page after this.
+        root?.free()
+        page.doc.free()
       }
     }
     this.store.removeConflict(id)
