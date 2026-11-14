@@ -1,5 +1,5 @@
-import { agentMarkdown, markdownToBlocks, type Access, type NotebookDoc, type TreeItem } from '@slate/core'
-import type { AuditOutcome, DocSource, NotebookRef } from './source'
+import { agentMarkdown, markdownToBlocks, type Access, type TreeItem } from '@slate/core'
+import type { AuditOutcome, DocSource, NotebookView } from './source'
 
 /** One message for unknown and forbidden ids alike, so an agent cannot probe what exists. */
 export const NOT_PERMITTED = 'not found or not permitted'
@@ -40,18 +40,26 @@ async function audited<T>(src: DocSource, tool: string, target: string, run: () 
 }
 
 /** Keeps a node if the agent can access it or something inside it. */
-function visible(nb: NotebookDoc, item: TreeItem): AgentTreeItem | null {
+function visible(nb: NotebookView, item: TreeItem): AgentTreeItem | null {
   const children = item.children.map((c) => visible(nb, c)).filter((c): c is AgentTreeItem => c !== null)
-  const access = nb.effectiveAccess(item.id)
+  const access = nb.access.get(item.id) ?? null
   if (!access && children.length === 0) return null
   return { id: item.id, kind: item.kind, title: item.title, ...(item.pageId ? { pageId: item.pageId } : {}), access, children }
 }
 
-async function findPage(src: DocSource, pageId: string, need: Access): Promise<{ ref: NotebookRef; item: TreeItem }> {
+function pageIn(items: TreeItem[], pageId: string): TreeItem | undefined {
+  for (const item of items) {
+    const found = item.kind === 'page' && item.pageId === pageId ? item : pageIn(item.children, pageId)
+    if (found) return found
+  }
+  return undefined
+}
+
+async function findPage(src: DocSource, pageId: string, need: Access): Promise<{ ref: NotebookView; item: TreeItem }> {
   for (const ref of await src.notebooks()) {
-    const item = ref.doc.findPage(pageId)
+    const item = pageIn(ref.items, pageId)
     if (!item) continue
-    const access = ref.doc.effectiveAccess(item.id)
+    const access = ref.access.get(item.id)
     if (!access || (need === 'readwrite' && access !== 'readwrite')) throw new NotPermitted('denied')
     return { ref, item }
   }
@@ -61,7 +69,7 @@ async function findPage(src: DocSource, pageId: string, need: Access): Promise<{
 export function listTree(src: DocSource): Promise<AgentNotebook[]> {
   return audited(src, 'list_tree', '*', async () =>
     (await src.notebooks())
-      .map((ref) => ({ notebookId: ref.id, name: ref.doc.name, items: ref.doc.items().map((i) => visible(ref.doc, i)).filter((i): i is AgentTreeItem => i !== null) }))
+      .map((ref) => ({ notebookId: ref.id, name: ref.name, items: ref.items.map((i) => visible(ref, i)).filter((i): i is AgentTreeItem => i !== null) }))
       .filter((nb) => nb.items.length > 0),
   )
 }
@@ -97,9 +105,9 @@ export function search(src: DocSource, query: string): Promise<SearchHit[]> {
     for (const ref of await src.notebooks()) {
       const pages: TreeItem[] = []
       const walk = (items: TreeItem[]) => items.forEach((i) => (i.kind === 'page' ? pages.push(i) : walk(i.children)))
-      walk(ref.doc.items())
+      walk(ref.items)
       for (const item of pages) {
-        if (!item.pageId || !ref.doc.effectiveAccess(item.id)) continue
+        if (!item.pageId || !ref.access.has(item.id)) continue
         if (++read % PAGES_PER_TURN === 0) await nextTurn()
         for (const box of (await src.readPage(item.pageId)).boxes) {
           if (box.markdown === null) continue
@@ -123,14 +131,18 @@ export function appendToPage(src: DocSource, pageId: string, markdown: string): 
 
 export function createPage(src: DocSource, notebookId: string, sectionId: string, title: string, markdown?: string): Promise<{ pageId: string }> {
   return audited(src, 'create_page', `${notebookId}/${sectionId}`, async () => {
-    const ref = (await src.notebooks()).find((n) => n.id === notebookId)
-    const section = ref?.doc.get(sectionId as never)
-    if (!ref || !section || section.kind !== 'section') throw new NotPermitted('not-found')
-    if (ref.doc.effectiveAccess(section.id) !== 'readwrite') throw new NotPermitted('denied')
-    const from = ref.doc.doc.oplogVersion()
-    const { pageId } = ref.doc.addPage(section.id, title)
-    await src.save(`notebook:${notebookId}`, ref.doc.doc.export({ mode: 'update', from }))
-    await src.createPage(pageId, markdown && markdown.trim() !== '' ? markdownToBlocks(markdown) : null)
-    return { pageId }
+    // The one notebook write: it needs the live doc, so it borrows it and nothing escapes the callback.
+    const made = await src.withNotebook(notebookId, async (nb) => {
+      const section = nb.get(sectionId as never)
+      if (!section || section.kind !== 'section') throw new NotPermitted('not-found')
+      if (nb.effectiveAccess(section.id) !== 'readwrite') throw new NotPermitted('denied')
+      const from = nb.doc.oplogVersion()
+      const { pageId } = nb.addPage(section.id, title)
+      await src.save(`notebook:${notebookId}`, nb.doc.export({ mode: 'update', from }))
+      return pageId
+    })
+    if (made === null) throw new NotPermitted('not-found')
+    await src.createPage(made, markdown && markdown.trim() !== '' ? markdownToBlocks(markdown) : null)
+    return { pageId: made }
   })
 }
