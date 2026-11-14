@@ -2,7 +2,11 @@
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { buildExtensions } from '../src/extensions'
-import { isSingleUrl, normalizeLinkInput } from '../src/links'
+import { isLinkHref, isSingleUrl, normalizeLinkInput } from '../src/links'
+import { LoroDoc } from 'loro-crdt'
+import { writeContent } from '../src/content'
+import { schema } from '../src/extensions'
+import { renderStaticHtml } from '../src/staticRender'
 
 describe('normalizeLinkInput', () => {
   it('adds https:// to a bare domain or path', () => {
@@ -23,6 +27,57 @@ describe('normalizeLinkInput', () => {
   it('rejects empty input and unknown schemes', () => {
     expect(normalizeLinkInput('   ')).toHaveProperty('error')
     expect(normalizeLinkInput('ftp://a.io')).toHaveProperty('error')
+  })
+})
+
+describe('isLinkHref', () => {
+  it('keeps the schemes a link may use', () => {
+    for (const ok of ['http://a.io', 'https://a.io/x', 'mailto:me@a.io', 'HTTPS://a.io']) expect(isLinkHref(ok)).toBe(true)
+  })
+  it('keeps an address with no scheme at all', () => {
+    // Nothing Slate writes is relative, but a pasted page's "/a" or "#x" cannot name a program, and
+    // hardening refuses navigation off app://slate/ anyway.
+    for (const ok of ['/a/b', '#x', '?q=1', 'example.com:8080/x']) expect(isLinkHref(ok)).toBe(true)
+  })
+  it('refuses a scheme that carries a digit (FX-50)', () => {
+    // TipTap's own isAllowedUri reads "letters then a non-letter" as a relative path, so a digit anywhere
+    // in the scheme defeated it: these all passed before this check existed.
+    for (const bad of ['l1ra:', 'web3:pay', 's3://b/k', 'h323:x', 'x1:evil', 'jav1ascript:alert(1)', 'data1:text/html,x'])
+      expect(isLinkHref(bad), bad).toBe(false)
+  })
+  it('refuses the script-bearing and program-launching schemes', () => {
+    for (const bad of ['javascript:alert(1)', 'JavaScript:alert(1)', 'data:text/html,x', 'vbscript:x', ' java\tscript:alert(1)', 'file:///etc/passwd', 'ftp://a.io'])
+      expect(isLinkHref(bad), bad).toBe(false)
+  })
+})
+
+describe('a link mark never reaches the page with an unsanctioned scheme (FX-50)', () => {
+  /** The off-screen path: a content map a peer or an agent wrote, drawn without an editor. */
+  const renderHref = (href: string): string | null => {
+    const doc = new LoroDoc()
+    const root = doc.getMap('content')
+    try {
+      writeContent(root, [{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href } }] }] }], doc)
+      doc.commit()
+      const fragment = renderStaticHtml(schema, doc, root.id, document)
+      if (!fragment) return null
+      const host = document.createElement('div')
+      host.append(fragment)
+      return host.querySelector('a')?.getAttribute('href') ?? null
+    } finally {
+      root.free()
+      doc.free()
+    }
+  }
+
+  it('draws a sanctioned href as it is', () => {
+    expect(renderHref('https://a.io/x')).toBe('https://a.io/x')
+    expect(renderHref('mailto:me@a.io')).toBe('mailto:me@a.io')
+  })
+
+  it('does not draw a digit-bearing scheme, which is the nightly counterexample', () => {
+    // seed 45, path "28499": the soak drew <a href="l1ra:">.
+    for (const bad of ['l1ra:', 'web3:pay', 'h323:x']) expect(renderHref(bad), bad).not.toContain(bad.slice(0, bad.indexOf(':')))
   })
 })
 

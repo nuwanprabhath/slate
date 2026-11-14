@@ -12,6 +12,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { currentTheme, readableColor, readableHighlight } from './colorContrast'
 import { MoveBlocks } from './moveBlocks'
 import { isSafeImageSrc } from './clipboard'
+import { isLinkHref } from './links'
 
 const lowlight = createLowlight(common)
 
@@ -588,7 +589,8 @@ export function buildExtensions(opts: { autoBullets?: boolean } = {}): Extension
       codeBlock: false,
       trailingNode: false,
       heading: { levels: [1, 2, 3] },
-      link: { autolink: false, linkOnPaste: false, openOnClick: false },
+      // isAllowedUri replaces the extension's own heuristic, which let any scheme with a digit through (FX-50).
+      link: { autolink: false, linkOnPaste: false, openOnClick: false, isAllowedUri: (href: string) => isLinkHref(href) },
     }),
     ListStyle,
     EmptyLineStyle,

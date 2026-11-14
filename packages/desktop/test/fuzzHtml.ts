@@ -4,7 +4,9 @@ import fc from 'fast-check'
 const TAGS = ['p', 'b', 'i', 'a', 'img', 'div', 'span', 'table', 'tr', 'td', 'li', 'ul', 'ol', 'pre', 'code', 'svg', 'math', 'script', 'style', 'iframe', 'object', 'embed', 'form', 'textarea', 'title', 'template', 'noscript', 'select', 'option', 'foreignObject', 'mglyph', 'malignmark', 'annotation-xml', 'base', 'meta', 'link']
 const ATTRS = ['href', 'src', 'xlink:href', 'action', 'formaction', 'data', 'style', 'class', 'onerror', 'onload', 'onclick', 'OnMouseOver', 'srcdoc', 'width', 'data-color', 'is', 'id']
 
-const SCHEMES = ['javascript', 'vbscript', 'data', 'file', 'http', 'https', 'mailto', 'slate-image', 'app']
+// web3, h323 and s3 carry a digit, which is the shape that defeated the Link extension's own check and let an
+// unsanctioned scheme be drawn (FX-50); each is also a scheme a desktop may route to an installed program.
+const SCHEMES = ['javascript', 'vbscript', 'data', 'file', 'http', 'https', 'mailto', 'slate-image', 'app', 'web3', 'h323', 's3']
 
 /** A scheme spelt the ways a browser still reads as that scheme: mixed case, split by tab or newline, entity-encoded. */
 const schemeSpelling = fc.tuple(fc.constantFrom(...SCHEMES), fc.array(fc.nat(), { maxLength: 4 }), fc.boolean()).map(([scheme, ops, entity]) => {

@@ -6,7 +6,12 @@ import type { PMJSON } from '@slate/core'
 
 export type LinkInput = { href: string } | { error: string }
 
-const SAFE_SCHEMES = new Set(['http', 'https', 'mailto'])
+/**
+ * The only schemes a link may carry, anywhere: what the user types, what a paste keeps, and what the
+ * static renderer draws from a content map. A picture's schemes are a different list (IMAGE_SCHEMES in
+ * clipboard.ts); neither restates the other.
+ */
+export const LINK_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'mailto'])
 // "example.com:8080/x" is a host and port, not a scheme.
 const HOST_PORT = /^[^/?#:]+:\d+(?:[/?#]|$)/
 const DOMAIN_OR_PATH = /^(?:localhost|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:[/?#]\S*)?$/i
@@ -22,13 +27,27 @@ export function urlScheme(raw: string): string | null {
   return scheme && !HOST_PORT.test(squashed) ? scheme[1]!.toLowerCase() : null
 }
 
+/**
+ * Whether a link mark may carry `href`. The Link extension's own check is a heuristic -- it reads
+ * "letters then a non-letter" as a relative path, so any scheme holding a digit (`web3:`, `h323:`,
+ * `l1ra:`) passed it, and the static renderer drew them (FX-50). This asks the product's own question
+ * instead, through the one scheme reader, which also sees through `java\tscript:`.
+ *
+ * An address with no scheme is kept: nothing Slate writes is relative, but a pasted page's `/a` or `#x`
+ * cannot name a program, and hardening refuses navigation off `app://slate/`.
+ */
+export function isLinkHref(href: string): boolean {
+  const scheme = urlScheme(href)
+  return scheme === null || LINK_SCHEMES.has(scheme)
+}
+
 /** Turns what the user typed into a link target. */
 export function normalizeLinkInput(raw: string): LinkInput {
   const text = raw.trim()
   if (!text) return { error: 'Enter a web address' }
   const scheme = urlScheme(text)
   if (scheme !== null) {
-    if (!SAFE_SCHEMES.has(scheme)) return { error: `Links can't use ${scheme}:` }
+    if (!LINK_SCHEMES.has(scheme)) return { error: `Links can't use ${scheme}:` }
     return { href: text }
   }
   if (!DOMAIN_OR_PATH.test(text)) return { error: 'Enter a web address' }
