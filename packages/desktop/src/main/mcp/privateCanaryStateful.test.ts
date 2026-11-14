@@ -9,7 +9,7 @@ import { createSlateMcpServer } from '@slate/mcp'
 import { NotebookDoc, PageDoc, contentToJSON, writeContent, type Access, type PMJSON } from '@slate/core'
 import { DocStore } from '../store'
 import { storeDocSource } from './docSource'
-import { fcRuns } from '../../../test/fuzz'
+import { fcRuns, fuzzTimeout } from '../../../test/fuzz'
 
 /**
  * The private-box canary of `packages/mcp/test/privateCanary.test.ts`, made stateful and run on the
@@ -118,19 +118,23 @@ async function world() {
   const client = new Client({ name: 'canary', version: '0.0.0' })
   await client.connect(clientSide)
 
-  const nb = NotebookDoc.create('Notebook')
+  // Every Loro document this run decodes, freed by close() even when the case fails: Loro's WebAssembly heap
+  // outlives the JavaScript objects, and thousands of runs' worth of it exhausted the heap (FX-30).
+  const built: Array<{ doc: { free(): void } }> = []
+  const own = <T extends { doc: { free(): void } }>(d: T): T => (built.push(d), d)
+  const nb = own(NotebookDoc.create('Notebook'))
   const sections = [nb.addSection('Open'), nb.addSection('Closed')]
   nb.setAccess(sections[0]!, 'readwrite')
   const pages = [nb.addPage(sections[0]!, 'Page A'), nb.addPage(sections[0]!, 'Page B'), nb.addPage(sections[1]!, 'Page C')]
   nb.setAccess(pages[1]!.id, 'read')
   store.append(NOTEBOOK, nb.doc.export({ mode: 'snapshot' }))
-  for (const p of pages) store.append(`page:${p.pageId}`, new PageDoc().doc.export({ mode: 'snapshot' }))
+  for (const p of pages) store.append(`page:${p.pageId}`, own(new PageDoc()).doc.export({ mode: 'snapshot' }))
 
   const boxes: BoxRecord[] = []
   const deleted = new Set<string>()
   let n = 0
-  const notebook = () => NotebookDoc.fromUpdates(store.load(NOTEBOOK))
-  const pageDoc = (pageId: string) => PageDoc.fromUpdates(store.load(`page:${pageId}`))
+  const notebook = () => own(NotebookDoc.fromUpdates(store.load(NOTEBOOK)))
+  const pageDoc = (pageId: string) => own(PageDoc.fromUpdates(store.load(`page:${pageId}`)))
   const livePages = () => pages.filter((p) => !deleted.has(p.pageId))
   /** The person's write to a page: their own copy, the delta appended as the app (or sync) would. */
   let touched: string | undefined
@@ -237,9 +241,13 @@ async function world() {
     return [...pages.map((p) => p.pageId), ...sections.map(String), 'nb0', 'Page A', 'box', ...fragments, NOT_THERE]
   }
   const close = async () => {
-    await client.close()
-    store.close()
-    rmSync(dir, { recursive: true, force: true })
+    try {
+      await client.close()
+      store.close()
+      rmSync(dir, { recursive: true, force: true })
+    } finally {
+      for (const d of built.splice(0)) d.doc.free()
+    }
   }
   return { store, client, saved, sections, pages, person, touched: () => touched, accessNow, forbidden, privateState, pool, notebook, close }
 }
@@ -345,7 +353,8 @@ describe('private boxes stay private while the person edits (F4d)', () => {
     expect(seen.cleanReads).toBeGreaterThan(0)
     expect(seen.flipsThenReads).toBeGreaterThan(0)
     expect(seen.refusals).toBeGreaterThan(0)
-  }, 240_000)
+    // 7,131 runs took 630 s at soak depth, about 9 s per 1000 FUZZ_RUNS; 30 s keeps a margin under load.
+  }, fuzzTimeout(30_000))
 
   it('T-F4D-02: a box made private after the agent read it is gone from the next read, from the cache too', async () => {
     const w = await world()

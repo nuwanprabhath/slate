@@ -72,10 +72,15 @@ describe('transport parsing (F4b properties 5 and 6)', () => {
   it('T-F4B-07: hostile trace text costs about what a real trace of the same length costs', () => {
     // The real trace with its answer lines last, so the benign parse scans the whole text as a miss does.
     const real = (SSH_TRACE + CURL_TRACE).replace(/^.*(kex: algorithm|SSL connection).*\n/gm, '').repeat(60) + SSH_TRACE + CURL_TRACE
-    const cost = relativeCost(() => {
-      parseSshKex(real)
-      parseCurlTls(real)
-    })
+    // Mean ratio only: super-linear parsing shows in the mean, while this p99 measured whether another process
+    // had the CPU (it read 366 under six concurrent suites, FX-26). The kit's default p99 stays for other callers.
+    const cost = relativeCost(
+      () => {
+        parseSshKex(real)
+        parseCurlTls(real)
+      },
+      { p99OverBenign: Number.POSITIVE_INFINITY }
+    )
     fc.assert(
       fc.property(
         fc.array(fc.constantFrom('debug1: kex: algorithm: ', 'SSL connection using TLSv1.3 / ', 'a / ', 'x', ' ', '\t'), { minLength: 1, maxLength: 60 }),
