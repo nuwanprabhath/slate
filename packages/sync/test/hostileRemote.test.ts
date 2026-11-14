@@ -17,6 +17,8 @@ import { PAGE } from './simulation'
 
 const ME = 'me'
 const MAX_FILE_BYTES = 64 * 1024 * 1024
+// The document-id grammar, written out here so the test does not share the code it checks.
+const DOC_ID = /^(page|notebook):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const OTHER_PAGE = 'page:44444444-4444-4444-8444-444444444444'
 
 /** Real updates another device could have written: one to the page this device holds, one to a page it does not. */
@@ -205,8 +207,43 @@ describe('a hostile remote', () => {
     expect([...seen.statuses].sort()).toEqual(['error', 'idle-synced', 'offline'])
   })
 
-  // Property 6 (appendRemote only for `page:<uuid>`/`notebook:<uuid>` ids) fails on main: finding FX-F2C-1 in the
-  // F2c report. It is not a case here; its fix branch adds it.
+  it('T-F2C-07: appendRemote is reached only for `page:<uuid>`/`notebook:<uuid>` ids', { timeout: fuzzTimeout(20_000) }, async () => {
+    let refused = 0
+    await fc.assert(
+      fc.asyncProperty(hostile(fc.nat(VALID.length - 1).map<Serve>((pick) => ({ kind: 'valid', pick }))), async (h) => {
+        const { local, appended } = device()
+        const drive = hostileDrive(h)
+        const engine = new SyncEngine({ local, remote: drive, deviceId: ME, deviceName: ME, compactAfter: 2 })
+        await syncWithDeadline(engine, drive)
+        for (const id of appended) expect(id, `appendRemote(${JSON.stringify(id)})`).toMatch(DOC_ID)
+        for (const id of local.docs.keys()) expect(id).toMatch(DOC_ID)
+        const ungrammatical = h.items.some((i) => {
+          const m = /^docs\/([^/]*)\/([^/]*)\/(\d+\.chunk|snapshot-\d+\.bin)$/.exec(i.path)
+          return i.isFile && !i.deleted && m !== null && m[2] !== ME && !DOC_ID.test(m[1]!.replace('_', ':'))
+        })
+        if (ungrammatical) refused++
+      }),
+      fcRuns(4)
+    )
+    expect(refused, 'runs listing an ungrammatical doc id').toBeGreaterThan(0)
+  })
+
+  it('T-F2C-07b: a refused doc id leaves the rest of the listing synced', async () => {
+    const { local, appended } = device()
+    const item = (id: string, path: string): RemoteItem => ({ id, path, eTag: 'e', deleted: false, isFile: true })
+    const good = `docs/${docKey(OTHER_PAGE)}/d2/00000001.chunk`
+    const h: Hostile = {
+      items: [item('bad1', 'docs/w/d2/00000001.chunk'), item('bad2', 'docs//d2/00000001.chunk'), item('good', good)],
+      serves: [{ kind: 'valid', pick: 1 }]
+    }
+    const drive = hostileDrive(h)
+    const engine = new SyncEngine({ local, remote: drive, deviceId: ME, deviceName: ME, compactAfter: 2 })
+    const report = await syncWithDeadline(engine, drive)
+    expect(report instanceof SyncAborted ? 'aborted' : report.status).toBe('idle-synced')
+    expect(appended).toEqual([OTHER_PAGE])
+    expect(drive.downloaded).toEqual([good])
+  })
+
   it('T-F2C-06: when nothing served is a Loro update, local documents are unchanged and the notice counts every file', { timeout: fuzzTimeout(20_000) }, async () => {
     let counted = 0
     await fc.assert(

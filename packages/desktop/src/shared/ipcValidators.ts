@@ -38,19 +38,15 @@ export function refuse(channel: string): never {
   throw new MalformedRequest(channel)
 }
 
-// `crypto.randomUUID`, which is all `newId` returns (packages/core/src/ids.ts).
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const DOC_KINDS = ['page', 'notebook'] as const
+// The grammar lives in core so sync refuses the same ids main does.
+// Declared here, not re-exported, because the ipcValidation guard reads this file's declarations.
+import { isDocId as coreIsDocId, isId as coreIsId } from '@slate/core'
 
 /** An id as `newId` makes it. */
-export const isId = (value: unknown): value is string => typeof value === 'string' && UUID.test(value)
+export const isId = (value: unknown): value is string => coreIsId(value)
 
 /** A document's key in the store: its kind, then an id. */
-export function isDocId(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  const colon = value.indexOf(':')
-  return colon > 0 && (DOC_KINDS as readonly string[]).includes(value.slice(0, colon)) && isId(value.slice(colon + 1))
-}
+export const isDocId = (value: unknown): value is string => coreIsDocId(value)
 
 /** A theme the person saved (`main/theme/themeStore.ts`); a `builtin:` theme is not renamed or removed. */
 export const isSavedThemeId = (value: unknown): value is string => typeof value === 'string' && value.startsWith('user:') && isId(value.slice('user:'.length))
