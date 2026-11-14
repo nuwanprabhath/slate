@@ -299,10 +299,11 @@ describe('three devices over the real DocStore, with compaction and reopen', () 
 /** The size of Loro's WebAssembly heap. It never shrinks, so growth is memory no earlier run gave back for reuse. */
 const loroHeapBytes = (): number => (loro as unknown as { __wasm: { memory: { buffer: ArrayBuffer } } }).__wasm.memory.buffer.byteLength
 /**
- * T-F2D-03's bound. A run keeps 0 bytes once 100 runs have settled the heap: nothing outlives it, and its syncs yield
- * through real setImmediate turns, so Loro's finalizers run. A run that kept its documents would keep hundreds of kB,
- * as searchFuzz's did (FX-44). Bytes, not a time, so machine load moves neither.
+ * T-F2D-03's bound. A run keeps 0 bytes once 300 runs have settled the heap: nothing outlives it, and its syncs yield
+ * through real setImmediate turns, so the collector and Loro's finalizers reclaim its documents. 100 settling runs are
+ * not enough after T-F2D-01/02 leave the collector behind (66-73 kB a run, freed or not). A run that kept its
+ * documents would keep hundreds of kB, as searchFuzz's did (FX-44). Bytes, not a time, so machine load moves neither.
  */
-const SETTLE_RUNS = 100
-const MEASURED_RUNS = 100
+const SETTLE_RUNS = 300
+const MEASURED_RUNS = 300
 const KEPT_BYTES_PER_RUN = 16 * 1024
