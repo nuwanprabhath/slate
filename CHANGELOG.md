@@ -6,6 +6,71 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-11-14
+
+Twenty findings from the fuzzing layer added in 0.7.4, fixed. Most were found by harnesses rather
+than by anyone meeting them, so for most of them nothing you did was broken; the ones that could
+reach you are first.
+
+### Fixed
+
+- Deleting a page could stop your next edit to another page from reaching your other devices. The
+  store numbered each change from the highest number in use, and deleting the page that held the
+  highest one let the next edit reuse it, so a sync that had already passed that number never saw
+  the edit. Numbers now come from a counter that only ever goes up (FX-6).
+- Searching for a phrase containing a control character no longer fails with a database error. Such
+  a character cannot match anything in a note, so it is now ignored rather than passed to the
+  database, where it cut the phrase short (FX-21). An agent could reach this through the search tool
+  as well.
+- Reading many pages at once -- a search, an agent, an import -- no longer holds all of their memory.
+  Slate frees the memory a page's contents use as soon as it has read them; it had been waiting for
+  a later cleanup that, in a long run of reads, never came. A large shared library could exhaust the
+  memory available to notes and leave the app unable to open any page until it restarted
+  (FX-30, FX-32, FX-33, FX-34, FX-35, FX-36, FX-37).
+- A OneNote page file that cannot be read is now reported by name, with the rest of the import
+  continuing, instead of failing with an internal error message (FX-9).
+- Sync refuses a file from a remote whose folder does not name a page or notebook Slate made,
+  counts it as unverified, and carries on with the rest of the sync. A remote had been able to
+  choose the names of documents created on your machine (FX-10).
+- Saving a theme no longer accepts an oversized value that could freeze the window, and the idle
+  lock with it, for seconds (FX-7).
+- Pasted pictures load only from http, https or Slate's own store; any other source is dropped
+  rather than kept and drawn broken (FX-11). Pasting a stray table cell keeps its text when the
+  paste is cleaned again (FX-12), and pasting very deeply nested HTML lands its text instead of
+  failing (FX-14).
+- The AI access server no longer closes when a client sends more than 10 MiB without a line break;
+  it refuses that line and keeps every complete line that came before it, however the stream was
+  split (FX-22, FX-23). `slate-mcp` refuses an overlong line in both directions, at the same limit
+  the app uses, instead of buffering it without one (FX-19).
+- The update check no longer fails on an unusual processor name (FX-20), sync refuses branch names
+  git itself rejects where you type them rather than failing later (FX-17), git's error output is
+  capped so a broken remote cannot grow memory without limit (FX-18), and a log read through
+  redaction twice reports the true number of characters dropped (FX-15).
+
+### Changed
+
+- hono 4.13.18 for five advisories, and the TipTap, Playwright and `@hono/node-server` updates from
+  0.7.5's Dependabot group (#14, #15, #16). None of hono's advisories reach Slate: they are in its
+  HTTP server, which Slate never starts, and no part of it is shipped in the app.
+
+### Internal
+
+- Core owns the lifetime of every Loro handle it reads, through one scope
+  (`packages/core/src/handles.ts`), and a type-aware lint rule (`slate/loro-handles-through-scope`) holds core and the main process to
+  it; the editor is outside it, because it holds handles deliberately while a box is open. Four separate
+  fixes had each patched one caller before the cause was understood: a document is pinned while any
+  handle read from it is alive, and such a handle is released only in a task of its own, so code
+  that never yields frees nothing however often it calls `free()` (FX-36, FX-38).
+- The nightly fuzz soak passes at full depth. Three harnesses failed there for reasons of their own
+  -- a timeout that did not scale with the run count, key handles a model never returned, and the
+  event loop never turning so that nothing was ever finalised -- which had been hiding whatever the
+  soak might otherwise find (FX-29, FX-30, FX-31). A sync fault simulation replays exactly from its
+  seed (FX-25), and a cost check compares mean times only, so machine load no longer fails it
+  (FX-26).
+- The paste sanitiser's strongest property now runs with no exclusions, which unblocks the planned
+  Chromium differential harness (FX-11). `<svg><template>` was recorded as a defect and is not one:
+  it is a bug in the test environment's HTML serialiser, which ignores namespaces (FX-13).
+
 ## [0.7.5] - 2026-11-14
 
 ### Fixed
@@ -27,8 +92,12 @@ All notable changes to Slate are recorded here. The format follows
 ### Changed
 
 - The TipTap editor suite moves to 3.33.0, Playwright to 1.65.0, and `@hono/node-server` to 2.1.8 for a
-  moderate advisory (Dependabot #14 and #15, folded into this release). `@hono/node-server` is a
-  development dependency of the MCP server's test harness and is not shipped.
+  moderate advisory (Dependabot #14 and #15, folded into this release). `@hono/node-server` reaches
+  Slate as a dependency of `@modelcontextprotocol/sdk`, which `@slate/mcp` declares as a runtime
+  dependency; it is not shipped, because nothing in Slate imports the SDK's HTTP transport and the
+  packaged app carries only built output, no `node_modules`. (Corrected in 0.7.6: this entry first
+  said it was a development dependency of a test harness, which was the wrong reason for a right
+  conclusion.)
 
 ### Internal
 
