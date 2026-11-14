@@ -143,7 +143,9 @@ export function cleanPastedHtml(html: string): string {
 
 function cleanOnce(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  doc.querySelectorAll('style, script, meta, link, title').forEach((e) => e.remove())
+  // A <template>'s content is an inert fragment: it renders nothing, querySelectorAll does not enter it,
+  // and innerHTML writes it back out -- so anything inside is vetted by nobody and serialised anyway (FX-48).
+  doc.querySelectorAll('style, script, meta, link, title, template').forEach((e) => e.remove())
   // Comments carry nothing a page keeps (Word's conditional blocks) and a CDATA-turned-comment re-parses differently.
   const comments = doc.createTreeWalker(doc.body, 128 /* NodeFilter.SHOW_COMMENT */)
   const dropped: Node[] = []
@@ -208,6 +210,8 @@ function urlOf(src: string): string {
  */
 export async function storeDataImages(html: string, put: (bytes: Uint8Array, mime: string) => Promise<string>): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  // Not reachable by querySelectorAll but kept by innerHTML, so a picture inside one would pass unstored (FX-48).
+  doc.querySelectorAll('template').forEach((e) => e.remove())
   for (const img of Array.from(doc.querySelectorAll('img'))) {
     const src = urlOf(img.getAttribute('src') ?? '')
     if (!/^data:/i.test(src)) continue

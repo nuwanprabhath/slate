@@ -196,6 +196,15 @@ describe('T-F3B storeDataImages', () => {
 })
 
 describe('T-F3B fixed findings', () => {
+  // FX-48: a <template>'s content is a separate fragment, so querySelectorAll never enters it, while
+  // innerHTML writes it back out. storeDataImages therefore left a data: src inside one, and the cleaner
+  // vetted a tree the serialiser did not produce. A template renders nothing, so both now drop it.
+  it('FX-48: a data: image inside a <template> survives neither storing nor cleaning', async () => {
+    const html = '<template><img src="data:image/gif;base64,!"></template><p>a</p>'
+    expect(await storeDataImages(html, async () => 'slate-blob://img/x')).not.toMatch(/data:/i)
+    expect(cleanPastedHtml(html)).not.toMatch(/data:/i)
+  })
+
   it('FX-11: a pasted image whose src is not http, https or slate-blob is dropped', () => {
     for (const src of ['javascript:alert(1)', 'java&#9;script:alert(1)', 'file:///etc/passwd', 'vbscript:x', 'relative.png']) {
       expect(cleanPastedHtml(`<p>a</p><img src="${src}"><p>b</p>`)).toBe('<p>a</p><p>b</p>')
