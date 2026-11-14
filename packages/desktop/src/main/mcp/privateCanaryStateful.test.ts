@@ -9,6 +9,7 @@ import { createSlateMcpServer } from '@slate/mcp'
 import { NotebookDoc, PageDoc, contentToJSON, writeContent, type Access, type PMJSON } from '@slate/core'
 import { DocStore } from '../store'
 import { storeDocSource } from './docSource'
+import * as loro from 'loro-crdt'
 import { fcRuns, fuzzTimeout } from '../../../test/fuzz'
 
 /**
@@ -250,6 +251,10 @@ async function world() {
       // The source's cached docs end with the run, as the app's end with its MCP server (FX-32).
       source.close()
       for (const d of built.splice(0)) d.doc.free()
+      // free() releases nothing while a container handle read from the doc (a LoroMap, a LoroTreeNode) is alive, and
+      // only Loro's FinalizationRegistry frees those, in a task of its own. A run awaits nothing but settled promises,
+      // so without this turn of the event loop no finalizer ran in 7,000 runs and every decoded doc stayed (FX-30).
+      await new Promise((resolve) => setImmediate(resolve))
     }
   }
   return { store, client, saved, sections, pages, person, touched: () => touched, accessNow, forbidden, privateState, pool, notebook, close }
@@ -269,6 +274,9 @@ async function listedTools(): Promise<Array<{ name: string; inputSchema: Schema 
   await w.close()
   return tools as Array<{ name: string; inputSchema: Schema }>
 }
+
+/** The size of Loro's WebAssembly heap. It never shrinks, so growth is memory no earlier run gave back for reuse. */
+const loroHeapBytes = (): number => (loro as unknown as { __wasm: { memory: { buffer: ArrayBuffer } } }).__wasm.memory.buffer.byteLength
 
 /** Counted across every run so the property cannot pass by never doing the thing it checks. */
 const seen = { kinds: new Set<string>(), cleanReads: 0, refusals: 0, flipsThenReads: 0 }
@@ -338,6 +346,16 @@ async function run(tools: Array<{ name: string }>, cmds: Cmd[]): Promise<void> {
   }
 }
 
+/**
+ * T-F4D-03's bound. A run of its twelve commands that gives nothing back grows Loro's heap by 3.6 MB (measured: 1.1 GB
+ * after 300 runs). One that does leaves the heap at whatever is waiting for the next garbage collection: about 90 MB
+ * once 300 runs have settled it, still creeping by 35 to 41 kB a run over the next 300. 512 KiB is seven times under
+ * the first figure and twelve times over the second, and neither is a time, so machine load moves neither.
+ */
+const SETTLE_RUNS = 300
+const MEASURED_RUNS = 300
+const KEPT_BYTES_PER_RUN = 512 * 1024
+
 describe('private boxes stay private while the person edits (F4d)', () => {
   it('T-F4D-01: across interleaved edits and agent calls, nothing private or unshared reaches the agent and no refused write lands', async () => {
     const tools = await listedTools()
@@ -356,7 +374,7 @@ describe('private boxes stay private while the person edits (F4d)', () => {
     expect(seen.cleanReads).toBeGreaterThan(0)
     expect(seen.flipsThenReads).toBeGreaterThan(0)
     expect(seen.refusals).toBeGreaterThan(0)
-    // 7,131 runs took 630 s at soak depth, about 9 s per 1000 FUZZ_RUNS; 30 s keeps a margin under load.
+    // The soak's 20,000 runs take about 165 s, under 1 s per 1000 FUZZ_RUNS; 30 s keeps a margin under load.
   }, fuzzTimeout(30_000))
 
   it('T-F4D-02: a box made private after the agent read it is gone from the next read, from the cache too', async () => {
@@ -377,4 +395,22 @@ describe('private boxes stay private while the person edits (F4d)', () => {
       await w.close()
     }
   })
+
+  it("T-F4D-03: a run gives back what it decoded, so Loro's WebAssembly heap stops growing (FX-30)", async () => {
+    const tools = await listedTools()
+    const add = (page: number, isPrivate: boolean): Cmd => ({ k: 'addBox', page, private: isPrivate, places: [...PLACES], origin: 'local' })
+    const cmds: Cmd[] = [
+      add(0, false), { k: 'reread' }, add(1, true), { k: 'reread' }, add(2, false), { k: 'reread' },
+      { k: 'setPrivate', page: 0, box: 0, private: true, origin: 'remote' }, { k: 'reread' },
+      { k: 'access', target: 1, access: 2 }, { k: 'reread' }, { k: 'compact', page: 0 }, { k: 'reread' },
+    ]
+    const runs = async (n: number) => {
+      for (let i = 0; i < n; i++) await run(tools, cmds)
+    }
+    await runs(SETTLE_RUNS)
+    const settled = loroHeapBytes()
+    await runs(MEASURED_RUNS)
+    expect((loroHeapBytes() - settled) / MEASURED_RUNS, 'bytes of Loro heap a run kept').toBeLessThan(KEPT_BYTES_PER_RUN)
+    // 600 runs take about 11 s; the deadline is a hundred times that, for a machine shared with other suites.
+  }, 20 * 60_000)
 })
