@@ -3,6 +3,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { fcParams, fcRuns, fuzzTimeout } from '../../../test/fuzz'
 import { chunkings } from '../../../test/fuzzBytes'
+import { MAX_LINE_BYTES } from './lineTransport'
 import { runProxy } from './proxy'
 
 type Id = string | number
@@ -184,5 +185,55 @@ describe('T-F4C: the MCP proxy under fuzzed connection schedules', () => {
       )
     },
     fuzzTimeout(),
+  )
+
+  // A run of 'x' past the limit, cut into at most 16 chunks (fractions, so a counterexample stays small).
+  const overlong = fc.tuple(fc.integer({ min: 1, max: 64 * 1024 }), fc.array(fc.integer({ min: 0, max: 1_000_000 }), { maxLength: 16 }))
+  const cutRun = (bytes: Buffer, at: number[]) => {
+    const points = [0, ...at.map((ppm) => Math.floor((ppm / 1_000_000) * bytes.length)).sort((a, b) => a - b), bytes.length]
+    return points.slice(1).map((end, i) => bytes.subarray(points[i]!, end))
+  }
+
+  it(
+    'FX-19: a line longer than MAX_LINE_BYTES is refused in either direction; the complete lines before it are relayed',
+    async () => {
+      await fc.assert(
+        fc.asyncProperty(fc.array(clientLine, { maxLength: 4 }), fc.array(appLine, { maxLength: 4 }), overlong, fc.boolean(), async (up, down, [extra, at], upward) => {
+          const app = fakeApp()
+          const input = new PassThrough()
+          const out = client()
+          let finished = false
+          const done = runProxy({ input, output: out.output, connect: async () => app.socket }).then(() => (finished = true))
+          input.emit('data', INIT)
+          await settle()
+          const afterInit = out.bytes().length
+          const run = Buffer.alloc(MAX_LINE_BYTES + extra, 0x78)
+          if (upward) {
+            const head = Buffer.concat([joined(up), run])
+            for (const c of cutRun(head, at)) input.emit('data', Buffer.from(c))
+            input.emit('data', Buffer.from('\n{"jsonrpc":"2.0","id":7,"method":"ping"}\n'))
+            await settle()
+            // The client is cut off: the proxy stops reading and ends, and the app saw only the lines before the run.
+            expect(finished).toBe(true)
+            expect(input.destroyed).toBe(true)
+            expect(Buffer.concat(app.received).toString('hex')).toBe(Buffer.concat([INIT, joined(up)]).toString('hex'))
+          } else {
+            const head = Buffer.concat([joined(down), run])
+            for (const c of cutRun(head, at)) app.socket.emit('data', Buffer.from(c))
+            app.socket.emit('data', Buffer.from('\n{"jsonrpc":"2.0","id":7,"result":{}}\n'))
+            await settle()
+            // The app connection is dropped as a lock drops it: the lines before the run, then list_changed.
+            expect(app.socket.destroyed).toBe(true)
+            const tail = out.bytes().subarray(afterInit)
+            expect(tail.subarray(0, joined(down).length).toString('hex')).toBe(joined(down).toString('hex'))
+            expect(tail.subarray(joined(down).length).toString('utf8')).toBe('{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}\n')
+            input.end()
+            await done
+          }
+        }),
+        fcRuns(200, 10),
+      )
+    },
+    fuzzTimeout(20_000),
   )
 })

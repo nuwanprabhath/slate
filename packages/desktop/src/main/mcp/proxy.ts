@@ -1,4 +1,5 @@
 import type { Duplex, Readable, Writable } from 'node:stream'
+import { MAX_LINE_BYTES } from './lineTransport'
 
 export const LOCKED_MESSAGE = 'Slate is locked or not running. Unlock Slate to give AI access.'
 
@@ -6,6 +7,41 @@ type Message = { jsonrpc?: string; id?: string | number | null; method?: string;
 
 const NEWLINE = Buffer.from('\n')
 const line = (m: object) => JSON.stringify(m) + '\n'
+
+/**
+ * Splits a byte stream into lines (each with its newline), in bytes so a chunk boundary inside a
+ * character changes nothing. A run past `MAX_LINE_BYTES` with no newline calls `overlong` once and
+ * the splitter reads nothing more; the run is never held whole, and the complete lines before it are
+ * still delivered.
+ */
+function lineSplitter(onLine: (bytes: Buffer) => void, overlong: () => void): (chunk: Buffer) => void {
+  let pending: Buffer[] = []
+  let size = 0
+  let stopped = false
+  return (chunk) => {
+    let start = 0
+    while (!stopped) {
+      const nl = chunk.indexOf(0x0a, start)
+      const end = nl < 0 ? chunk.length : nl
+      if (size + end - start > MAX_LINE_BYTES) {
+        stopped = true
+        pending = []
+        overlong()
+        return
+      }
+      if (nl < 0) {
+        if (end > start) pending.push(chunk.subarray(start))
+        size += end - start
+        return
+      }
+      const bytes = Buffer.concat([...pending, chunk.subarray(start, nl + 1)])
+      pending = []
+      size = 0
+      start = nl + 1
+      onLine(bytes)
+    }
+  }
+}
 
 function parse(text: string): Message | null {
   try {
@@ -60,22 +96,22 @@ export function runProxy(opts: { input: Readable; output: Writable; connect: () 
     }
     const initId = replay && initLine ? parse(initLine.toString('utf8'))?.id : undefined
     let swallowing = initId !== undefined
-    let pending: Buffer = Buffer.alloc(0)
-    s.on('data', (chunk: Buffer) => {
-      pending = Buffer.concat([pending, chunk])
-      let nl: number
-      while ((nl = pending.indexOf(0x0a)) >= 0) {
-        const bytes = pending.subarray(0, nl + 1)
-        pending = pending.subarray(nl + 1)
-        const m = parse(bytes.toString('utf8'))
-        if (swallowing) {
-          if (m && m.id === initId && m.method === undefined) swallowing = false
-          continue
-        }
-        if (m && m.method === undefined && m.id !== undefined) unanswered.delete(key(m.id))
-        output.write(bytes)
-      }
-    })
+    // An overlong app line drops the connection, as a lock does: what the app owed gets lockedReply.
+    s.on(
+      'data',
+      lineSplitter(
+        (bytes) => {
+          const m = parse(bytes.toString('utf8'))
+          if (swallowing) {
+            if (m && m.id === initId && m.method === undefined) swallowing = false
+            return
+          }
+          if (m && m.method === undefined && m.id !== undefined) unanswered.delete(key(m.id))
+          output.write(bytes)
+        },
+        () => s.destroy(),
+      ),
+    )
     const dropped = () => {
       if (socket !== s) return
       socket = null
@@ -113,22 +149,27 @@ export function runProxy(opts: { input: Readable; output: Writable; connect: () 
   }
 
   return new Promise((resolve) => {
-    let buffered: Buffer = Buffer.alloc(0)
-    input.on('data', (chunk: Buffer) => {
-      buffered = Buffer.concat([buffered, chunk])
-      let nl: number
-      while ((nl = buffered.indexOf(0x0a)) >= 0) {
-        const end = nl > 0 && buffered[nl - 1] === 0x0d ? nl - 1 : nl
-        const bytes = buffered.subarray(0, end)
-        buffered = buffered.subarray(nl + 1)
-        if (bytes.toString('utf8').trim()) queue = queue.then(() => handle(bytes))
-      }
-    })
-    input.on('end', () => {
+    const finish = () =>
       void queue.then(() => {
         socket?.end()
         resolve()
       })
-    })
+    const onData = lineSplitter(
+      (withNewline) => {
+        const nl = withNewline.length - 1
+        const end = nl > 0 && withNewline[nl - 1] === 0x0d ? nl - 1 : nl
+        const bytes = withNewline.subarray(0, end)
+        if (bytes.toString('utf8').trim()) queue = queue.then(() => handle(bytes))
+      },
+      // An overlong client line ends the session, as the app's transport closes its connection.
+      () => {
+        input.off('data', onData)
+        input.off('end', finish)
+        input.destroy()
+        finish()
+      },
+    )
+    input.on('data', onData)
+    input.on('end', finish)
   })
 }
