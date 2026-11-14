@@ -80,16 +80,27 @@ export interface SearchHit {
   snippet: string
 }
 
+/**
+ * Loro frees a decoded doc only once every container handle read from it is gone, and those handles go
+ * only in a finalizer task of their own: a search that never yields keeps every page it read (FX-33,
+ * about 100 kB a page, enough to exhaust Loro's heap for the whole process). Yielding a macrotask every
+ * this many pages lets them go; it matches the DocSource's page cache, so about two caches' worth wait.
+ */
+const PAGES_PER_TURN = 64
+const nextTurn = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 export function search(src: DocSource, query: string): Promise<SearchHit[]> {
   return audited(src, 'search', query, async () => {
     const needle = query.toLowerCase()
     const hits: SearchHit[] = []
+    let read = 0
     for (const ref of await src.notebooks()) {
       const pages: TreeItem[] = []
       const walk = (items: TreeItem[]) => items.forEach((i) => (i.kind === 'page' ? pages.push(i) : walk(i.children)))
       walk(ref.doc.items())
       for (const item of pages) {
         if (!item.pageId || !ref.doc.effectiveAccess(item.id)) continue
+        if (++read % PAGES_PER_TURN === 0) await nextTurn()
         for (const box of (await src.readPage(item.pageId)).boxes) {
           if (box.markdown === null) continue
           const at = box.markdown.toLowerCase().indexOf(needle)
