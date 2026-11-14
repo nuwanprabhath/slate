@@ -14,7 +14,11 @@ interface Cached<T> {
 /** What the source does with a doc it stops caching: a Loro doc's WebAssembly memory is reclaimed only by `free()`. */
 type Retire<T> = (doc: T) => void
 
-/** Page docs never leave this file (callers get the `AgentPage` projection), so a dropped one is freed at once. */
+/**
+ * Page docs never leave this file (callers get the `AgentPage` projection), so a dropped one is freed
+ * here. Loro reclaims its memory only once no container handle read from it (by `agentBoxes`) is alive,
+ * and those go in a finalizer task: a caller reading many pages must yield a turn now and then (FX-33).
+ */
 const freePage: Retire<PageDoc> = (page) => page.doc.free()
 
 /**

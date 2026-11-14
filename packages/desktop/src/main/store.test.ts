@@ -16,6 +16,27 @@ function tempDb(): string {
 }
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
 
+describe('compact frees the doc it decodes (FX-34)', () => {
+  it('frees it after writing the snapshot, and when a gap leaves the rows in place', () => {
+    const store = new DocStore(tempDb(), { compact: false })
+    const { doc, updates } = edits(3)
+    doc.free()
+    for (const u of updates) store.append('page:a', u)
+    store.append('page:gap', updates[1]!)
+    const free = vi.spyOn(LoroDoc.prototype, 'free')
+    try {
+      store.compact('page:a')
+      expect(free).toHaveBeenCalledTimes(1)
+      store.compact('page:gap')
+      expect(free).toHaveBeenCalledTimes(2)
+      expect(store.load('page:gap')).toHaveLength(1)
+    } finally {
+      free.mockRestore()
+      store.close()
+    }
+  })
+})
+
 function edits(n: number): { doc: LoroDoc; updates: Uint8Array[] } {
   const doc = new LoroDoc()
   const updates: Uint8Array[] = []

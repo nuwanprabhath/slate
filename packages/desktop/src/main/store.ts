@@ -382,16 +382,22 @@ export class DocStore {
       const parts = this.load(docId)
       if (parts.length === 0) return
       const { last } = this.prepare('SELECT MAX(id) AS last FROM updates WHERE doc_id = ?').get(docId) as { last: number | null }
+      // Loro's heap is reclaimed only by free(); no container handle is read here, so it goes at once.
       const doc = new LoroDoc()
-      const status = doc.importBatch(parts)
-      // A pending update depends on one that has not arrived (a gapped sync or an unfinished import).
-      // The snapshot would not contain it, so deleting the rows would destroy that edit for good:
-      // leave them and let the next append reschedule, by which time the gap may have been filled.
-      if (status.pending !== null && status.pending.size > 0) return
+      let snapshot: Uint8Array
+      try {
+        const status = doc.importBatch(parts)
+        // A pending update depends on one that has not arrived (a gapped sync or an unfinished import).
+        // The snapshot would not contain it, so deleting the rows would destroy that edit for good:
+        // leave them and let the next append reschedule, by which time the gap may have been filled.
+        if (status.pending !== null && status.pending.size > 0) return
+        snapshot = doc.export({ mode: 'snapshot' })
+      } finally {
+        doc.free()
+      }
       if (last !== null) this.compactedThrough.set(docId, last)
       // Only here: a compaction that bailed above left every row in place, so the count still holds.
       this.rowCounts.set(docId, 0)
-      const snapshot = doc.export({ mode: 'snapshot' })
       this.db
         .prepare('INSERT INTO snapshots (doc_id, data) VALUES (?, ?) ON CONFLICT(doc_id) DO UPDATE SET data = excluded.data')
         .run(docId, Buffer.from(snapshot))
