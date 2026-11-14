@@ -101,6 +101,13 @@ export interface NodeGitRunnerOptions {
   sshCommand?: string
 }
 
+/**
+ * Stderr kept per command. A remote chooses how much git forwards, so the string is bounded; a real
+ * git error (a few lines, even with a server's `remote:` banner) is well under 64 KiB, and the
+ * diagnosis is in the first part. What was cut is counted, as `redactString` counts it.
+ */
+export const MAX_STDERR_CHARS = 64 * 1024
+
 /** Runs git with arguments only (no shell), killing it after the timeout. */
 export function nodeGitRunner(gitPath = 'git', runnerOpts: NodeGitRunnerOptions = {}): GitRunner {
   const sshEnv: Record<string, string> = {}
@@ -120,6 +127,7 @@ export function nodeGitRunner(gitPath = 'git', runnerOpts: NodeGitRunnerOptions 
       })
       const out: Buffer[] = []
       let stderr = ''
+      let stderrDropped = 0
       let timedOut = false
       let quiet = false
       let aborted = false
@@ -153,7 +161,10 @@ export function nodeGitRunner(gitPath = 'git', runnerOpts: NodeGitRunnerOptions 
         spoke()
       })
       child.stderr.on('data', (b: Buffer) => {
-        stderr += b.toString()
+        const text = b.toString()
+        const room = Math.max(0, MAX_STDERR_CHARS - stderr.length)
+        stderr += text.slice(0, room)
+        stderrDropped += Math.max(0, text.length - room)
         spoke()
       })
       child.on('error', (err) => {
@@ -165,7 +176,7 @@ export function nodeGitRunner(gitPath = 'git', runnerOpts: NodeGitRunnerOptions 
         resolve({
           code: timedOut || aborted ? -1 : (code ?? -1),
           stdout: new Uint8Array(Buffer.concat(out)),
-          stderr,
+          stderr: stderrDropped > 0 ? `${stderr}…[+${String(stderrDropped)} chars]` : stderr,
           timedOut,
           quiet,
           aborted,

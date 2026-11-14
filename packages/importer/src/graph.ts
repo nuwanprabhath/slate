@@ -71,6 +71,20 @@ export class GraphError extends Error {
   }
 }
 
+/**
+ * A page file that parsed to no element at all (empty, truncated, only comments or text). Not an
+ * empty page: importing it as nothing would lose the notes without saying so.
+ */
+export class ImportPageError extends Error {
+  readonly page: string | undefined
+
+  constructor(page?: string) {
+    super(`Page ${page === undefined ? '(unnamed)' : `"${page}"`} could not be read: the file has no content element (damaged or truncated?)`)
+    this.name = 'ImportPageError'
+    this.page = page
+  }
+}
+
 /** A loop, not `/\/+$/`: the regex retries from every slash and is quadratic on a long run of them. */
 function withoutTrailingSlashes(url: string): string {
   let end = url.length

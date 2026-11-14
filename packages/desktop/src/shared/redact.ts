@@ -67,6 +67,9 @@ const looksLikeBase64 = (run: string): boolean => {
   return run.replace(/=+$/, '').length >= 43 ? classes >= 2 : classes === 3 || run.endsWith('=')
 }
 
+/** The suffix `redactString` appends when it cuts. */
+const TRUNCATED = /…\[\+(\d{1,15}) chars\]$/
+
 /** `/Users/someone/...` and `/home/someone/...`, whoever they are. */
 const HOME_LIKE = /(^|[\s"'(=])(\/(?:Users|home)\/[^/\s"')]+)/g
 
@@ -81,6 +84,11 @@ function escapeRe(value: string): string {
 
 /** Redacts one string: secrets first, then home directories, then length. */
 export function redactString(value: string, { home }: RedactOptions = {}): string {
+  // Text this function already cut ends in its own count; carry that count instead of letting the
+  // suffix count as kept text, which made a second pass report a smaller drop (FX-15).
+  const prior = TRUNCATED.exec(value)
+  const carried = prior ? Number(prior[1]) : 0
+  if (prior) value = value.slice(0, prior.index)
   const unscanned = Math.max(0, value.length - MAX_SCANNED)
   let out = unscanned > 0 ? value.slice(0, MAX_SCANNED) : value
   for (const { pattern, as } of SECRETS) out = out.replace(pattern, as)
@@ -88,7 +96,7 @@ export function redactString(value: string, { home }: RedactOptions = {}): strin
   if (home !== undefined && home !== '') out = out.replace(new RegExp(escapeRe(home), 'g'), '~')
   // Any other account's home directory too: a path from a synced device is still somebody's name.
   out = out.replace(HOME_LIKE, '$1~')
-  const dropped = Math.max(0, out.length - MAX_STRING) + unscanned
+  const dropped = Math.max(0, out.length - MAX_STRING) + unscanned + carried
   return dropped > 0 ? `${out.slice(0, MAX_STRING)}…[+${String(dropped)} chars]` : out
 }
 
