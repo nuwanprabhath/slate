@@ -5,7 +5,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { NotebookDoc, PageDoc, contentToJSON, writeContent, type Access, type PMJSON } from '@slate/core'
 import { createSlateMcpServer } from '../src/server'
 import { memorySource } from './memorySource'
-import { fcRuns } from '../../desktop/test/fuzz'
+import { fcRuns, fuzzTimeout } from '../../desktop/test/fuzz'
 
 /**
  * A private box must never reach an agent, whatever tool asks. Black box: the real server over an
@@ -285,7 +285,10 @@ describe('private boxes never reach an agent', () => {
       // A run builds a world and calls every tool: a thirtieth of the kit's count, so the nightly soak deepens it.
       fcRuns(30),
     )
-  }, 120_000)
+    // The run count scales with SLATE_FUZZ_RUNS, so the deadline has to as well: a constant 120 s was
+    // inside the nightly soak's cost by a hair and timed out at 200,000 runs (FX-49). The allowance per
+    // generated run matches privateCanaryStateful's, which runs the same kind of world three times as often.
+  }, fuzzTimeout(10_000))
 
   it('is not vacuous: granted public content reaches the agent, private boxes become the placeholder, canary searches find nothing', async () => {
     const box = (isPrivate: boolean, word: string): BoxSpec => ({ private: isPrivate, places: [...PLACES], word, x: 0, y: isPrivate ? 300 : 0 })
