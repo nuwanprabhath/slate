@@ -121,6 +121,7 @@ async function build(scenario: NotebookSpec[]): Promise<World> {
       })
     })
     mem.docs.set(`notebook:${notebookId}`, [nb.doc.export({ mode: 'snapshot' })])
+    nb.doc.free()
     for (const { pageId, spec } of pages) {
       const doc = new PageDoc()
       const pub: string[] = []
@@ -147,6 +148,7 @@ async function build(scenario: NotebookSpec[]): Promise<World> {
         privates.push({ pageId, boxId: id, x: state.x, y: state.y, width: state.width, content: contentToJSON(doc.contentMap(id)!) })
       }
       mem.docs.set(`page:${pageId}`, [doc.doc.export({ mode: 'snapshot' })])
+      doc.doc.free()
     }
   })
   const fragments = canaries.flatMap((c) => [c.slice(0, -1), c.slice(1), c.slice(2, -2), 'CNRY', c.split('_')[1]!, c.split('_')[2]!])
@@ -245,28 +247,39 @@ describe('private boxes never reach an agent', () => {
     await fc.assert(
       fc.asyncProperty(scenarioArb, calls, async (scenario, perTool) => {
         const world = await build(scenario)
-        const registered = (await world.client.listTools()).tools.map((t) => t.name)
-        expect(registered.sort()).toEqual(tools.map((t) => t.name).sort())
-        const pool = poolOf(world)
-        const called = new Set<string>()
-        for (const [i, tool] of tools.entries()) {
-          for (const template of perTool[i]!) {
-            const args = resolve(template, pool) as Record<string, unknown>
-            const result = await world.client.callTool({ name: tool.name, arguments: args }).catch((e: unknown) => ({ protocolError: String(e) }))
-            called.add(tool.name)
-            expect(leaks(result, world.canaries), `${tool.name}(${JSON.stringify(args)}) leaked`).toEqual([])
+        const decoded: PageDoc[] = []
+        try {
+          const registered = (await world.client.listTools()).tools.map((t) => t.name)
+          expect(registered.sort()).toEqual(tools.map((t) => t.name).sort())
+          const pool = poolOf(world)
+          const called = new Set<string>()
+          for (const [i, tool] of tools.entries()) {
+            for (const template of perTool[i]!) {
+              const args = resolve(template, pool) as Record<string, unknown>
+              const result = await world.client.callTool({ name: tool.name, arguments: args }).catch((e: unknown) => ({ protocolError: String(e) }))
+              called.add(tool.name)
+              expect(leaks(result, world.canaries), `${tool.name}(${JSON.stringify(args)}) leaked`).toEqual([])
+            }
           }
-        }
-        // Every tool the server registers was called.
-        expect([...called].sort()).toEqual(registered)
-        expect(leaks(world.audits, world.canaries), 'audit rows leaked').toEqual([])
-        // No write touched a private box.
-        for (const box of world.privates) {
-          const page = PageDoc.fromUpdates(world.docs.get(`page:${box.pageId}`)!)
-          const state = page.getBox(box.boxId)
-          expect(state, `private box ${box.boxId} is gone`).toBeDefined()
-          expect(state).toMatchObject({ private: true, x: box.x, y: box.y, width: box.width })
-          expect(contentToJSON(page.contentMap(box.boxId)!)).toEqual(box.content)
+          // Every tool the server registers was called.
+          expect([...called].sort()).toEqual(registered)
+          expect(leaks(world.audits, world.canaries), 'audit rows leaked').toEqual([])
+          // No write touched a private box.
+          for (const box of world.privates) {
+            const page = PageDoc.fromUpdates(world.docs.get(`page:${box.pageId}`)!)
+            decoded.push(page)
+            const state = page.getBox(box.boxId)
+            expect(state, `private box ${box.boxId} is gone`).toBeDefined()
+            expect(state).toMatchObject({ private: true, x: box.x, y: box.y, width: box.width })
+            expect(contentToJSON(page.contentMap(box.boxId)!)).toEqual(box.content)
+          }
+        } finally {
+          await world.client.close()
+          for (const d of decoded.splice(0)) d.doc.free()
+          // free() releases nothing while a container handle read from the doc is alive, and Loro frees those
+          // handles only from its FinalizationRegistry, in a task of its own. A run that awaits only settled
+          // promises never turns the event loop, so without this turn no document is ever released (FX-39).
+          await new Promise((resolve) => setImmediate(resolve))
         }
       }),
       // A run builds a world and calls every tool: a thirtieth of the kit's count, so the nightly soak deepens it.
