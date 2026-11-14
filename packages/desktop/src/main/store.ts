@@ -467,7 +467,14 @@ export class DocStore {
     const params: string[] = []
     if (phrase !== null) {
       where.push('search MATCH ?')
-      params.push(`text:"${phrase.replace(/"/g, '""')}"`)
+      // A NUL ends the bound string in SQLite's C layer and cuts the phrase short; no control character can match the index.
+      const clean = Array.from(phrase)
+        .filter((ch) => {
+          const c = ch.charCodeAt(0)
+          return c >= 0x20 || c === 0x09 || c === 0x0a || c === 0x0d
+        })
+        .join('')
+      params.push(`text:"${clean.replace(/"/g, '""')}"`)
     }
     if (scope) {
       where.push(`${scope.column} = ?`)

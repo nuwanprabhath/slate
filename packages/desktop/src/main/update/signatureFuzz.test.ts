@@ -177,9 +177,7 @@ describe('update feed parsers fuzz (F1c)', () => {
     forAll('pickInstaller', (rng) => {
       const files: UpdateFile[] = Array.from({ length: rng.int(0, 6) }, () => ({ url: rng.bool() ? rng.pick(urls) : rng.string(30), sha512: 'x', size: rng.int(0, 9) }))
       const kind = rng.pick(['dmg', 'deb', 'rpm', '', 'zip', 'appimage']) as InstallKind
-      // Open finding F1C-1: pickInstaller builds a RegExp from `arch` unescaped, so a regex metacharacter throws
-      // SyntaxError. Only process.arch reaches it today, so the generator keeps arch to word characters.
-      const arch = rng.pick(['arm64', 'x64', 'ia32', '', 'aarch64', 'x86_64', 'amd64', 'riscv'])
+      const arch = rng.bool() ? rng.pick(['arm64', 'x64', 'ia32', '', 'aarch64', 'x86_64', 'amd64', 'riscv', 'h)]픰', '(', '[', '.*', '\\']) : rng.string(8)
       const got = pickInstaller(files, kind, arch)
       if (got !== null) expect(files).toContain(got)
       else expect(got).toBeNull()

@@ -30,8 +30,8 @@ const textChar = fc.oneof(
   fc.constantFrom('N', 'E', 'A', 'R'),
 )
 const text = fc.array(textChar, { maxLength: 24 }).map((cs) => cs.join(''))
-// U+0000 is excluded from phrases: a phrase containing it makes `searchRows` throw "unterminated string"
-// (open finding F3E-1; the IPC accepts such a query).
+// Control characters a phrase may carry (the IPC accepts them); `searchRows` strips them before matching.
+const controlChar = fc.constantFrom('\u0000', '\u0001', '\u0008', '\u000b', '\u001f')
 const phraseChar = fc.oneof(textChar, fc.constantFrom('"', '*', ':', '^', '-'))
 const phrase = fc.array(phraseChar, { minLength: 3, maxLength: 10 }).map((cs) => cs.join(''))
 // Phrases built from words the SQL grammar treats specially, plus text drawn from the rows' own alphabet.
@@ -62,6 +62,32 @@ describe('T-F3E: search index fuzz', () => {
       }),
       { ...fcParams, ...fcRuns(20, 50) },
     )
+  })
+
+  it('T-FX21: a phrase with control characters matches the rows containing it with them removed, and never throws', () => {
+    const stripped = (s: string) => Array.from(s).filter((c) => !'\u0000\u0001\u0008\u000b\u001f'.includes(c)).join('')
+    fc.assert(
+      fc.property(fc.array(text, { maxLength: 8 }), fc.array(fc.oneof(textChar, controlChar), { minLength: 3, maxLength: 10 }).map((cs) => cs.join('')), (texts, p) => {
+        const clean = stripped(p)
+        if (clean.length < 3) return
+        const store = new DocStore(tempDb())
+        try {
+          store.replaceSearchPage({ pageId: 'p1', sectionId: 's1', notebookId: 'n1' }, texts.map((t, i) => ({ boxId: `b${i}`, ord: i, text: t })))
+          const got = store.searchRows(null, p).map((r) => r.text)
+          expect(got.sort()).toEqual(texts.filter((t) => t.toLowerCase().includes(clean.toLowerCase())).sort())
+        } finally {
+          store.close()
+        }
+      }),
+      { ...fcParams, ...fcRuns(20, 50) },
+    )
+    const store = new DocStore(tempDb())
+    try {
+      store.replaceSearchPage({ pageId: 'p1', sectionId: 's1', notebookId: 'n1' }, [{ boxId: 'b0', ord: 0, text: 'xabcy' }])
+      expect(store.searchRows(null, 'a\u0000bc').map((r) => r.text)).toEqual(['xabcy'])
+    } finally {
+      store.close()
+    }
   })
 
   // --- Property 2/3/4 world: one notebook, two sections, pages edited, removed and moved. ---
@@ -206,7 +232,13 @@ describe('T-F3E: search index fuzz', () => {
   // Regex patterns come only from the linear grammar: FX-1 owns the rest.
   const linearPatterns = ['a+', '[a-c]{2}', 'ab|cd', '\\w+', '(', '(?', '\\', '日.', '^abc$', 'x{2,3}', '[', 'a*?']
   const anyQuery = fc.record({
-    text: fc.oneof(text, phrase, fc.constantFrom(...linearPatterns), fc.string({ maxLength: 8 })),
+    text: fc.oneof(
+      text,
+      phrase,
+      fc.constantFrom(...linearPatterns),
+      fc.string({ maxLength: 8 }),
+      fc.array(fc.oneof(textChar, controlChar), { minLength: 3, maxLength: 8 }).map((cs) => cs.join('')),
+    ),
     matchCase: fc.boolean(),
     wholeWord: fc.boolean(),
     regex: fc.boolean(),
@@ -225,7 +257,6 @@ describe('T-F3E: search index fuzz', () => {
     fc.assert(
       fc.property(mess, (v) => {
         if (!isSearchQuery(v)) return
-        if (v.text.includes('\u0000')) return // F3E-1
         accepted++
         // A regex query is run only when its text is from the linear grammar (FX-1 owns the rest).
         const q = v.regex && !linearPatterns.includes(v.text) ? { ...v, regex: false } : v

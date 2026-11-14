@@ -51,6 +51,11 @@ describe('git remote, branch and repo-name gates (F4b property 4)', () => {
     )
   })
 
+  it('T-FX17: git refuses @, a dot-leading component and a .lock-ending component; ordinary names pass', () => {
+    for (const bad of ['@', 'a/.b', 'a.lock/b', 'a/b.lock', '.a/b']) expect(isAllowedBranch(bad)).toBe(false)
+    for (const ok of ['main', 'feature/thing', 'release-1.2', 'user/fix.2', 'a@b']) expect(isAllowedBranch(ok)).toBe(true)
+  })
+
   it("T-F4B-03: an accepted branch or repo name never starts with - and breaks none of git's ref rules", () => {
     fc.assert(
       fc.property(candidate, (value) => {
@@ -60,9 +65,8 @@ describe('git remote, branch and repo-name gates (F4b property 4)', () => {
           expect(value.includes('..') || value.includes('//') || value.includes('@{')).toBe(false)
           expect(value.startsWith('/') || value.endsWith('/') || value.endsWith('.')).toBe(false)
           expect(value.startsWith('.') || value.endsWith('.lock')).toBe(false)
-          // Open finding F4B-1 (report): git also refuses `@` alone and a `.`-leading or `.lock`-ending component
-          // after a `/` (`a/.b`, `a.lock/b`), which isAllowedBranch accepts. Those classes are not asserted until
-          // the FX branch fixes it; none of them starts with `-`, so none becomes an option.
+          expect(value).not.toBe('@')
+          for (const part of value.split('/')) expect(part.startsWith('.') || part.endsWith('.lock')).toBe(false)
         }
         if (isAllowedRepoName(value)) {
           expect(value.startsWith('-')).toBe(false)
