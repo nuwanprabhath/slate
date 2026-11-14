@@ -399,6 +399,11 @@ describe('SyncService over git', { timeout: 60_000 }, () => {
   })
 
   describe('the notebook to open after the first sync', () => {
+    // Notebook ids are the grammar `newId` makes, because the engine now refuses any other id from a
+    // remote (FX-10). A short label here used to reach appendRemote and would be refused today.
+    const WORK = '11111111-1111-4111-8111-111111111111'
+    const EMPTY = '22222222-2222-4222-8222-222222222222'
+    const MINE = '33333333-3333-4333-8333-333333333333'
     function writeNotebook(store: DocStore, id: string, text?: string): void {
       const nb = NotebookDoc.create(id)
       const { pageId } = nb.addPage(nb.addSection('S'))
@@ -411,39 +416,39 @@ describe('SyncService over git', { timeout: 60_000 }, () => {
 
     async function other(): Promise<void> {
       const a = await device('A')
-      writeNotebook(a.store, 'work', 'notes')
-      a.service.recordOpen('work')
+      writeNotebook(a.store, WORK, 'notes')
+      a.service.recordOpen(WORK)
       await a.service.now()
     }
 
     it('opens the notebook another device has open instead of an empty default, on the first pull only', async () => {
       await other()
       const b = await device('B', { enabled: false })
-      writeNotebook(b.store, 'default')
-      b.service.recordOpen('default')
+      writeNotebook(b.store, EMPTY)
+      b.service.recordOpen(EMPTY)
       await b.service.setEnabled(true)
-      expect(b.opened).toEqual(['work'])
+      expect(b.opened).toEqual([WORK])
       await b.service.now()
-      expect(b.opened).toEqual(['work'])
+      expect(b.opened).toEqual([WORK])
     })
 
     it('keeps a notebook that has content', async () => {
       await other()
       const b = await device('B', { enabled: false })
-      writeNotebook(b.store, 'mine', 'my own')
-      b.service.recordOpen('mine')
+      writeNotebook(b.store, MINE, 'my own')
+      b.service.recordOpen(MINE)
       await b.service.setEnabled(true)
       expect(b.opened).toEqual([])
     })
 
     it('records openings in the synced notebook doc, once per notebook in a while', async () => {
       const a = await device('A', { enabled: false })
-      writeNotebook(a.store, 'work')
-      a.service.recordOpen('work')
-      const updates = a.store.load('notebook:work').length
-      a.service.recordOpen('work')
-      expect(a.store.load('notebook:work')).toHaveLength(updates)
-      expect(Object.keys(NotebookDoc.fromUpdates(a.store.load('notebook:work')).openOn())).toEqual([a.service.deviceId])
+      writeNotebook(a.store, WORK)
+      a.service.recordOpen(WORK)
+      const updates = a.store.load(`notebook:${WORK}`).length
+      a.service.recordOpen(WORK)
+      expect(a.store.load(`notebook:${WORK}`)).toHaveLength(updates)
+      expect(Object.keys(NotebookDoc.fromUpdates(a.store.load(`notebook:${WORK}`)).openOn())).toEqual([a.service.deviceId])
     })
   })
 })
