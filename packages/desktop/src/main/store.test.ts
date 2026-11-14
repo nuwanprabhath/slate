@@ -538,7 +538,7 @@ describe('DocStore change tracking (B3)', () => {
     old.append('page:a', new Uint8Array([1]))
     old.close()
     const db = openDatabase(file, null)
-    db.exec('DROP TABLE doc_heads')
+    db.exec('DROP TABLE doc_heads; DROP TABLE seq_counter')
     db.pragma('user_version = 1')
     db.close()
     const store = new DocStore(file)
