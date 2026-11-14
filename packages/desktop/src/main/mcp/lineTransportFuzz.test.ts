@@ -107,19 +107,19 @@ describe('T-F4C: LineTransport under fuzzed byte streams', () => {
   it(
     'T-F4C-02: lines within MAX_LINE_BYTES never close the stream; a longer unterminated run always does, and nothing is delivered after it',
     async () => {
-      // Line lengths around the limit, plus short messages between them. The whole stream stays under the
-      // SDK ReadBuffer's 10 MiB cap: past it `append` throws inside the data handler (finding F4C-1 in
-      // the task report, the same defect as T-F4C-05), so this generator keeps to one long line.
+      // Line lengths around the limit, several in a row with short messages between them, so streams and
+      // single chunks run past the SDK ReadBuffer's 10 MiB cap (FX-22).
       const longLen = fc.constantFrom(MAX_LINE_BYTES - 1, MAX_LINE_BYTES, MAX_LINE_BYTES - 4096, 1)
+      const segment = fc.tuple(fc.array(message, { maxLength: 2 }), longLen)
       await fc.assert(
-        fc.asyncProperty(fc.array(message, { maxLength: 3 }), longLen, fc.array(message, { maxLength: 3 }), cuts, async (before, len, after, at) => {
-          const count = before.length + after.length
-          const bytes = Buffer.concat([asLines(before), Buffer.alloc(len, 0x78), Buffer.from('\n'), asLines(after)])
+        fc.asyncProperty(fc.array(segment, { minLength: 1, maxLength: 3 }), fc.array(message, { maxLength: 3 }), cuts, async (segments, after, at) => {
+          const count = segments.reduce((n, [ms]) => n + ms.length, 0) + after.length
+          const bytes = Buffer.concat([...segments.flatMap(([ms, len]) => [asLines(ms), Buffer.alloc(len, 0x78), Buffer.from('\n')]), asLines(after)])
           const s = await open()
           for (const c of cutAt(bytes, at)) s.feed(c)
           expect(s.isClosed()).toBe(false)
           expect(s.messages.length).toBe(count)
-          expect(s.errors.length).toBe(1)
+          expect(s.errors.length).toBe(segments.length)
         }),
         fcRuns(200, 10),
       )
@@ -135,10 +135,9 @@ describe('T-F4C: LineTransport under fuzzed byte streams', () => {
           await flush()
           expect(s.isClosed()).toBe(true)
           expect(s.errors.map((e) => e.message)).toContain('message line too long')
-          // Complete lines in the same chunk as the overlong tail are dropped with it (F4C-2 in the task
-          // report), so what arrives is a prefix of the lines before the tail, and never anything after it.
-          expect(s.messages.length).toBeLessThanOrEqual(count)
-          expect(s.messages.map((m) => JSON.stringify(m))).toEqual(before.slice(0, s.messages.length).map((m) => JSON.stringify(m)))
+          // Every complete line arrives whatever the chunking (FX-23), and nothing after the overlong run.
+          expect(s.messages.length).toBe(count)
+          expect(s.messages.map((m) => JSON.stringify(m))).toEqual(before.map((m) => JSON.stringify(m)))
           expect(s.afterClose()).toBe(0)
         }),
         fcRuns(200, 10),
@@ -146,6 +145,31 @@ describe('T-F4C: LineTransport under fuzzed byte streams', () => {
     },
     fuzzTimeout(20_000),
   )
+
+  it('FX-22: a stream past the SDK ReadBuffer cap closes the connection through onerror, never throws out of the data handler', async () => {
+    const s = await open()
+    s.feed(Buffer.alloc(MAX_LINE_BYTES, 0x78))
+    expect(() => s.feed(Buffer.concat([Buffer.alloc(3 * 1024 * 1024, 0x78), Buffer.from('\n')]))).not.toThrow()
+    expect(s.isClosed()).toBe(true)
+    expect(s.errors.map((e) => e.message)).toContain('message line too long')
+
+    // Complete lines within the limit, together past 10 MiB in one chunk: each is read, none closes.
+    const many = await open()
+    const big = Buffer.concat([Buffer.alloc(6 * 1024 * 1024, 0x78), Buffer.from('\n')])
+    expect(() => many.feed(Buffer.concat([big, asLines([{ jsonrpc: '2.0', method: 'ping' }]), big]))).not.toThrow()
+    expect(many.isClosed()).toBe(false)
+    expect(many.messages.length).toBe(1)
+    expect(many.errors.length).toBe(2)
+  }, fuzzTimeout())
+
+  it('FX-23: complete lines in the same chunk as an overlong run are delivered before the run is refused', async () => {
+    const s = await open()
+    const first: JSONRPCMessage = { jsonrpc: '2.0', id: 1, method: 'tools/call' }
+    s.feed(Buffer.concat([asLines([first]), Buffer.alloc(MAX_LINE_BYTES + 1, 0x78)]))
+    expect(s.messages).toEqual([first])
+    expect(s.isClosed()).toBe(true)
+    expect(s.errors.map((e) => e.message)).toEqual(['message line too long'])
+  }, fuzzTimeout())
 
   it(
     'T-F4C-03: each garbage line gives exactly one onerror and the valid lines after it still arrive',

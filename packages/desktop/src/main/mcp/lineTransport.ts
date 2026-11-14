@@ -34,16 +34,39 @@ export class LineTransport implements Transport {
     this.input.on('end', this.onEnd)
   }
 
+  // One line at a time reaches the SDK's ReadBuffer, each checked before it is appended, so Slate's
+  // limit decides and the buffer's own 10 MiB cap (which throws) is never reached; the complete lines
+  // before an overlong run are delivered whatever the chunking.
   private readonly onData = (chunk: Buffer) => {
-    const newline = chunk.lastIndexOf(0x0a)
-    this.unterminated = newline < 0 ? this.unterminated + chunk.length : chunk.length - newline - 1
-    if (this.unterminated > MAX_LINE_BYTES) {
-      this.onerror?.(new Error('message line too long'))
-      this.input.destroy()
-      void this.close()
-      return
+    let start = 0
+    while (start < chunk.length && !this.closed) {
+      const newline = chunk.indexOf(0x0a, start)
+      const end = newline < 0 ? chunk.length : newline
+      const length = this.unterminated + end - start
+      if (length > MAX_LINE_BYTES) return this.fail(new Error('message line too long'))
+      const next = newline < 0 ? chunk.length : newline + 1
+      try {
+        this.buffer.append(chunk.subarray(start, next))
+      } catch (e) {
+        return this.fail(e as Error)
+      }
+      start = next
+      if (newline < 0) {
+        this.unterminated = length
+        return
+      }
+      this.unterminated = 0
+      this.readLines()
     }
-    this.buffer.append(chunk)
+  }
+
+  private fail(error: Error) {
+    this.onerror?.(error)
+    this.input.destroy()
+    void this.close()
+  }
+
+  private readLines() {
     for (;;) {
       let message: JSONRPCMessage | null
       try {
