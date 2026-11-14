@@ -1,4 +1,5 @@
 export * from './ids'
+export * from './docId'
 export * from './layout'
 export * from './plaintext'
 export * from './page'

@@ -1,5 +1,5 @@
 import { LoroDoc, VersionVector } from 'loro-crdt'
-import { contentToJSON, newId, PageDoc, type BoxState, type PMJSON } from '@slate/core'
+import { contentToJSON, isDocId, newId, PageDoc, type BoxState, type PMJSON } from '@slate/core'
 import { boxesTouched, boxMarkdown } from './conflicts'
 import { chunkPath, parseRemotePath, snapshotPath } from './paths'
 import type { LocalStore, RemoteDrive, SyncReport, SyncStatus } from './types'
@@ -358,7 +358,9 @@ export class SyncEngine {
         continue
       }
       if (item.deleted || (await this.local.seen(item.id, item.eTag))) continue
-      if (item.size !== undefined && item.size > MAX_FILE_BYTES) {
+      // A remote names folders, so it could name a document Slate never made; that file is refused unfetched
+      // and counted in the notice, and the rest of the listing still syncs.
+      if (!isDocId(parsed.docId) || (item.size !== undefined && item.size > MAX_FILE_BYTES)) {
         await this.local.markSeen(item.id, item.eTag)
         unverified++
         continue
