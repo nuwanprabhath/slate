@@ -11,6 +11,7 @@ import { Plugin, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { currentTheme, readableColor, readableHighlight } from './colorContrast'
 import { MoveBlocks } from './moveBlocks'
+import { isSafeImageSrc } from './clipboard'
 
 const lowlight = createLowlight(common)
 
@@ -540,6 +541,15 @@ const SizedImage = Image.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      // The same scheme allowlist as paste (isSafeImageSrc): a stored or synced page cannot draw a src paste would refuse.
+      src: {
+        default: null,
+        parseHTML: (el) => {
+          const src = el.getAttribute('src')
+          return src !== null && isSafeImageSrc(src) ? src : null
+        },
+        renderHTML: (attrs) => (typeof attrs.src === 'string' && isSafeImageSrc(attrs.src) ? { src: attrs.src } : {}),
+      },
       width: {
         default: null,
         parseHTML: (el) => {
