@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import { compileQuery, type FindOptions } from '../src/find'
-import { fcRuns } from '../../desktop/test/fuzz'
+import { fcRuns, fuzzTimeout } from '../../desktop/test/fuzz'
 import { regexDeadline } from '../../desktop/test/fuzzDeadline'
 
 // Finding M1: a person's pattern runs over stored text on the renderer thread (in-page find) and on
@@ -66,5 +66,7 @@ describe('compileQuery refuses patterns that do not finish (M1)', () => {
       }),
       fcRuns(2, 200),
     )
-  }, 600_000)
+    // The run count scales with SLATE_FUZZ_RUNS, so the deadline does too (FX-49). A constant was the
+    // defect that timed the canary property out; this file is the only other one that had one.
+  }, fuzzTimeout())
 })
