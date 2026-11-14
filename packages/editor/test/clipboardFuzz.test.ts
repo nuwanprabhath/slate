@@ -2,10 +2,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import { DOMParser as PMDOMParser, DOMSerializer } from '@tiptap/pm/model'
-import { cleanPastedHtml, storeDataImages } from '../src/clipboard'
+import { cleanPastedHtml, IMAGE_SCHEMES, isSafeImageSrc, storeDataImages } from '../src/clipboard'
 import { schema } from '../src/extensions'
 import { fcParams, fcRuns, fuzzTimeout, relativeCost } from '../../desktop/test/fuzz'
-import { hostileHtml, unsafeMarkup } from '../../desktop/test/fuzzHtml'
+import { LINK_SCHEMES, hostileHtml, unsafeMarkup } from '../../desktop/test/fuzzHtml'
 import { replayCorpus } from '../../desktop/test/fuzzCorpus'
 
 // T-F3B: the default paste path. cleanPastedHtml's own promise (what it keeps), then the whole path through the
@@ -13,9 +13,8 @@ import { replayCorpus } from '../../desktop/test/fuzzCorpus'
 
 const DROPPED = ['script', 'style', 'meta', 'link', 'title', 'font', 'span']
 const KEEP_PASTE_ATTRS = new Set(['href', 'src', 'alt', 'start', 'colspan', 'rowspan'])
-// Image src may be the blob store's address; links are http, https and mailto (TipTap's Link refuses the rest).
-// The real scheme the blob store serves note images on (BLOB_SCHEME, src/main/blobs.ts).
-const SCHEMES = ['http', 'https', 'mailto', 'slate-blob']
+// Links are held to the kit's LINK_SCHEMES and pictures to the product's IMAGE_SCHEMES; neither list is restated here.
+const unsafe = (out: ParentNode): string[] => unsafeMarkup(out, LINK_SCHEMES, IMAGE_SCHEMES)
 
 // happy-dom reports every parsed <iframe> it refuses to load on the original console, which vitest hands it
 // before a test can spy on it; thousands of hostile inputs make over a megabyte, which overflows the Stop
@@ -72,7 +71,7 @@ describe('T-F3B clipboard corpus', () => {
     const cleaned = cleanPastedHtml(text(bytes))
     expect(cleanViolations(cleaned)).toEqual([])
     expect(cleanPastedHtml(cleaned)).toBe(cleaned)
-    expect(unsafeMarkup(throughSchema(text(bytes)), SCHEMES)).toEqual([])
+    expect(unsafe(throughSchema(text(bytes)))).toEqual([])
   })
 })
 
@@ -108,7 +107,7 @@ describe('T-F3B cleanPastedHtml', () => {
   it('T-F3B-04: end to end through the schema, nothing that can run survives', () => {
     fc.assert(
       fc.property(pasteHtml, (html) => {
-        expect(unsafeMarkup(throughSchema(html), SCHEMES)).toEqual([])
+        expect(unsafe(throughSchema(html))).toEqual([])
       }),
       fcRuns(2, 300),
     )
@@ -150,13 +149,41 @@ describe('T-F3B storeDataImages', () => {
 })
 
 describe('T-F3B fixed findings', () => {
-  it('FX-11: a pasted image whose src is not http, https, data or slate-blob is dropped', () => {
+  it('FX-11: a pasted image whose src is not http, https or slate-blob is dropped', () => {
     for (const src of ['javascript:alert(1)', 'java&#9;script:alert(1)', 'file:///etc/passwd', 'vbscript:x', 'relative.png']) {
       expect(cleanPastedHtml(`<p>a</p><img src="${src}"><p>b</p>`)).toBe('<p>a</p><p>b</p>')
     }
-    for (const src of ['https://example.com/a.png', 'http://example.com/a.png', 'slate-blob://img/abc', 'data:image/png;base64,AAAA']) {
+    for (const src of ['https://example.com/a.png', 'http://example.com/a.png', 'slate-blob://img/abc']) {
       expect(cleanPastedHtml(`<img src="${src}">`)).toBe(`<img src="${src}">`)
     }
+  })
+
+  // storeDataImages runs before the cleaner (pasteHtml), so a data: src that reaches it was not stored: a spelling
+  // TipTap's `:not([src^="data:"])` does not see would otherwise land in the page with its bytes.
+  it('FX-41: a pasted image whose src is still a data: URL is dropped, in any spelling', () => {
+    for (const src of ['data:', 'data:image/png;base64,AAAA', 'DATA:image/png;base64,AAAA', ' data:image/svg+xml,x', 'da&#9;ta:image/png;base64,AAAA']) {
+      expect(cleanPastedHtml(`<p>a</p><img src="${src}"><p>b</p>`), src).toBe('<p>a</p><p>b</p>')
+      expect(throughSchema(`<p>a</p><img src="${src}"><p>b</p>`).querySelector('img'), src).toBeNull()
+    }
+  })
+
+  // The decision, pinned: the oracles follow IMAGE_SCHEMES, so a scheme added to it has to be added here on purpose.
+  it('FX-41: a picture may be http, https or slate-blob, and nothing a link or a script may be', () => {
+    expect([...IMAGE_SCHEMES].sort()).toEqual(['http', 'https', 'slate-blob'])
+    for (const scheme of ['data', 'mailto', 'javascript', 'vbscript', 'file', 'blob', 'app', 'slate-image']) {
+      expect(isSafeImageSrc(`${scheme}:x`), scheme).toBe(false)
+    }
+    const drawn = parse('<a href="mailto:a@example.com">x</a><img src="mailto:a@example.com"><img srcset="data:x 1x"><a href="slate-blob://img/abc">y</a>')
+    expect(unsafe(drawn.body)).toEqual(['<img src="mailto:">', '<img srcset="data:">', '<a href="slate-blob:">'])
+  })
+
+  it('FX-41: the Image node neither parses nor draws a data: src', () => {
+    const img = schema.nodes.image!.create({ src: 'DATA:image/png;base64,AAAA' })
+    const host = document.createElement('div')
+    host.append(DOMSerializer.fromSchema(schema).serializeNode(img, { document }))
+    expect(host.querySelector('img')?.hasAttribute('src')).toBe(false)
+    const parsed = PMDOMParser.fromSchema(schema).parse(parse('<img src=" data:image/png;base64,AAAA">').body)
+    expect(JSON.stringify(parsed.toJSON())).not.toMatch(/data:/i)
   })
 
   it('FX-11: the Image node neither parses nor draws an unsafe src', () => {
