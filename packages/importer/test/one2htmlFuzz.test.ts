@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import fc from 'fast-check'
 import { parseHTML } from 'linkedom'
 import { describe, expect, it } from 'vitest'
+import { ImportPageError } from '../src/graph'
 import { normalizeOne2HtmlPage, parseOne2HtmlSection } from '../src/one2html'
 import { fcParams, fcRuns, forAll } from '../../desktop/test/fuzz'
 import { mutateBytes } from '../../desktop/test/fuzzBytes'
@@ -16,23 +17,23 @@ const decoder = new TextDecoder()
 
 const PREFIX = 'rewritten/'
 
-/**
- * Open finding F3C-1: an input with no element at all (an empty file, only comments or CDATA) makes linkedom's
- * `document.documentElement` null, and `normalizeOne2HtmlPage` throws reading `document.body`. The generators skip
- * that class until the finding is fixed; the branch that fixes it removes this guard.
- */
-const hasRoot = (html: string): boolean => parseHTML(html).document.documentElement !== null
-
-/** Property 1: the oracle, applied to one input. */
+/** Property 1: the oracle, applied to one input: it converts, or throws the importer's own error. */
 function checkPage(input: string): void {
-  if (!hasRoot(input)) return
   const sources: string[] = []
-  const out = normalizeOne2HtmlPage(input, {
-    rewriteSrc: (src) => {
-      sources.push(src)
-      return PREFIX + src
-    },
-  })
+  let out: string
+  try {
+    out = normalizeOne2HtmlPage(input, {
+      page: 'fuzz',
+      rewriteSrc: (src) => {
+        sources.push(src)
+        return PREFIX + src
+      },
+    })
+  } catch (e) {
+    expect(e, 'only the importer\'s own error').toBeInstanceOf(ImportPageError)
+    expect(parseHTML(input).document.documentElement, 'and only for a page with no element').toBeNull()
+    return
+  }
   const expectedCalls = Array.from(parseHTML(input).document.querySelectorAll('img')).filter((img) => img.getAttribute('src')).length
   expect(sources, 'rewriteSrc is called once per image').toHaveLength(expectedCalls)
 

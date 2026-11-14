@@ -1,5 +1,6 @@
 import { parseHTML } from 'linkedom'
 import type { PMJSON } from '@slate/core'
+import { ImportPageError } from './graph'
 import type { MappedBox, MappedPage } from './types'
 
 type Mark = NonNullable<PMJSON['marks']>[number]
@@ -327,8 +328,10 @@ function blockOf(el: Element, inherited: Mark[], st: State): PMJSON[] {
   }
 }
 
-export function mapOneNotePage(html: string): MappedPage {
+export function mapOneNotePage(html: string, options: { page?: string } = {}): MappedPage {
   const { document } = parseHTML(html)
+  // Checked before `.body`: linkedom's getter throws a TypeError when nothing parsed to an element.
+  if (document.documentElement === null) throw new ImportPageError(options.page)
   const title = (document.querySelector('title')?.textContent ?? '').trim()
   const body = document.body ?? document.documentElement
   const bodyStyle = parseStyle(body.getAttribute('style') ?? '')

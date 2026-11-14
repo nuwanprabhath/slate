@@ -261,11 +261,11 @@ describe('T-F4E-04: redact(graph)', () => {
 
 describe('T-F4E-05: idempotence (candidate)', () => {
   it('redacting redacted text changes nothing', () => {
-    // Open finding F4E-1: a result that was truncated is not a fixed point (the second pass sees the
-    // suffix's length and rewrites the count), so inputs here stay short enough not to truncate.
+    // Long enough to truncate: the dropped count survives a second pass (FX-15).
     const any = fc.oneof(
-      fc.string({ unit: 'binary', maxLength: 200 }),
-      fc.array(placed(fc.oneof(...Object.values(SECRET_SHAPES))), { maxLength: 2 }).map((xs) => xs.map((x) => x.text).join(' ').slice(0, 200)),
+      fc.string({ unit: 'binary', maxLength: 1500 }),
+      fc.array(placed(fc.oneof(...Object.values(SECRET_SHAPES))), { maxLength: 2 }).map((xs) => xs.map((x) => x.text).join(' ')),
+      fc.tuple(fc.string({ minLength: 600, maxLength: 900 }), fc.constantFrom('ghp_abcdefghijklmnopqrstuvwxyz0123456789', '')).map(([a, b]) => a + b),
     )
     fc.assert(
       fc.property(any, (input) => {

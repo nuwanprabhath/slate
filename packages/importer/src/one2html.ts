@@ -1,4 +1,5 @@
 import { parseHTML } from 'linkedom'
+import { ImportPageError } from './graph'
 
 const escapeText = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -98,8 +99,10 @@ function widthOf(outline: Element): number | undefined {
  * positioned div per outline. The page title lives in `<title>`, so the converter's title block
  * (title, date, time) is dropped, as Graph's body does not carry it either.
  */
-export function normalizeOne2HtmlPage(html: string, options: { rewriteSrc?: (src: string) => string } = {}): string {
+export function normalizeOne2HtmlPage(html: string, options: { rewriteSrc?: (src: string) => string; page?: string } = {}): string {
   const { document } = parseHTML(html)
+  // linkedom's `document.body` getter throws a TypeError when nothing parsed to an element.
+  if (document.documentElement === null) throw new ImportPageError(options.page)
   // The image src is relative to the converted page; the caller knows where that is.
   for (const img of Array.from(document.querySelectorAll('img'))) {
     const src = img.getAttribute('src')
