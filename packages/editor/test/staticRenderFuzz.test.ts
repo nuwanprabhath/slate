@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
+import * as loro from 'loro-crdt'
 import { LoroDoc } from 'loro-crdt'
 import type { PMJSON } from '@slate/core'
 import { IMAGE_SCHEMES } from '../src/clipboard'
 import { writeContent } from '../src/content'
 import { schema } from '../src/extensions'
 import { renderStaticHtml } from '../src/staticRender'
-import { fcRuns, fuzzTimeout } from '../../desktop/test/fuzz'
+import { FUZZ_SEED, fcRuns, fuzzTimeout } from '../../desktop/test/fuzz'
 import { LINK_SCHEMES, hostileUrl, unsafeMarkup } from '../../desktop/test/fuzzHtml'
 
 // T-F3B: off-screen boxes are drawn from Loro without an editor, so a content map a hostile peer or an agent
@@ -53,29 +54,71 @@ const block: fc.Arbitrary<PMJSON> = fc.oneof(
 function render(content: PMJSON[]): HTMLElement | 'refused' | null {
   const doc = new LoroDoc()
   const root = doc.getMap('content')
-  writeContent(root, content, doc)
-  doc.commit()
-  let fragment: DocumentFragment | null
   try {
-    fragment = renderStaticHtml(schema, doc, root.id, document)
-  } catch (e) {
-    expect(e).toBeInstanceOf(Error)
-    return 'refused'
+    writeContent(root, content, doc)
+    doc.commit()
+    let fragment: DocumentFragment | null
+    try {
+      fragment = renderStaticHtml(schema, doc, root.id, document)
+    } catch (e) {
+      expect(e).toBeInstanceOf(Error)
+      return 'refused'
+    }
+    if (!fragment) return null
+    const host = document.createElement('div')
+    host.append(fragment)
+    return host
+  } finally {
+    root.free()
+    doc.free()
   }
-  if (!fragment) return null
-  const host = document.createElement('div')
-  host.append(fragment)
-  return host
 }
 
+/**
+ * A run of cases must not be one job. Loro frees a document only when every handle read from it is gone, and the
+ * handles a render reads (the content map, loro-prosemirror's children) go when Loro's FinalizationRegistry runs,
+ * in a task of its own; happy-dom's `querySelectorAll` keeps its result in a WeakRef, which holds the drawn tree
+ * until the job ends. A property that never yields therefore kept 32 kB of Loro heap and 40 kB of JavaScript heap
+ * a case, and V8 pays for every growth of a WebAssembly memory by its size: 0.7 ms a growth at 126 MB, 6.6 ms at
+ * 751 MB (FX-43). With a timer every 64 cases, Loro's heap is about 100 MB after 50,000 and a case costs the same
+ * at the end as at the start.
+ */
+const CASES_PER_JOB = 64
+let casesThisJob = 0
+async function yieldToFinalizers(): Promise<void> {
+  if (++casesThisJob < CASES_PER_JOB) return
+  casesThisJob = 0
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** One case, as both properties run it: what was drawn, and what in it could run. */
+async function judged(content: PMJSON[]): Promise<{ drawn: boolean; found: string[] }> {
+  const out = render(content)
+  const drawn = out instanceof HTMLElement
+  const found = drawn ? unsafe(out) : []
+  await yieldToFinalizers()
+  return { drawn, found }
+}
+
+const loroHeapBytes = (): number => (loro as unknown as { __wasm: { memory: { buffer: ArrayBuffer } } }).__wasm.memory.buffer.byteLength
+
+/**
+ * T-F3B-08's bound. A run that is one job grows Loro's heap by 32 kB a case (measured: 930 MB after 30,000). One
+ * that yields leaves it at whatever waits for the next garbage collection: 52 to 58 MB once 4000 cases have settled
+ * it, still creeping by 0.8 to 2.4 kB a case over the next 4000. 12 KiB is under half the first figure and five
+ * times the second, and neither is a time, so machine load moves neither.
+ */
+const SETTLE_CASES = 4000
+const MEASURED_CASES = 4000
+const KEPT_BYTES_PER_CASE = 12 * 1024
+
 describe('T-F3B renderStaticHtml', () => {
-  it('T-F3B-06: a hostile content map renders nothing that can run, or is refused', () => {
+  it('T-F3B-06: a hostile content map renders nothing that can run, or is refused', async () => {
     let rendered = 0
-    fc.assert(
-      fc.property(fc.array(block, { maxLength: 5 }), (content) => {
-        const out = render(content)
-        if (out instanceof HTMLElement) rendered++
-        const found = out instanceof HTMLElement ? unsafe(out) : []
+    await fc.assert(
+      fc.asyncProperty(fc.array(block, { maxLength: 5 }), async (content) => {
+        const { drawn, found } = await judged(content)
+        if (drawn) rendered++
         expect(found).toEqual([])
       }),
       fcRuns(4, 300),
@@ -84,15 +127,26 @@ describe('T-F3B renderStaticHtml', () => {
     expect(rendered).toBeGreaterThan(fcRuns(4, 300).numRuns / 4)
   }, fuzzTimeout(60_000))
 
-  it('T-F3B-07: a link mark with a hostile href is never drawn with that scheme', () => {
-    fc.assert(
-      fc.property(hostileUrl, (href) => {
-        const out = render([{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href } }] }] }])
-        expect(out instanceof HTMLElement ? unsafe(out) : []).toEqual([])
+  it('T-F3B-07: a link mark with a hostile href is never drawn with that scheme', async () => {
+    await fc.assert(
+      fc.asyncProperty(hostileUrl, async (href) => {
+        const { found } = await judged([{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href } }] }] }])
+        expect(found).toEqual([])
       }),
       fcRuns(4, 300),
     )
   }, fuzzTimeout(60_000))
+
+  it("T-F3B-08: a case gives back the document it drew, so Loro's WebAssembly heap stops growing (FX-43)", async () => {
+    const cases = fc.sample(fc.array(block, { maxLength: 5 }), { numRuns: 500, seed: FUZZ_SEED })
+    const run = async (n: number) => {
+      for (let i = 0; i < n; i++) await judged(cases[i % cases.length]!)
+    }
+    await run(SETTLE_CASES)
+    const settled = loroHeapBytes()
+    await run(MEASURED_CASES)
+    expect((loroHeapBytes() - settled) / MEASURED_CASES, 'bytes of Loro heap a case kept').toBeLessThan(KEPT_BYTES_PER_CASE)
+  }, 600_000)
 })
 
 describe('T-F3B fixed findings', () => {
