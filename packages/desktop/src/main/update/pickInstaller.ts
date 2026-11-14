@@ -16,8 +16,9 @@ const isSep = (c: string | undefined) => c === '-' || c === '_' || c === '.'
 
 /** `name` in `url` with a `-`, `_` or `.` on each side; plain string search, so no name can make it throw. */
 function hasBracketed(url: string, name: string): boolean {
-  for (let i = url.indexOf(name); i !== -1; i = url.indexOf(name, i + 1)) {
-    if (i > 0 && isSep(url[i - 1]) && isSep(url[i + name.length])) return true
+  // Bounded by position, not by indexOf's -1: indexOf('') never returns -1.
+  for (let i = 1; i + name.length < url.length; i++) {
+    if (isSep(url[i - 1]) && isSep(url[i + name.length]) && url.startsWith(name, i)) return true
   }
   return false
 }
