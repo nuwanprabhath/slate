@@ -16,7 +16,7 @@ import { callFault, DEVICES, OPS, plan, syncWithFaults, totals, verify, type Dev
 import { memoryDrive } from '../../../../sync/test/memoryDrive'
 import { addTextBox, appendText, editPage, type MemoryLocal } from '../../../../sync/test/memoryLocal'
 import { NOTEBOOK, PAGE } from '../../../../sync/test/simulation'
-import { fcRuns } from '../../../test/fuzz'
+import { fcRuns, fuzzTimeout } from '../../../test/fuzz'
 import type { BlobStore } from '../blobs'
 import { DocStore } from '../store'
 import { docStoreLocal } from './localStore'
@@ -248,7 +248,7 @@ describe('three devices over the real DocStore, with compaction and reopen', () 
     vi.useRealTimers()
   })
 
-  it('T-F2D-01: a fault-free scenario over DocStore converges with every edit kept', { timeout: 60_000 }, async () => {
+  it('T-F2D-01: a fault-free scenario over DocStore converges with every edit kept', { timeout: fuzzTimeout(30_000) }, async () => {
     const params = fcRuns(200, 5)
     await fc.assert(
       fc.asyncProperty(storeScenario(fc.constant([noFaults(), noFaults(), noFaults()])), (s) => runOverStore(s)),
@@ -257,8 +257,10 @@ describe('three devices over the real DocStore, with compaction and reopen', () 
     expect(counts.compactions).toBeGreaterThan(0)
   })
 
-  it('T-F2D-02: faults, compaction at any step and reopen lose no edit and converge', { timeout: 300_000 }, async () => {
+  it('T-F2D-02: faults, compaction at any step and reopen lose no edit and converge', { timeout: fuzzTimeout(30_000) }, async () => {
     const before = { ...counts, runs: totals.runs }
+    // The timeout: 200 runs (2000 FUZZ_RUNS) took 8-16 s with other suites running, about 4-8 s per 1000 FUZZ_RUNS;
+    // 30 s per 1000 keeps that margin at the soak's depth, which a fixed figure cannot (FX-31).
     // A gap meeting a compaction is rare (about 10 in 500 runs at the default seed), so this keeps 200 runs: with the
     // pending check in DocStore.compact deleted, the default seed fails at run 173.
     const params = fcRuns(10, 30)
