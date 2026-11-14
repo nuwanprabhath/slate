@@ -120,10 +120,13 @@ describe('the small checks', () => {
     for (const v of bad) expect(isThemeSpecShape(v)).toBe(false)
   })
 
-  it('FX-7: refusing a huge theme spec costs about what checking a small one does', () => {
+  it('FX-7: refusing a huge theme spec costs about what checking a real one does', () => {
     const huge: unknown[] = [new Uint8Array(16 * 1024 * 1024), { name: 'x'.repeat(50_000_000) }, { effects: new Array<number>(5_000_000).fill(0) }]
-    const cost = relativeCost(() => isThemeSpecShape({ name: 'Dark', material: 'solid' }))
-    for (let i = 0; i < 50; i++) for (const v of huge) cost.time(() => expect(isThemeSpecShape(v)).toBe(false))
+    // A whole spec as the unit, not a two-key object: a sub-microsecond unit makes the p99 ratio timer noise.
+    const cost = relativeCost(() => isThemeSpecShape(BASE_THEME))
+    const verdicts: boolean[] = []
+    for (let i = 0; i < 50; i++) for (const v of huge) cost.time(() => void verdicts.push(isThemeSpecShape(v)))
+    expect(verdicts.every((ok) => !ok)).toBe(true)
     cost.check()
   })
 
