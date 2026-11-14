@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
+import * as loro from 'loro-crdt'
 import { LoroDoc } from 'loro-crdt'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PageDoc } from '@slate/core'
@@ -275,4 +276,33 @@ describe('three devices over the real DocStore, with compaction and reopen', () 
     expect(counts.compactions - before.compactions, 'local compactions').toBeGreaterThan(0)
     expect(counts.reopens - before.reopens, 'stores reopened').toBeGreaterThan(0)
   })
+
+  it("T-F2D-03: a run gives back the Loro documents it decoded, so Loro's WebAssembly heap stops growing (FX-44)", async () => {
+    const ops: StoreOp[] = ['box', 'text', 'sync', 'box', 'compact', 'text', 'note', 'sync', 'move', 'reopen', 'sync', 'del', 'compact', 'sync']
+    const s: StoreScenario = {
+      plans: [noFaults(), noFaults(), noFaults()],
+      compactAfter: 4,
+      midSync: [[1, 3], [], [2]],
+      actions: ops.map((op, i) => ({ op, dev: i % 3, pick: i * 7 })),
+    }
+    const runs = async (n: number) => {
+      for (let i = 0; i < n; i++) await runOverStore(s)
+    }
+    await runs(SETTLE_RUNS)
+    const settled = loroHeapBytes()
+    await runs(MEASURED_RUNS)
+    expect((loroHeapBytes() - settled) / MEASURED_RUNS, 'bytes of Loro heap a run kept').toBeLessThan(KEPT_BYTES_PER_RUN)
+    // 200 runs take seconds; the deadline is a hundred times that, for a machine shared with other suites.
+  }, 600_000)
 })
+
+/** The size of Loro's WebAssembly heap. It never shrinks, so growth is memory no earlier run gave back for reuse. */
+const loroHeapBytes = (): number => (loro as unknown as { __wasm: { memory: { buffer: ArrayBuffer } } }).__wasm.memory.buffer.byteLength
+/**
+ * T-F2D-03's bound. A run keeps 0 bytes once 100 runs have settled the heap: nothing outlives it, and its syncs yield
+ * through real setImmediate turns, so Loro's finalizers run. A run that kept its documents would keep hundreds of kB,
+ * as searchFuzz's did (FX-44). Bytes, not a time, so machine load moves neither.
+ */
+const SETTLE_RUNS = 100
+const MEASURED_RUNS = 100
+const KEPT_BYTES_PER_RUN = 16 * 1024
