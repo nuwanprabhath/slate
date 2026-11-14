@@ -251,4 +251,24 @@ describe('DocStore model', () => {
     },
     fuzzTimeout(40_000),
   )
+
+  it('FX-6: an append after removing the doc that held the newest seq is listed to a cursor taken before the remove, also after a reopen', () => {
+    const file = tempDb()
+    const u = textEdits(3, 'x')
+    let store = new DocStore(file, { key: null })
+    try {
+      store.append(A, u[0]!)
+      store.append(B, u[1]!)
+      const cursor = store.headSeq()
+      store.remove(B)
+      expect(store.headSeq()).toBe(cursor)
+      store.close()
+      store = new DocStore(file, { key: null })
+      store.append(A, u[2]!)
+      expect(store.changedDocs(cursor).ids).toEqual([A])
+      expect(store.headSeq()).toBeGreaterThan(cursor)
+    } finally {
+      store.close()
+    }
+  })
 })
