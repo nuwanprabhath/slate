@@ -6,6 +6,46 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-11-14
+
+Eight findings the nightly soak reached once three harnesses stopped failing early. Two of them are
+things you could have met; the rest are tests, and they matter because each one was hiding the next.
+
+### Fixed
+
+- Pasting a table with a bold or italic row no longer loses that row's text. Emphasis on a row
+  wrapped the cells, and settling the table then carried the wrapper and its cells out of the table
+  together. The emphasis now goes into the cells, where it belongs. This arrived in 0.7.6 and
+  reaches ordinary pasted content -- hand-written tables and email HTML (FX-46).
+- A picture whose address is a `data:` URL is no longer kept by a paste or a drop, or drawn from a
+  page another device synced. Slate stores pasted pictures and keeps only their address, and an
+  address carrying the bytes themselves slipped past that on the paths that skip the store; such a
+  picture would have been carried in the page's history, and in every sync, for good. Embedded
+  pictures are still stored and shown exactly as before (FX-41).
+- A picture inside an HTML `<template>` is now stored or dropped like any other. A template's
+  content is held apart from the page, so it was never looked at, yet it was written back out
+  unchanged (FX-48).
+- A paste is now cleaned until reading it back changes nothing. Cleaning once could leave markup a
+  parser restructures -- a link inside a link, after a table pushed one out -- so what was checked
+  was not what the editor received (FX-47).
+
+### Internal
+
+- The nightly fuzz soak completes. Three harnesses had been failing early for reasons of their own,
+  and each was hiding the ones after it: a cleanup hook that could not delete tens of thousands of
+  directories in ten seconds (FX-40), a canary that never freed its documents (FX-39), and a
+  renderer that grew about four times slower as it ran (FX-43). The static render harness now
+  finishes 50,000 cases in 26 seconds instead of timing out after an hour.
+- Two causes behind that, both outside Loro: happy-dom keeps every document it parses until the
+  event loop next turns, and a garbage collection alone frees none of it (FX-42); and V8 charges for
+  each growth of a WebAssembly heap in proportion to its current size, which is why cost grew rather
+  than only memory (FX-43).
+- `SaveQueue.close()` now tells its caller when the queue has finished with the document. It still
+  writes an edit made just before closing, which is why it could touch the document after closing,
+  and nothing could wait for that (FX-45).
+- Three more harnesses free the documents they build (FX-44). One suspected of the same defect was
+  measured and found innocent, and left alone.
+
 ## [0.7.6] - 2026-11-14
 
 Twenty findings from the fuzzing layer added in 0.7.4, fixed. Most were found by harnesses rather
