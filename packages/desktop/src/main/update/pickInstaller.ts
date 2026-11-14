@@ -12,13 +12,23 @@ const ARCH_NAMES: Record<string, string[]> = {
   x64: ['x64', 'amd64', 'x86_64'],
 }
 
+const isSep = (c: string | undefined) => c === '-' || c === '_' || c === '.'
+
+/** `name` in `url` with a `-`, `_` or `.` on each side; plain string search, so no name can make it throw. */
+function hasBracketed(url: string, name: string): boolean {
+  for (let i = url.indexOf(name); i !== -1; i = url.indexOf(name, i + 1)) {
+    if (i > 0 && isSep(url[i - 1]) && isSep(url[i + name.length])) return true
+  }
+  return false
+}
+
 /** The installer the assisted path downloads: the dmg or .deb built for this machine's arch. */
 export function pickInstaller(files: UpdateFile[], kind: InstallKind, arch: string): UpdateFile | null {
   if (kind !== 'dmg' && kind !== 'deb') return null
   const ofKind = files.filter((f) => f.url.toLowerCase().endsWith(`.${kind}`))
   const mine = ARCH_NAMES[arch] ?? [arch]
   const others = Object.entries(ARCH_NAMES).flatMap(([a, names]) => (a === arch ? [] : names))
-  const has = (f: UpdateFile, names: string[]) => names.some((n) => new RegExp(`[-_.]${n}[-_.]`).test(f.url))
+  const has = (f: UpdateFile, names: string[]) => names.some((n) => hasBracketed(f.url, n))
   return ofKind.find((f) => has(f, mine)) ?? ofKind.find((f) => !has(f, others)) ?? null
 }
 

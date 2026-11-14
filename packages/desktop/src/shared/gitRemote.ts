@@ -71,7 +71,9 @@ export function isAllowedBranch(value: unknown): value is string {
   if (/[~^:?*[\\]/.test(value)) return false
   if (value.includes('..') || value.includes('//') || value.includes('@{')) return false
   if (value.startsWith('/') || value.endsWith('/') || value.startsWith('.') || value.endsWith('.')) return false
-  return !value.endsWith('.lock')
+  if (value === '@') return false
+  // git applies the dot and `.lock` rules to every component, not only to the whole name.
+  return value.split('/').every((part) => !part.startsWith('.') && !part.endsWith('.lock'))
 }
 
 /** A repository name for GitHub's create-repository call, which becomes a remote URL afterwards. */

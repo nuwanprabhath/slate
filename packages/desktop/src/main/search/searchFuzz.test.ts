@@ -225,7 +225,6 @@ describe('T-F3E: search index fuzz', () => {
     fc.assert(
       fc.property(mess, (v) => {
         if (!isSearchQuery(v)) return
-        if (v.text.includes('\u0000')) return // F3E-1
         accepted++
         // A regex query is run only when its text is from the linear grammar (FX-1 owns the rest).
         const q = v.regex && !linearPatterns.includes(v.text) ? { ...v, regex: false } : v
