@@ -641,6 +641,9 @@ void app.whenReady().then(async () => {
 
   // ---- AI access through the app (§9): a socket only while the notes are unlocked ----
   let mcp: McpSocketServer | null = null
+  // The source caches decoded documents, which hold memory Loro's WebAssembly heap owns and the
+  // garbage collector cannot reclaim: closing the server has to free them too (FX-32).
+  let mcpSource: { close(): void } | null = null
   const mcpPath = mcpSocketPath(dataDir, socketEnv({ platform: process.platform, env: envSnapshot(), tmpdir: tmpdir(), uid: process.getuid?.() ?? 0 }))
   async function startMcp(): Promise<void> {
     if (!encrypted() || mcp || process.platform === 'win32') return
@@ -655,6 +658,7 @@ void app.whenReady().then(async () => {
           if (notes()) toWindows(CH.externalUpdates, [{ docId, updates: [update] }])
         },
       )
+      mcpSource = source
       mcp = await startMcpSocketServer(mcpPath, source)
       // A lock that raced the start must not leave the socket open.
       if (!notes()) await stopMcp()
@@ -664,8 +668,12 @@ void app.whenReady().then(async () => {
   }
   async function stopMcp(): Promise<void> {
     const server = mcp
+    const source = mcpSource
     mcp = null
+    mcpSource = null
+    // The server first, so no request is still reading a document when its memory goes.
     await server?.close()
+    source?.close()
   }
 
   // ---- Quick unlock (§8) ----
