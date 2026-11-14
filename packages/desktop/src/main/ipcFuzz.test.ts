@@ -119,6 +119,16 @@ function outOfBounds(call: ServiceCall): string | null {
   return walk(call.args, name)
 }
 
+describe('FX-7: themes:save bounds its spec', () => {
+  it('refuses a Uint8Array spec and an over-cap plain object before any service', async () => {
+    for (const spec of [new Uint8Array(16 * 1024 * 1024), new Uint8Array(4), { name: 'x'.repeat(100_000) }]) {
+      const { error, calls } = await invoke(CH.themesSave, [spec])
+      expect(error).toBeInstanceOf(MalformedRequest)
+      expect(calls).toEqual([])
+    }
+  })
+})
+
 describe('F4a: IPC handlers refuse what their validators do not accept', () => {
   it('T-F4A-01: covers every registered invoke channel', () => {
     // A sanity bound: the registrar holds every channel ipc.test.ts lists, plus the payload-free ones.
