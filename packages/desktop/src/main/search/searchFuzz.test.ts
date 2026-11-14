@@ -17,10 +17,13 @@ function tempDb(): string {
   dirs.push(dir)
   return join(dir, 'slate.db')
 }
-afterEach(() => {
+// Per run as well as per test: at soak depth one test leaves tens of thousands of folders, more than a hook can
+// delete in time (FX-40).
+const closeRun = (): void => {
   open.splice(0).forEach((o) => o.close())
   dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true }))
-})
+}
+afterEach(closeRun)
 
 // ASCII letters, digits, punctuation and a few CJK characters: where the trigram tokenizer's case
 // folding is unambiguous. No U+0000 in stored text (a phrase may carry one).
@@ -58,6 +61,7 @@ describe('T-F3E: search index fuzz', () => {
           expect(got.sort()).toEqual(want.sort())
         } finally {
           store.close()
+          closeRun()
         }
       }),
       { ...fcParams, ...fcRuns(20, 50) },
@@ -77,6 +81,7 @@ describe('T-F3E: search index fuzz', () => {
           expect(got.sort()).toEqual(texts.filter((t) => t.toLowerCase().includes(clean.toLowerCase())).sort())
         } finally {
           store.close()
+          closeRun()
         }
       }),
       { ...fcParams, ...fcRuns(20, 50) },
@@ -168,6 +173,14 @@ describe('T-F3E: search index fuzz', () => {
 
   function run(cmds: Cmd[]): void {
     const w = world()
+    try {
+      steps(w, cmds)
+    } finally {
+      closeRun()
+    }
+  }
+
+  function steps(w: ReturnType<typeof world>, cmds: Cmd[]): void {
     const removed = new Set<number>()
     for (const c of cmds) {
       if (c.op === 'edit') {
@@ -217,13 +230,17 @@ describe('T-F3E: search index fuzz', () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 40 }), fc.integer({ min: 0, max: 60 }), (rows, per) => {
         const w = world()
-        const line = Array.from({ length: per }, () => 'xyz').join(' ')
-        w.edit(0, [Array.from({ length: rows }, () => line)])
-        const r = w.index.query({ text: 'xyz', matchCase: false, wholeWord: false, regex: false, scope: { kind: 'all' } })
-        const all = rows * per
-        expect(r.total).toBe(Math.min(all, MAX_MATCHES))
-        expect(r.truncated).toBe(all > MAX_MATCHES)
-        expect(r.pages.reduce((n, p) => n + p.matches.length, 0)).toBe(r.total)
+        try {
+          const line = Array.from({ length: per }, () => 'xyz').join(' ')
+          w.edit(0, [Array.from({ length: rows }, () => line)])
+          const r = w.index.query({ text: 'xyz', matchCase: false, wholeWord: false, regex: false, scope: { kind: 'all' } })
+          const all = rows * per
+          expect(r.total).toBe(Math.min(all, MAX_MATCHES))
+          expect(r.truncated).toBe(all > MAX_MATCHES)
+          expect(r.pages.reduce((n, p) => n + p.matches.length, 0)).toBe(r.total)
+        } finally {
+          closeRun()
+        }
       }),
       { ...fcParams, ...fcRuns(40, 30) },
     )
