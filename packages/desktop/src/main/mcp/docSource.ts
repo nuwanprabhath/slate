@@ -1,5 +1,5 @@
 import { agentBoxes, NotebookDoc, PageDoc, placeBelow, type AgentPage, type PMJSON } from '@slate/core'
-import type { DocSource } from '@slate/mcp'
+import { notebookView, type DocSource } from '@slate/mcp'
 import type { DocCursor, DocStore } from '../store'
 
 /** Decoded docs kept between calls, oldest evicted first. `search` reads every shared page per call. */
@@ -17,12 +17,6 @@ type Retire<T> = (doc: T) => void
 /** Page docs never leave this file (callers get the `AgentPage` projection), so a dropped one is freed at once. */
 const freePage: Retire<PageDoc> = (page) => page.doc.free()
 
-/**
- * `notebooks()` hands the doc itself to the caller, who reads it after this call returns and possibly
- * after a concurrent call evicted it; freeing it then would turn that read into `RuntimeError:
- * unreachable`. So an evicted notebook is left to its holder and only `close()` frees what is cached.
- */
-const keepNotebook: Retire<NotebookDoc> = () => {}
 
 /**
  * The one DocSource over the desktop store, for the headless CLI and for the app. `store` is asked
@@ -43,12 +37,25 @@ export function storeDocSource(
   const views = new Map<string, AgentPage>()
   let opened: DocStore | null = null
 
+  /**
+   * A notebook doc leaves this file only inside `withNotebook`'s callback, which can await other calls
+   * that evict it. So a dropped notebook is freed at once unless it is lent; a lent one is freed when its
+   * last borrow ends. Freeing one still in use would turn its next read into `RuntimeError: unreachable`
+   * for the whole WebAssembly instance.
+   */
+  const lent = new Map<NotebookDoc, number>()
+  const orphaned = new Set<NotebookDoc>()
+  const retireNotebook: Retire<NotebookDoc> = (nb) => {
+    if (lent.has(nb)) orphaned.add(nb)
+    else nb.doc.free()
+  }
+
   function db(): DocStore {
     const current = store()
     if (current !== opened) {
       opened = current
       drop(pages, freePage)
-      drop(notebooks, keepNotebook)
+      drop(notebooks, retireNotebook)
       views.clear()
     }
     return current
@@ -87,7 +94,7 @@ export function storeDocSource(
   }
 
   const cachedPage = (docId: string) => cached(pages, CACHED_PAGES, freePage, docId, PageDoc.fromUpdates, (p, parts) => p.doc.importBatch(parts))
-  const cachedNotebook = (docId: string) => cached(notebooks, CACHED_NOTEBOOKS, keepNotebook, docId, NotebookDoc.fromUpdates, (n, parts) => n.doc.importBatch(parts))
+  const cachedNotebook = (docId: string) => cached(notebooks, CACHED_NOTEBOOKS, retireNotebook, docId, NotebookDoc.fromUpdates, (n, parts) => n.doc.importBatch(parts))
 
   const save = (docId: string, update: Uint8Array) => {
     views.delete(docId)
@@ -99,7 +106,23 @@ export function storeDocSource(
     notebooks: async () =>
       db()
         .list('notebook:')
-        .map((docId) => ({ id: docId.slice('notebook:'.length), doc: cachedNotebook(docId).doc })),
+        .map((docId) => notebookView(docId.slice('notebook:'.length), cachedNotebook(docId).doc)),
+    withNotebook: async (notebookId, fn) => {
+      const docId = `notebook:${notebookId}`
+      if (!db().list('notebook:').includes(docId)) return null
+      const { doc } = cachedNotebook(docId)
+      lent.set(doc, (lent.get(doc) ?? 0) + 1)
+      try {
+        return await fn(doc)
+      } finally {
+        const left = (lent.get(doc) ?? 1) - 1
+        if (left > 0) lent.set(doc, left)
+        else {
+          lent.delete(doc)
+          if (orphaned.delete(doc)) doc.doc.free()
+        }
+      }
+    },
     readPage: async (pageId) => {
       const docId = `page:${pageId}`
       const { doc, changed } = cachedPage(docId)
@@ -130,10 +153,10 @@ export function storeDocSource(
     },
     save: async (docId, update) => save(docId, update),
     audit: async (entry) => db().appendAudit(entry),
-    /** The source's life is over: frees every cached doc, notebooks included, since no call is left to hold one. */
+    /** The source's life is over: frees every cached doc; a notebook still lent goes when its borrow ends. */
     close: () => {
       drop(pages, freePage)
-      drop(notebooks, (nb) => nb.doc.free())
+      drop(notebooks, retireNotebook)
       views.clear()
       opened = null
     },

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NotebookDoc, PageDoc } from '@slate/core'
+import * as loro from 'loro-crdt'
 import { DocStore } from '../store'
 import { storeDocSource } from './docSource'
 
@@ -37,6 +38,35 @@ function seedPages(store: DocStore, n: number): string[] {
   }
   return ids
 }
+
+function seedNotebooks(store: DocStore, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const nb = NotebookDoc.create(`nb${i}`)
+    nb.addSection('Ops')
+    store.append(`notebook:nb${i}`, nb.doc.export({ mode: 'snapshot' }))
+    nb.doc.free()
+  }
+}
+
+/** Every notebook doc the source decodes, with how many times each was freed. */
+function trackNotebooks(): Array<{ doc: NotebookDoc; frees: number }> {
+  const made: Array<{ doc: NotebookDoc; frees: number }> = []
+  const real = NotebookDoc.fromUpdates.bind(NotebookDoc)
+  vi.spyOn(NotebookDoc, 'fromUpdates').mockImplementation((parts) => {
+    const doc = real(parts)
+    const entry = { doc, frees: 0 }
+    const free = doc.doc.free.bind(doc.doc)
+    doc.doc.free = () => {
+      entry.frees++
+      free()
+    }
+    made.push(entry)
+    return doc
+  })
+  return made
+}
+
+const loroHeapBytes = (): number => (loro as unknown as { __wasm: { memory: { buffer: ArrayBuffer } } }).__wasm.memory.buffer.byteLength
 
 /** Every page doc the source decodes, with how many times each was freed. */
 function trackPages(): Array<{ doc: PageDoc; frees: number }> {
@@ -112,13 +142,69 @@ describe('storeDocSource frees what it stops using (FX-32)', () => {
 
   it('frees cached notebook docs on close', async () => {
     const store = newStore()
-    const nb = NotebookDoc.create('Work')
-    store.append('notebook:nb1', nb.doc.export({ mode: 'snapshot' }))
-    nb.doc.free()
+    seedNotebooks(store, 1)
+    const made = trackNotebooks()
     const source = storeDocSource(() => store)
-    const [ref] = await source.notebooks()
-    const free = vi.spyOn(ref!.doc.doc, 'free')
+    expect(await source.notebooks()).toHaveLength(1)
     source.close()
-    expect(free).toHaveBeenCalledTimes(1)
+    expect(made.map((m) => m.frees)).toEqual([1])
   })
+})
+
+describe('storeDocSource lends notebook docs for a borrow and frees them after (FX-34)', () => {
+  it('a notebook evicted while it is borrowed stays usable until the borrow ends, then is freed once', async () => {
+    const store = newStore()
+    seedNotebooks(store, 40)
+    const made = trackNotebooks()
+    const source = storeDocSource(() => store)
+    const name = await source.withNotebook('nb0', async (doc) => {
+      // Listing 40 notebooks pushes nb0 out of the 32-entry cache inside this borrow.
+      expect(await source.notebooks()).toHaveLength(40)
+      expect(made[0]!.frees).toBe(0)
+      // A freed doc would throw `RuntimeError: unreachable` here and poison the WebAssembly instance.
+      doc.addSection('Still mine')
+      return doc.name
+    })
+    expect(name).toBe('nb0')
+    expect(made[0]!.frees).toBe(1)
+    expect(made.filter((m) => m.frees > 1)).toEqual([])
+    expect(await source.withNotebook('missing', async () => 'ran')).toBeNull()
+  })
+
+  it('frees each notebook doc it evicts past the cache, and only those', async () => {
+    const store = newStore()
+    seedNotebooks(store, 40)
+    const made = trackNotebooks()
+    const source = storeDocSource(() => store)
+    const listed = await source.notebooks()
+    expect(listed.map((n) => n.name)).toEqual(listed.map((n) => n.id))
+    expect(made).toHaveLength(40)
+    expect(made.slice(0, 8).map((m) => m.frees)).toEqual([1, 1, 1, 1, 1, 1, 1, 1])
+    expect(made.slice(8).every((m) => m.frees === 0)).toBe(true)
+    source.close()
+    expect(made.every((m) => m.frees === 1)).toBe(true)
+  })
+
+  it("listing more notebooks than the cache holds gives Loro's heap back", async () => {
+    const store = newStore()
+    seedNotebooks(store, 64)
+    const source = storeDocSource(() => store)
+    // 64 notebooks through 32 slots: every listing decodes and evicts all 64.
+    const lists = async (n: number) => {
+      for (let i = 0; i < n; i++) {
+        await source.notebooks()
+        // Loro frees a doc's container handles from a finalizer task, so give it a real turn.
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+    }
+    // Freed docs wait on their container handles' finalizers, so the heap first climbs to a plateau
+    // (about 40 MB here after 600 listings) and only then stays flat; the slope after it is the check.
+    await lists(600)
+    const settled = loroHeapBytes()
+    await lists(600)
+    const perEvicted = (loroHeapBytes() - settled) / (600 * 64)
+    expect(perEvicted, 'bytes of Loro heap kept per evicted notebook').toBeLessThan(512)
+    source.close()
+    // 1200 listings take about 6 s; the deadline is a hundred times that.
+  }, 10 * 60_000)
 })

@@ -1,5 +1,5 @@
 import { agentBoxes, NotebookDoc, PageDoc, placeBelow, writeContent } from '@slate/core'
-import type { AuditEntry, DocSource } from '../src/source'
+import { notebookView, type AuditEntry, type DocSource } from '../src/source'
 
 /** An in-memory DocSource with the same doc-id conventions as the desktop store. */
 export function memorySource() {
@@ -10,7 +10,11 @@ export function memorySource() {
   }
   const source: DocSource = {
     notebooks: async () =>
-      [...docs.keys()].filter((k) => k.startsWith('notebook:')).map((k) => ({ id: k.slice('notebook:'.length), doc: NotebookDoc.fromUpdates(docs.get(k)!) })),
+      [...docs.keys()].filter((k) => k.startsWith('notebook:')).map((k) => notebookView(k.slice('notebook:'.length), NotebookDoc.fromUpdates(docs.get(k)!))),
+    withNotebook: async (notebookId, fn) => {
+      const parts = docs.get(`notebook:${notebookId}`)
+      return parts ? fn(NotebookDoc.fromUpdates(parts)) : null
+    },
     readPage: async (pageId) => ({ boxes: agentBoxes(PageDoc.fromUpdates(docs.get(`page:${pageId}`) ?? [])) }),
     appendBox: async (pageId, blocks) => {
       const page = PageDoc.fromUpdates(docs.get(`page:${pageId}`) ?? [])
