@@ -1,0 +1,15 @@
+{
+  "$comment": "Functions that hand a Loro handle out of its handle scope (lint rule slate/loro-handles-through-scope, FX-38). Everything else in packages/core/src and the main process reads Loro inside `withHandles` and passes each read through `h.own(`, so the handle is freed when the scope ends. One entry per file, naming the functions in which `h.keep(` (and a `withHandles` that returns a handle) is allowed; every caller of one must free what it is handed. Only shrinks (tools/guards/ratchet.test.ts), and only the maintainer adds a file or a name: a handle nobody frees keeps its whole document in Loro's heap (FX-30, FX-33, FX-35, FX-36, FX-37).",
+  "packages/core/src/page.ts": {
+    "names": [
+      "contentMap"
+    ],
+    "reason": "PageDoc.contentMap returns a box's content container itself, for code that binds an editor to it or writes into it (the editor's live session, sync's conflict resolution). The caller frees it; to read content, callers use boxContent, which returns data."
+  },
+  "packages/core/src/replace.ts": {
+    "names": [
+      "planReplace"
+    ],
+    "reason": "planReplace's edits carry the LoroText each one writes to, so applyReplace and rehearseReplace write where the plan read. replaceInPage, the one caller that applies a plan, frees them."
+  }
+}

@@ -2,7 +2,7 @@ import type { KeyHandle } from '@slate/native'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { hostname, platform } from 'node:os'
-import { markdownToBlocks, newId, NotebookDoc, PageDoc, writeContent } from '@slate/core'
+import { markdownToBlocks, newId, NotebookDoc, PageDoc, withHandles, writeContent } from '@slate/core'
 import { GraphHttp } from '@slate/importer'
 import {
   GitDrive,
@@ -791,18 +791,22 @@ export class SyncService {
     if (!conflict) return
     if (choice !== 'merged') {
       const page = PageDoc.fromUpdates(this.store.load(conflict.pageId))
-      const root = page.contentMap(conflict.boxId)
       try {
-        if (root) {
+        // The content handle is the scope's: alive, it would keep the whole page in Loro's heap until a later task.
+        const update = withHandles((h) => {
+          const root = h.own(page.contentMap(conflict.boxId))
+          if (!root) return undefined
           const from = page.doc.oplogVersion()
           writeContent(root, markdownToBlocks(choice === 'mine' ? conflict.mine : conflict.theirs), page.doc)
           page.doc.commit()
-          this.store.append(conflict.pageId, page.doc.export({ mode: 'update', from }))
+          return page.doc.export({ mode: 'update', from })
+        })
+        if (update) {
+          this.store.append(conflict.pageId, update)
           this.edited()
         }
       } finally {
-        // A live handle keeps the whole page in Loro's heap until a later task; nothing reads the page after this.
-        root?.free()
+        // Nothing reads the page after this.
         page.doc.free()
       }
     }

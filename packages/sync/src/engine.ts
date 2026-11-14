@@ -1,5 +1,5 @@
-import { LoroDoc, VersionVector } from 'loro-crdt'
-import { isDocId, newId, PageDoc, type BoxState, type PMJSON } from '@slate/core'
+import { LoroDoc, VersionVector, type Frontiers } from 'loro-crdt'
+import { isDocId, newId, PageDoc, withHandles, type BoxState, type PMJSON } from '@slate/core'
 import { boxesTouched, boxMarkdown } from './conflicts'
 import { chunkPath, parseRemotePath, snapshotPath } from './paths'
 import type { LocalStore, RemoteDrive, SyncReport, SyncStatus } from './types'
@@ -44,8 +44,13 @@ interface PullState {
   pushed: VersionVector
   /** Boxes whose content this device changed since its last completed sync. */
   localEdited: Set<string>
-  /** The doc at that last sync plus remote imports only: "theirs" in a conflict. */
-  remoteOnly: LoroDoc | undefined
+  /** Where the doc stood at that last sync; undefined before this device finished one. */
+  base: Frontiers | undefined
+  /**
+   * The remote updates of this pull, kept while a conflict can arise: "theirs" is the doc at `base` plus these.
+   * Data, not a fork of the doc: a fork cannot be freed by a handle scope across the pull's awaits.
+   */
+  remote: Uint8Array[]
   conflicts: Map<string, { mine: string; device: string }>
   /** Boxes a remote change deleted while edited here, as they were before the import. */
   restores: Map<string, { box: BoxState; content: PMJSON | null }>
@@ -280,23 +285,24 @@ export class SyncEngine {
       before: doc.oplogVersion(),
       pushed: await this.pushedVersion(docId),
       localEdited: new Set(),
-      remoteOnly: undefined,
+      base: undefined,
+      remote: [],
       conflicts: new Map(),
       restores: new Map()
     }
     const baseBytes = await this.local.getBytesMeta(META.base(docId))
     if (baseBytes) {
       const base = VersionVector.decode(baseBytes)
-      const atBase = doc.forkAt(doc.vvToFrontiers(base))
-      state.localEdited = boxesTouched(atBase, doc.export({ mode: 'update', from: base })).contentEdited
-      state.remoteOnly = atBase
+      const at = doc.vvToFrontiers(base)
+      const local = doc.export({ mode: 'update', from: base })
+      state.localEdited = withHandles((h) => boxesTouched(h.own(doc.forkAt(at)), local).contentEdited)
+      state.base = at
     }
     return state
   }
 
   /** Notes, before `bytes` is imported, the boxes it touches that this device also edited. */
   private detect(state: PullState, bytes: Uint8Array, device: string): void {
-    state.remoteOnly?.import(bytes)
     if (state.localEdited.size === 0) return
     const touched = boxesTouched(state.doc, bytes)
     const page = new PageDoc(state.doc)
@@ -312,7 +318,19 @@ export class SyncEngine {
     }
   }
 
+  /** Each conflicted box as the other devices left it: the doc at the last sync plus this pull's remote updates. */
+  private theirs(state: PullState): Map<string, string> {
+    const { base } = state
+    if (!base || state.conflicts.size === 0) return new Map()
+    return withHandles((h) => {
+      const remoteOnly = h.own(state.doc.forkAt(base))
+      for (const bytes of state.remote) remoteOnly.import(bytes)
+      return new Map([...state.conflicts.keys()].map((boxId) => [boxId, boxMarkdown(remoteOnly, boxId)]))
+    })
+  }
+
   private async settle(docId: string, state: PullState, counts: Counts): Promise<void> {
+    const theirs = this.theirs(state)
     for (const [boxId, { mine, device }] of state.conflicts) {
       await this.local.addConflict({
         id: newId(),
@@ -320,7 +338,7 @@ export class SyncEngine {
         boxId,
         device,
         mine,
-        theirs: state.remoteOnly ? boxMarkdown(state.remoteOnly, boxId) : '',
+        theirs: theirs.get(boxId) ?? '',
         merged: boxMarkdown(state.doc, boxId),
         at: Date.now()
       })
@@ -391,6 +409,8 @@ export class SyncEngine {
         unverified++
         continue
       }
+      // Nothing edited here since the last sync: no conflict can arise, so nothing is kept for "theirs".
+      if (state.localEdited.size > 0) state.remote.push(bytes)
       await this.local.appendRemote(parsed.docId, bytes)
       await this.local.markSeen(item.id, item.eTag)
       counts.pulled++
