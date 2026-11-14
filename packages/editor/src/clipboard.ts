@@ -6,7 +6,7 @@ import { urlScheme } from './links'
  * The schemes a page's picture may have, and the one statement of them: the paste cleaner and the Image node
  * apply it through `isSafeImageSrc`, and the fuzz oracles read it from here. No `data`: storeDataImages runs
  * before the cleaner and turns an embedded picture into a slate-blob address, so a data: src that gets this
- * far (a drop, a spelling the store's caller missed, a peer's content map) would keep its bytes in the page.
+ * far (dropped HTML, which is never stored first, or a peer's content map) would keep its bytes in the page.
  */
 export const IMAGE_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'slate-blob'])
 
