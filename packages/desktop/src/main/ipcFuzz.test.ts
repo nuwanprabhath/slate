@@ -103,9 +103,6 @@ function outOfBounds(call: ServiceCall): string | null {
   const seen = new Set<unknown>()
   const walk = (v: unknown, path: string): string | null => {
     if (typeof v === 'string') return v.length > MAX_STRING && !OWN_STRING_CAP.has(name) ? `${path}: string of ${v.length}` : null
-    // Open finding FX-F4A-1: `themes:save` checks its spec with `isObject`, which accepts a Uint8Array of any
-    // size, so the bytes reach `ThemeStore.save`. The branch that fixes it removes this exclusion.
-    if (v instanceof Uint8Array && path === 'themes.save.0') return null
     if (v instanceof Uint8Array) return v.byteLength > MAX_UPDATE_BYTES && !OWN_BYTE_CAP.has(name) ? `${path}: ${v.byteLength} bytes` : null
     if (typeof v !== 'object' || v === null || seen.has(v)) return null
     seen.add(v)
