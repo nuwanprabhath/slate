@@ -2,8 +2,13 @@ import { DOMSerializer, type Fragment, type Schema, type Slice } from '@tiptap/p
 import { toPlainText, type PMJSON } from '@slate/core'
 import { urlScheme } from './links'
 
-// data: is stored by storeDataImages and comes back as slate-blob; a src with no scheme or any other is refused.
-const IMAGE_SCHEMES = new Set(['http', 'https', 'data', 'slate-blob'])
+/**
+ * The schemes a page's picture may have, and the one statement of them: the paste cleaner and the Image node
+ * apply it through `isSafeImageSrc`, and the fuzz oracles read it from here. No `data`: storeDataImages runs
+ * before the cleaner and turns an embedded picture into a slate-blob address, so a data: src that gets this
+ * far (a drop, a spelling the store's caller missed, a peer's content map) would keep its bytes in the page.
+ */
+export const IMAGE_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'slate-blob'])
 
 /** Whether a picture may load from `src`. Applied on paste and by the Image node, so neither layer trusts the other. */
 export function isSafeImageSrc(src: string): boolean {

@@ -58,9 +58,18 @@ function schemeOf(value: string): string | null {
   return m ? m[1]!.toLowerCase() : null
 }
 
-/** What is wrong in a DOM tree: script-capable elements, on* attributes, and addresses whose scheme, read as a URL parser reads it, is not allowed. */
-export function unsafeMarkup(root: ParentNode, allowedSchemes: readonly string[] = ['http', 'https', 'mailto']): string[] {
+/** What a link may point at: the schemes `normalizeLinkInput` (packages/editor/src/links.ts) and TipTap's Link keep. */
+export const LINK_SCHEMES: readonly string[] = ['http', 'https', 'mailto']
+
+/**
+ * What is wrong in a DOM tree: script-capable elements, on* attributes, and addresses whose scheme, read as a URL
+ * parser reads it, is not allowed. A picture's address is not a link's: an `<img>`'s src and srcset are held to
+ * `imageSchemes`, which a caller with pictures takes from the product's own statement (IMAGE_SCHEMES in
+ * packages/editor/src/clipboard.ts) and never restates.
+ */
+export function unsafeMarkup(root: ParentNode, allowedSchemes: readonly string[] = LINK_SCHEMES, imageSchemes: Iterable<string> = allowedSchemes): string[] {
   const allowed = new Set(allowedSchemes.map((s) => s.toLowerCase()))
+  const images = new Set(Array.from(imageSchemes, (s) => s.toLowerCase()))
   const found: string[] = []
   const elements = [...(root instanceof Element ? [root] : []), ...Array.from(root.querySelectorAll('*'))]
   for (const el of elements) {
@@ -75,7 +84,8 @@ export function unsafeMarkup(root: ParentNode, allowedSchemes: readonly string[]
         const urls = local === 'srcset' ? attr.value.split(',').map((c) => c.trim().split(/\s+/)[0] ?? '') : [attr.value]
         for (const url of urls) {
           const scheme = schemeOf(url)
-          if (scheme !== null && !allowed.has(scheme)) found.push(`<${tag} ${name}="${scheme}:">`)
+          const sanctioned = tag === 'img' && (local === 'src' || local === 'srcset') ? images : allowed
+          if (scheme !== null && !sanctioned.has(scheme)) found.push(`<${tag} ${name}="${scheme}:">`)
         }
       }
     }

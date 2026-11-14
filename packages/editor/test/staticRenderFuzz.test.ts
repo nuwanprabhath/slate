@@ -3,17 +3,18 @@ import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import { LoroDoc } from 'loro-crdt'
 import type { PMJSON } from '@slate/core'
+import { IMAGE_SCHEMES } from '../src/clipboard'
 import { writeContent } from '../src/content'
 import { schema } from '../src/extensions'
 import { renderStaticHtml } from '../src/staticRender'
 import { fcRuns, fuzzTimeout } from '../../desktop/test/fuzz'
-import { hostileUrl, unsafeMarkup } from '../../desktop/test/fuzzHtml'
+import { LINK_SCHEMES, hostileUrl, unsafeMarkup } from '../../desktop/test/fuzzHtml'
 
 // T-F3B: off-screen boxes are drawn from Loro without an editor, so a content map a hostile peer or an agent
 // wrote goes straight to the page. Whatever it holds, the fragment carries nothing that can run.
 
-// The real scheme the blob store serves note images on (BLOB_SCHEME, src/main/blobs.ts).
-const SCHEMES = ['http', 'https', 'mailto', 'slate-blob']
+// Links are held to the kit's LINK_SCHEMES and pictures to the product's IMAGE_SCHEMES; neither list is restated here.
+const unsafe = (out: ParentNode): string[] => unsafeMarkup(out, LINK_SCHEMES, IMAGE_SCHEMES)
 const NODE_TYPES = [...Object.keys(schema.nodes), 'script', 'iframe', 'svg', 'object', 'unknownNode']
 const MARK_TYPES = [...Object.keys(schema.marks), 'script', 'unknownMark']
 const ATTR_NAMES = ['href', 'src', 'onerror', 'onclick', 'style', 'class', 'srcdoc', 'width', 'color', 'target', 'rel', 'textAlign', 'indent', 'checked', 'language', 'x', 'y', 'level', 'start', 'colspan']
@@ -74,7 +75,7 @@ describe('T-F3B renderStaticHtml', () => {
       fc.property(fc.array(block, { maxLength: 5 }), (content) => {
         const out = render(content)
         if (out instanceof HTMLElement) rendered++
-        const found = out instanceof HTMLElement ? unsafeMarkup(out, SCHEMES) : []
+        const found = out instanceof HTMLElement ? unsafe(out) : []
         expect(found).toEqual([])
       }),
       fcRuns(4, 300),
@@ -87,9 +88,30 @@ describe('T-F3B renderStaticHtml', () => {
     fc.assert(
       fc.property(hostileUrl, (href) => {
         const out = render([{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href } }] }] }])
-        expect(out instanceof HTMLElement ? unsafeMarkup(out, SCHEMES) : []).toEqual([])
+        expect(out instanceof HTMLElement ? unsafe(out) : []).toEqual([])
       }),
       fcRuns(4, 300),
     )
   }, fuzzTimeout(60_000))
+})
+
+describe('T-F3B fixed findings', () => {
+  // The soak's counterexample was [ '<img src="data:">' ]: a content map a peer wrote, never a paste, since paste
+  // stores an embedded picture first. A page holds a picture's address and never its bytes, so the src is not drawn.
+  it('FX-41: a stored image whose src is a data: URL is drawn without it', () => {
+    for (const src of ['data:', 'data:image/png;base64,AAAA', 'DATA:image/svg+xml,<svg onload=alert(1)>', ' da\tta:text/html,<script>alert(1)</script>']) {
+      const out = render([{ type: 'image', attrs: { src } }])
+      expect(out, src).toBeInstanceOf(HTMLElement)
+      if (!(out instanceof HTMLElement)) continue
+      expect(unsafe(out), src).toEqual([])
+      expect(out.querySelector('img')?.hasAttribute('src'), src).toBe(false)
+    }
+  })
+
+  it('FX-41: a stored image keeps an http, https or slate-blob src', () => {
+    for (const src of ['https://example.com/a.png', 'http://example.com/a.png', 'slate-blob://img/abc']) {
+      const out = render([{ type: 'image', attrs: { src } }])
+      expect(out instanceof HTMLElement ? out.querySelector('img')?.getAttribute('src') : null).toBe(src)
+    }
+  })
 })
