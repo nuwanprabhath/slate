@@ -1,4 +1,5 @@
 import { LoroList, LoroMap, LoroText, type LoroDoc, type Value } from 'loro-crdt'
+import { withHandles, type Handles } from './handles'
 import type { PMJSON } from './plaintext'
 
 // The layout loro-prosemirror uses (its NODE_NAME_KEY, ATTRIBUTES_KEY, CHILDREN_KEY). Core reads
@@ -19,8 +20,8 @@ function collectMarkTypes(node: PMJSON, into: Set<string>): void {
 
 // Consecutive text nodes share one LoroText, as loro-prosemirror stores them. A mark's value is
 // its attrs object ({} when it has none), what nodeMarksToAttributes writes.
-function writeTextRuns(children: LoroList, runs: PMJSON[]): void {
-  const text = children.insertContainer(children.length, new LoroText())
+function writeTextRuns(children: LoroList, runs: PMJSON[], h: Handles): void {
+  const text = h.own(children.insertContainer(children.length, h.own(new LoroText())))
   let at = 0
   const marks: Array<{ start: number; end: number; type: string; attrs: Record<string, unknown> }> = []
   for (const run of runs) {
@@ -32,20 +33,20 @@ function writeTextRuns(children: LoroList, runs: PMJSON[]): void {
   for (const m of marks) if (m.end > m.start) text.mark({ start: m.start, end: m.end }, m.type, m.attrs as Value)
 }
 
-function writeNode(map: LoroMap, node: PMJSON): void {
+function writeNode(map: LoroMap, node: PMJSON, h: Handles): void {
   map.set(NODE_NAME, node.type)
-  const attrs = map.setContainer(ATTRIBUTES, new LoroMap())
+  const attrs = h.own(map.setContainer(ATTRIBUTES, h.own(new LoroMap())))
   for (const [key, value] of Object.entries(node.attrs ?? {})) if (value !== undefined) attrs.set(key, value as Value)
-  const children = map.setContainer(CHILDREN, new LoroList())
+  const children = h.own(map.setContainer(CHILDREN, h.own(new LoroList())))
   const content = node.content ?? []
   for (let i = 0; i < content.length; i++) {
     if (content[i]!.type !== 'text') {
-      writeNode(children.insertContainer(children.length, new LoroMap()), content[i]!)
+      writeNode(h.own(children.insertContainer(children.length, h.own(new LoroMap()))), content[i]!, h)
       continue
     }
     let end = i
     while (end + 1 < content.length && content[end + 1]?.type === 'text') end++
-    writeTextRuns(children, content.slice(i, end + 1))
+    writeTextRuns(children, content.slice(i, end + 1), h)
     i = end
   }
 }
@@ -66,7 +67,7 @@ export function writeContent(root: LoroMap, blocks: PMJSON[], doc?: LoroDoc): vo
     for (const type of used) styles[type] = { expand: NON_INCLUSIVE.has(type) ? 'none' : 'after' }
     doc.configTextStyle(styles)
   }
-  writeNode(root, page)
+  withHandles((h) => writeNode(root, page, h))
 }
 
 function textToJSON(text: LoroText): PMJSON[] {
@@ -79,21 +80,24 @@ function textToJSON(text: LoroText): PMJSON[] {
   })
 }
 
-function nodeToJSON(map: LoroMap): PMJSON {
-  const attrsMap = map.get(ATTRIBUTES)
+function nodeToJSON(map: LoroMap, h: Handles): PMJSON {
+  const attrsMap = h.own(map.get(ATTRIBUTES))
   const attrs = attrsMap instanceof LoroMap ? (attrsMap.toJSON() as Record<string, unknown>) : {}
-  const children = map.get(CHILDREN)
+  const children = h.own(map.get(CHILDREN))
   const content: PMJSON[] = []
   if (children instanceof LoroList) {
-    for (const child of children.toArray()) {
+    for (const child of h.own(children.toArray())) {
       if (child instanceof LoroText) content.push(...textToJSON(child))
-      else if (child instanceof LoroMap) content.push(nodeToJSON(child))
+      else if (child instanceof LoroMap) content.push(nodeToJSON(child, h))
     }
   }
-  return { type: String(map.get(NODE_NAME)), ...(Object.keys(attrs).length > 0 ? { attrs } : {}), ...(content.length > 0 ? { content } : {}) }
+  return { type: String(h.own(map.get(NODE_NAME))), ...(Object.keys(attrs).length > 0 ? { attrs } : {}), ...(content.length > 0 ? { content } : {}) }
 }
 
-/** ProseMirror-shaped JSON of a box's content, or null for an empty box. */
+/**
+ * ProseMirror-shaped JSON of a box's content, or null for an empty box. Frees every container it reads under
+ * `root`; `root` stays the caller's.
+ */
 export function contentToJSON(root: LoroMap): PMJSON | null {
-  return root.size === 0 ? null : nodeToJSON(root)
+  return root.size === 0 ? null : withHandles((h) => nodeToJSON(root, h))
 }

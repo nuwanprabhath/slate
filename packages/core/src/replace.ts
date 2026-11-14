@@ -1,5 +1,6 @@
 import { LoroList, LoroMap, LoroText, type Delta, type LoroDoc, type Value } from 'loro-crdt'
 import { compileQuery, matchAll, type FindOptions } from './find'
+import { withHandles } from './handles'
 import type { PageDoc } from './page'
 
 export interface ReplaceOptions {
@@ -63,11 +64,11 @@ interface Segment {
   text: LoroText
 }
 
-/** A text block's text as the find bar reads it, and where each LoroText sits in it. */
-function blockText(children: LoroList): { value: string; segments: Segment[] } {
+/** A text block's text as the find bar reads it, from its children, and where each LoroText sits in it. */
+function blockText(items: unknown[]): { value: string; segments: Segment[] } {
   let value = ''
   const segments: Segment[] = []
-  for (const child of children.toArray()) {
+  for (const child of items) {
     if (child instanceof LoroText) {
       segments.push({ start: value.length, text: child })
       value += child.toString()
@@ -91,6 +92,7 @@ export interface PlannedEdit {
   matched: string
   /** What replaces it. */
   with: string
+  /** The text the edit writes to: a handle, the caller's to free once the edits are applied or dropped (see handles.ts). */
   text: LoroText
   at: number
   attributes: Record<string, Value> | undefined
@@ -104,35 +106,37 @@ export function planReplace(page: PageDoc, query: string, opts: FindOptions, rep
   const re = compileQuery(query, opts)
   if (!re) return []
   const boxes = page.listBoxes().sort((a, b) => a.y - b.y || a.x - b.x)
-  const edits: PlannedEdit[] = []
-  for (const box of boxes) {
-    const root = page.contentMap(box.id)
-    if (!root || root.size === 0) continue
-    let occurrence = 0
-    const isTextblock = options.isTextblock
-    const visit = (node: LoroMap): void => {
-      const children = node.get(CHILDREN)
-      if (!(children instanceof LoroList)) return
-      const items = children.toArray()
-      const textblock = isTextblock ? isTextblock(String(node.get(NODE_NAME))) : items.some((c) => c instanceof LoroText)
-      if (!textblock) {
-        for (const c of items) if (c instanceof LoroMap) visit(c)
-        return
+  return withHandles((h) => {
+    const edits: PlannedEdit[] = []
+    for (const box of boxes) {
+      const root = h.own(page.contentMap(box.id))
+      if (!root || root.size === 0) continue
+      let occurrence = 0
+      const isTextblock = options.isTextblock
+      const visit = (node: LoroMap): void => {
+        const children = h.own(node.get(CHILDREN))
+        if (!(children instanceof LoroList)) return
+        const items = h.own(children.toArray())
+        const textblock = isTextblock ? isTextblock(String(h.own(node.get(NODE_NAME)))) : items.some((c) => c instanceof LoroText)
+        if (!textblock) {
+          for (const c of items) if (c instanceof LoroMap) visit(c)
+          return
+        }
+        const { value, segments } = blockText(items)
+        for (const [from, to] of matchAll(value, re, opts.wholeWord)) {
+          const index = occurrence++
+          const matched = value.slice(from, to)
+          if (options.only && !options.only(box.id, index, matched)) continue
+          const seg = segments.find((s) => from >= s.start && to <= s.start + s.text.length)
+          if (!seg) continue
+          const at = from - seg.start
+          edits.push({ boxId: box.id, occurrence: index, matched, with: expandReplacement(value, from, to, re, replacement, opts, options.preserveCase), text: h.keep(seg.text), at, attributes: attributesAt(seg.text, at, value.codePointAt(from) ?? 0) })
+        }
       }
-      const { value, segments } = blockText(children)
-      for (const [from, to] of matchAll(value, re, opts.wholeWord)) {
-        const index = occurrence++
-        const matched = value.slice(from, to)
-        if (options.only && !options.only(box.id, index, matched)) continue
-        const seg = segments.find((s) => from >= s.start && to <= s.start + s.text.length)
-        if (!seg) continue
-        const at = from - seg.start
-        edits.push({ boxId: box.id, occurrence: index, matched, with: expandReplacement(value, from, to, re, replacement, opts, options.preserveCase), text: seg.text, at, attributes: attributesAt(seg.text, at, value.codePointAt(from) ?? 0) })
-      }
+      visit(root)
     }
-    visit(root)
-  }
-  return edits
+    return edits
+  })
 }
 
 /** Writes planned edits. Back to front, so earlier offsets in the same text still hold. Does not commit. */
@@ -152,15 +156,17 @@ export function applyReplace(edits: PlannedEdit[]): void {
  * committing one even to revert it hands the partial edit to whoever saves commits.
  */
 export function rehearseReplace(doc: LoroDoc, edits: PlannedEdit[], textStyles: Parameters<LoroDoc['configTextStyle']>[0]): void {
-  const trial = doc.fork()
-  trial.configTextStyle(textStyles)
-  applyReplace(
-    edits.map((e) => {
-      const text = trial.getContainerById(e.text.id)
-      if (!(text instanceof LoroText)) throw new Error('A replaced text is missing from the fork')
-      return { ...e, text }
-    }),
-  )
+  withHandles((h) => {
+    const trial = h.own(doc.fork())
+    trial.configTextStyle(textStyles)
+    applyReplace(
+      edits.map((e) => {
+        const text = h.own(trial.getContainerById(e.text.id))
+        if (!(text instanceof LoroText)) throw new Error('A replaced text is missing from the fork')
+        return { ...e, text }
+      }),
+    )
+  })
 }
 
 /**
@@ -170,7 +176,10 @@ export function rehearseReplace(doc: LoroDoc, edits: PlannedEdit[], textStyles: 
  * its origin, so the whole change is one undo step.
  */
 export function replaceInPage(page: PageDoc, query: string, opts: FindOptions, replacement: string, options: ReplaceOptions): number {
-  const edits = planReplace(page, query, opts, replacement, options)
-  applyReplace(edits)
-  return edits.length
+  return withHandles((h) => {
+    const edits = planReplace(page, query, opts, replacement, options)
+    h.own(edits.map((e) => e.text))
+    applyReplace(edits)
+    return edits.length
+  })
 }

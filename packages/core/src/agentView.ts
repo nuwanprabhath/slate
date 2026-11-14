@@ -1,4 +1,3 @@
-import { contentToJSON } from './content'
 import { toMarkdown } from './markdown'
 import type { PageDoc } from './page'
 import { toPlainText } from './plaintext'
@@ -26,7 +25,7 @@ export function agentBoxes(page: PageDoc): AgentBox[] {
     .sort((a, b) => a.y - b.y || a.x - b.x)
     .map((box) => {
       if (box.private) return { id: box.id, x: box.x, y: box.y, private: true, markdown: null }
-      const json = contentToJSON(page.contentMap(box.id)!)
+      const json = page.boxContent(box.id)
       return { id: box.id, x: box.x, y: box.y, private: false, markdown: json ? toMarkdown([json]) : '' }
     })
 }
@@ -53,7 +52,7 @@ const GAP_PX = 40
 export function placeBelow(page: PageDoc): { x: number; y: number } {
   let bottom = 0
   for (const box of page.listBoxes()) {
-    const json = box.private ? null : contentToJSON(page.contentMap(box.id)!)
+    const json = box.private ? null : page.boxContent(box.id)
     const lines = json ? Math.max(1, toPlainText([json]).split('\n').length) : 2
     bottom = Math.max(bottom, box.y + lines * LINE_PX + 16)
   }

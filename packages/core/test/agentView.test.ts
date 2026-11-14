@@ -78,9 +78,15 @@ describe('private boxes are never opened', () => {
       { y: 100, text: 'hunter2', private: true },
     ])
     const privateId = page.listBoxes().find((b) => b.private)!.id
+    const publicId = page.listBoxes().find((b) => !b.private)!.id
     const spy = vi.spyOn(page, 'contentMap')
+    // The agent view reads content as data (FX-36): both ways to a box's content are watched.
+    const read = vi.spyOn(page, 'boxContent')
     agentBoxes(page)
     agentPageMarkdown(page)
+    placeBelow(page)
     expect(spy.mock.calls.map(([id]) => id)).not.toContain(privateId)
+    expect(read.mock.calls.map(([id]) => id)).not.toContain(privateId)
+    expect(read.mock.calls.map(([id]) => id)).toContain(publicId)
   })
 })
