@@ -75,9 +75,11 @@ function tempDb(): string {
   dirs.push(dir)
   return join(dir, 'slate.db')
 }
+// Per run as well as per test: at soak depth one test leaves ten thousand folders, more than a hook can delete in time.
+const removeDirs = (): void => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true }))
 afterEach(() => {
   vi.useRealTimers()
-  dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true }))
+  removeDirs()
 })
 
 /** One run of the model; every invariant is checked after every command. */
@@ -203,6 +205,7 @@ function runModel(ops: Op[], keyed: boolean, afterOpen: () => void = () => {}): 
     second.close()
     store.close()
     if (key) dbModule().native.keyDestroy(key)
+    removeDirs()
   }
 }
 
@@ -246,6 +249,7 @@ describe('DocStore model', () => {
           } finally {
             store.close()
             if (key) dbModule().native.keyDestroy(key)
+            removeDirs()
           }
         }),
         { ...fcParams, numRuns: Math.max(5, Math.floor(fcParams.numRuns / 200)) },
