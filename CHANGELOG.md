@@ -6,6 +6,19 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-11-15
+
+The nightly soak on 0.7.7 ran the whole suite to completion for the first time: 147 of 148
+properties passed. The one failure was the deadline of a test, not anything the test was watching.
+
+### Fixed
+
+- Test: the private-box canary property's deadline now scales with the run count, like every other
+  soak harness. Its run count grows with `SLATE_FUZZ_RUNS` while its deadline was a constant 120
+  seconds, which the nightly soak was inside only by a hair; at 200,000 runs it ran out of time. The
+  allowance per generated run now matches the harness next to it, which builds the same kind of
+  world three times as often. Nothing the property checks has changed (FX-49).
+
 ## [0.7.7] - 2026-11-14
 
 Eight findings the nightly soak reached once three harnesses stopped failing early. Two of them are
