@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { relativeCost } from '../../test/fuzz'
+import { BASE_THEME } from './theme/spec'
 import {
   isBool,
   isBytes,
@@ -10,6 +12,8 @@ import {
   isId,
   isMenuPath,
   isObject,
+  isThemeSpecShape,
+  MAX_THEME_SPEC_CHARS,
   isOneOf,
   isSyncConfig,
   isText,
@@ -98,6 +102,32 @@ describe('the small checks', () => {
   it('isObject refuses an array, null and a primitive', () => {
     expect(isObject({ a: 1 })).toBe(true)
     expect([isObject([]), isObject(null), isObject('x')]).toEqual([false, false, false])
+  })
+
+  it('FX-7: isObject refuses typed arrays, DataViews and ArrayBuffers', () => {
+    const bytes = [new Uint8Array(4), new Float64Array(2), new DataView(new ArrayBuffer(2)), new ArrayBuffer(8)]
+    for (const b of bytes) expect(isObject(b), b.constructor.name).toBe(false)
+  })
+
+  it('FX-7: isThemeSpecShape takes a real spec and refuses bytes, exotic values and anything over the cap', () => {
+    expect(isThemeSpecShape(BASE_THEME)).toBe(true)
+    expect(isThemeSpecShape({})).toBe(true)
+    const over = { name: 'x'.repeat(MAX_THEME_SPEC_CHARS + 1) }
+    const wide = { palette: Object.fromEntries(Array.from({ length: MAX_THEME_SPEC_CHARS }, (_, i) => [`k${i}`, '#000'])) }
+    let deep: unknown = {}
+    for (let i = 0; i < 100; i++) deep = { d: deep }
+    const bad: unknown[] = [new Uint8Array(16), over, wide, deep, { effects: new Array(MAX_THEME_SPEC_CHARS + 1).fill(0) }, { m: new Map() }, null, []]
+    for (const v of bad) expect(isThemeSpecShape(v)).toBe(false)
+  })
+
+  it('FX-7: refusing a huge theme spec costs about what checking a real one does', () => {
+    const huge: unknown[] = [new Uint8Array(16 * 1024 * 1024), { name: 'x'.repeat(50_000_000) }, { effects: new Array<number>(5_000_000).fill(0) }]
+    // A whole spec as the unit, not a two-key object: a sub-microsecond unit makes the p99 ratio timer noise.
+    const cost = relativeCost(() => isThemeSpecShape(BASE_THEME))
+    const verdicts: boolean[] = []
+    for (let i = 0; i < 50; i++) for (const v of huge) cost.time(() => void verdicts.push(isThemeSpecShape(v)))
+    expect(verdicts.every((ok) => !ok)).toBe(true)
+    cost.check()
   })
 
   it('isOneOf checks a literal set', () => {

@@ -4,6 +4,7 @@
 // Hand-written in the style of `isSearchQuery`, so no dependency decides what main accepts.
 
 import type { GitSettings, RendererErrorReport, Settings, SyncConfig } from './api'
+import { LIMITS } from './theme/spec'
 
 /** The most bytes one CRDT update may carry; a page's whole history arrives as many of these. */
 export const MAX_UPDATE_BYTES = 16 * 1024 * 1024
@@ -58,8 +59,46 @@ export const isText = (value: unknown, max = MAX_STRING): value is string => typ
 
 export const isBool = (value: unknown): value is boolean => typeof value === 'boolean'
 
-/** A plain object, so a validated shape is never an array or a boxed primitive. */
-export const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+/** A plain object, so a validated shape is never an array, bytes (a typed array has a key per byte) or a boxed primitive. */
+export const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) && !ArrayBuffer.isView(value) && !(value instanceof ArrayBuffer)
+
+/**
+ * `validateTheme` turns any spec whose JSON is longer than this into the base theme, so a longer one is
+ * the renderer misbehaving; refusing it here keeps main from walking megabytes (FX-7).
+ */
+export const MAX_THEME_SPEC_CHARS = LIMITS.maxInputChars
+const MAX_THEME_DEPTH = 8
+
+/**
+ * A theme spec's shape: plain objects, arrays, strings, finite numbers, booleans and null, at most
+ * `MAX_THEME_DEPTH` deep. Each key, value and string character costs one of `MAX_THEME_SPEC_CHARS`, never
+ * more than its JSON does, so every spec `validateTheme` would keep passes; the walk stops at the budget.
+ */
+export function isThemeSpecShape(value: unknown): value is Record<string, unknown> {
+  let budget = MAX_THEME_SPEC_CHARS
+  const fits = (v: unknown, depth: number): boolean => {
+    budget -= 1
+    if (budget < 0) return false
+    if (typeof v === 'string') return (budget -= v.length) >= 0
+    // `undefined`: an optional field the renderer left unset (`uiFont: undefined`) survives structured clone.
+    if (v === null || v === undefined || typeof v === 'boolean') return true
+    if (typeof v === 'number') return Number.isFinite(v)
+    if (depth >= MAX_THEME_DEPTH) return false
+    if (Array.isArray(v)) {
+      if (v.length > budget) return false
+      for (const item of v) if (!fits(item, depth + 1)) return false
+      return true
+    }
+    if (!isObject(v) || Object.getPrototypeOf(v) !== Object.prototype) return false
+    for (const key in v) {
+      if (!Object.hasOwn(v, key)) return false
+      if ((budget -= key.length) < 0 || !fits(v[key], depth + 1)) return false
+    }
+    return true
+  }
+  return isObject(value) && fits(value, 0)
+}
 
 /** A whole number of things to return, 1..max. */
 export const isCount = (value: unknown, max = MAX_ROWS): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= max

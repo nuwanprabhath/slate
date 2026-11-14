@@ -3,7 +3,7 @@ import { app, nativeTheme } from 'electron'
 import type { IpcRegistrar } from '../ipcGuard'
 import type { ThemesApi } from '../../shared/api'
 import { CH } from '../../shared/ipc'
-import { isObject, isSavedThemeId, isText, optional, refuse } from '../../shared/ipcValidators'
+import { isSavedThemeId, isThemeSpecShape, isText, optional, refuse } from '../../shared/ipcValidators'
 import { builtinTheme } from '../../shared/theme/builtins'
 import { resolveTheme } from '../../shared/theme/resolve'
 import type { ThemeSpec } from '../../shared/theme/spec'
@@ -23,7 +23,7 @@ const MAX_PROMPT = 2000
 const MAX_THEME_NAME = 200
 const MAX_REQUEST = 10_000
 const isPrompt = (v: unknown): v is string | null => v === null || isText(v, MAX_PROMPT)
-const isSpec = (v: unknown): v is ThemeSpec | null => v === null || isObject(v)
+const isSpec = (v: unknown): v is ThemeSpec | null => v === null || isThemeSpecShape(v)
 
 function gpuCompositing(): boolean {
   const status = app.getGPUFeatureStatus() as unknown as Record<string, string>
@@ -62,9 +62,10 @@ export function registerThemeIpc(ipc: IpcRegistrar, source: ThemeSource, isE2E: 
     e.returnValue = initial
   })
   ipc.handle(CH.themesList, () => notes().themes.list())
-  // `validateTheme` decides every field of the spec; this channel checks it is an object at all.
+  // `validateTheme` decides every field of the spec; this channel bounds its shape and size, so a huge
+  // payload cannot block main (and with it the idle lock) while validateTheme walks it.
   ipc.handle(CH.themesSave, (_e, spec: unknown, prompt: unknown) => {
-    if (!isObject(spec) || !optional(prompt, isPrompt)) refuse(CH.themesSave)
+    if (!isThemeSpecShape(spec) ||!optional(prompt, isPrompt)) refuse(CH.themesSave)
     return notes().themes.save(spec, prompt ?? null)
   })
   ipc.handle(CH.themesRename, (_e, id: unknown, name: unknown) => {
