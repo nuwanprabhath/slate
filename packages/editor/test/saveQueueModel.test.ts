@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
+import * as loro from 'loro-crdt'
 import { LoroDoc } from 'loro-crdt'
 import { SaveQueue, type SaveSink } from '../src/saveQueue'
 import { fcParams } from '../../desktop/test/fuzz'
@@ -135,12 +136,14 @@ const commands = [
 function checkStored(m: Model): void {
   const fresh = new LoroDoc()
   const status = fresh.importBatch(m.sink.stored)
+  fresh.free()
   expect(status.pending ?? null).toBeNull()
   // Property 3: with the sink rejecting everything and edits unacknowledged, never `saved`.
   if (m.sink.rejectAll && !m.closed) {
     const stored = new LoroDoc()
     stored.importBatch(m.sink.stored)
     const same = JSON.stringify(stored.toJSON()) === JSON.stringify(m.doc.toJSON())
+    stored.free()
     if (!same) expect(m.q.state).not.toBe('saved')
   }
 }
@@ -155,32 +158,72 @@ describe('SaveQueue model', () => {
 
   it('T-F2B-01: stored updates never depend on a rejected one; settling converges (properties 1-4)', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.commands(commands, { maxCommands: 25 }), async (cmds) => {
-        const doc = new LoroDoc()
-        const sink = new ScriptedSink()
-        const q = new SaveQueue('d', doc, sink)
-        const m: Model = { doc, sink, q, edits: 0, closed: false }
-        try {
-          await fc.asyncModelRun(() => ({ model: m, real: {} as Record<string, never> }), cmds)
-          // `checked` held properties 1 and 3 after every command; hold them on the final state too.
-          checkStored(m)
-          if (!m.closed) {
-            // Property 2: the sink accepts again, the timers run, and the stored copy equals the live one.
-            sink.rejectAll = false
-            sink.outcomes = []
-            await vi.advanceTimersByTimeAsync(20_000)
-            await flush()
-            expect(q.state).toBe('saved')
-            const stored = new LoroDoc()
-            stored.importBatch(sink.stored)
-            expect(stored.toJSON()).toEqual(doc.toJSON())
-          }
-          checkStored(m)
-        } finally {
-          q.close()
-        }
-      }),
+      fc.asyncProperty(fc.commands(commands, { maxCommands: 25 }), run),
       { ...fcParams, numRuns: Math.max(100, Math.floor(fcParams.numRuns / 10)) },
     )
   })
+
+  it("T-F2B-02: a run gives back the Loro documents it built, so Loro's WebAssembly heap stops growing (FX-44)", async () => {
+    const cmds: Cmd[] = [
+      editCmd('abc'), burstCmd(4), scriptCmd(['reject', 'late', 'ok']), editCmd('d'), advanceCmd(500),
+      rejectAllCmd(true), burstCmd(3), idleCmd(1000), rejectAllCmd(false), advanceCmd(5000), editCmd('ef'),
+    ].map(checked)
+    const runs = async (n: number) => {
+      for (let i = 0; i < n; i++) await run(cmds)
+    }
+    await runs(SETTLE_RUNS)
+    const settled = loroHeapBytes()
+    await runs(MEASURED_RUNS)
+    expect((loroHeapBytes() - settled) / MEASURED_RUNS, 'bytes of Loro heap a run kept').toBeLessThan(KEPT_BYTES_PER_RUN)
+    // 600 runs take seconds; the deadline is a hundred times that, for a machine shared with other suites.
+  }, 600_000)
 })
+
+async function run(cmds: Iterable<Cmd>): Promise<void> {
+  const doc = new LoroDoc()
+  const sink = new ScriptedSink()
+  const q = new SaveQueue('d', doc, sink)
+  const m: Model = { doc, sink, q, edits: 0, closed: false }
+  try {
+    await fc.asyncModelRun(() => ({ model: m, real: {} as Record<string, never> }), cmds)
+    // `checked` held properties 1 and 3 after every command; hold them on the final state too.
+    checkStored(m)
+    if (!m.closed) {
+      // Property 2: the sink accepts again, the timers run, and the stored copy equals the live one.
+      sink.rejectAll = false
+      sink.outcomes = []
+      await vi.advanceTimersByTimeAsync(20_000)
+      await flush()
+      expect(q.state).toBe('saved')
+      const stored = new LoroDoc()
+      stored.importBatch(sink.stored)
+      const json = stored.toJSON()
+      stored.free()
+      expect(json).toEqual(doc.toJSON())
+    }
+    checkStored(m)
+  } finally {
+    q.close()
+    // A run's pending timers (a late append, a retry) would fire in a later run's advance and reach this doc after
+    // free(): "null pointer passed to rust" at 20,000 runs. Each run's timers end with it.
+    vi.clearAllTimers()
+    doc.free()
+    // free() releases nothing while a handle read from the doc (the commands' getText) is alive; only Loro's
+    // FinalizationRegistry frees those, in a task of its own. The test's fake timers replace setImmediate, so the
+    // turn is taken through the real one (FX-44).
+    await new Promise((resolve) => realSetImmediate(resolve))
+  }
+}
+
+const realSetImmediate = setImmediate
+
+/** The size of Loro's WebAssembly heap. It never shrinks, so growth is memory no earlier run gave back for reuse. */
+const loroHeapBytes = (): number => (loro as unknown as { __wasm: { memory: { buffer: ArrayBuffer } } }).__wasm.memory.buffer.byteLength
+/**
+ * T-F2B-02's bound. Over 1000 settled runs a run keeps about 1.4 kB with its documents freed and 2.0 kB without; at
+ * 300 runs the collector's pace swamps that (5-10 kB either way). 32 KiB catches a run that keeps its documents
+ * outright (searchFuzz's kept 286 kB, FX-44) without reading the collector's noise. Bytes, not a time.
+ */
+const SETTLE_RUNS = 300
+const MEASURED_RUNS = 300
+const KEPT_BYTES_PER_RUN = 32 * 1024

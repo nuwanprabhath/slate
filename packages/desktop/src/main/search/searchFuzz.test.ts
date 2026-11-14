@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import fc from 'fast-check'
+import * as loro from 'loro-crdt'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +13,10 @@ import { MAX_MATCHES, pageRows, SearchIndex } from './searchIndex'
 
 const dirs: string[] = []
 const open: Array<{ close(): void }> = []
+// Every Loro document a run builds. free() releases nothing while a container handle read from the doc (pageRows,
+// writeContent) is alive, and only Loro's FinalizationRegistry frees those, in a task of its own: so a run's
+// teardown (endRun) also turns the event loop (FX-44).
+const loroDocs: Array<{ free(): void }> = []
 function tempDb(): string {
   const dir = mkdtempSync(join(tmpdir(), 'slate-searchfuzz-'))
   dirs.push(dir)
@@ -21,9 +26,16 @@ function tempDb(): string {
 // delete in time (FX-40).
 const closeRun = (): void => {
   open.splice(0).forEach((o) => o.close())
+  loroDocs.splice(0).forEach((d) => d.free())
   dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true }))
 }
 afterEach(closeRun)
+const endRun = async (): Promise<void> => {
+  closeRun()
+  await new Promise((resolve) => setImmediate(resolve))
+}
+/** The size of Loro's WebAssembly heap. It never shrinks, so growth is memory no earlier run gave back for reuse. */
+const loroHeapBytes = (): number => (loro as unknown as { __wasm: { memory: { buffer: ArrayBuffer } } }).__wasm.memory.buffer.byteLength
 
 // ASCII letters, digits, punctuation and a few CJK characters: where the trigram tokenizer's case
 // folding is unambiguous. No U+0000 in stored text (a phrase may carry one).
@@ -119,6 +131,7 @@ describe('T-F3E: search index fuzz', () => {
   function world() {
     const store = new DocStore(tempDb())
     const nb = NotebookDoc.create('Work')
+    loroDocs.push(nb.doc)
     const sections = [nb.addSection('One'), nb.addSection('Two')]
     const pages = [0, 1, 2].map((i) => nb.addPage(sections[i % 2]!, `P${i}`))
     const sync = () => {
@@ -134,6 +147,7 @@ describe('T-F3E: search index fuzz', () => {
     const edit = (i: number, lines: string[][]) => {
       const pageId = pages[i]!.pageId
       const page = new PageDoc()
+      loroDocs.push(page.doc)
       lines.forEach((ls, n) => {
         const id = page.addBox({ x: 0, y: n * 100, width: 300 })
         writeContent(page.contentMap(id)!, ls.map(para), page.doc)
@@ -171,12 +185,13 @@ describe('T-F3E: search index fuzz', () => {
     return out.sort()
   }
 
-  function run(cmds: Cmd[]): void {
+  // Async only so the teardown can turn the event loop; the steps are synchronous.
+  async function run(cmds: Cmd[]): Promise<void> {
     const w = world()
     try {
       steps(w, cmds)
     } finally {
-      closeRun()
+      await endRun()
     }
   }
 
@@ -222,13 +237,13 @@ describe('T-F3E: search index fuzz', () => {
     }
   }
 
-  it('T-F3E-02: a literal query equals matchAll over pageRows after any edit, removal and move', () => {
-    fc.assert(fc.property(fc.array(cmd, { minLength: 1, maxLength: 14 }), run), { ...fcParams, ...fcRuns(40, 25) })
+  it('T-F3E-02: a literal query equals matchAll over pageRows after any edit, removal and move', async () => {
+    await fc.assert(fc.asyncProperty(fc.array(cmd, { minLength: 1, maxLength: 14 }), run), { ...fcParams, ...fcRuns(40, 25) })
   })
 
-  it('T-F3E-03: total never exceeds MAX_MATCHES and truncated is true exactly when something was cut', () => {
-    fc.assert(
-      fc.property(fc.integer({ min: 1, max: 40 }), fc.integer({ min: 0, max: 60 }), (rows, per) => {
+  it('T-F3E-03: total never exceeds MAX_MATCHES and truncated is true exactly when something was cut', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 1, max: 40 }), fc.integer({ min: 0, max: 60 }), async (rows, per) => {
         const w = world()
         try {
           const line = Array.from({ length: per }, () => 'xyz').join(' ')
@@ -239,7 +254,7 @@ describe('T-F3E: search index fuzz', () => {
           expect(r.truncated).toBe(all > MAX_MATCHES)
           expect(r.pages.reduce((n, p) => n + p.matches.length, 0)).toBe(r.total)
         } finally {
-          closeRun()
+          await endRun()
         }
       }),
       { ...fcParams, ...fcRuns(40, 30) },
@@ -285,4 +300,33 @@ describe('T-F3E: search index fuzz', () => {
     )
     expect(accepted).toBeGreaterThan(0)
   })
+
+  it("T-F3E-05: a run gives back the Loro documents it built, so Loro's WebAssembly heap stops growing (FX-44)", async () => {
+    const cmds: Cmd[] = [
+      { op: 'edit', page: 0, lines: [['abc ABC', '日本 x.y'], ['abcabc']] },
+      { op: 'edit', page: 1, lines: [['a b c', 'abc,']] },
+      { op: 'move', page: 2, section: 0 },
+      { op: 'query', text: 'abc', matchCase: false, wholeWord: false, scope: 0 },
+      { op: 'edit', page: 0, lines: [['ab'], ['c abc']] },
+      { op: 'remove', page: 1 },
+      { op: 'query', text: 'ab', matchCase: true, wholeWord: true, scope: 1 },
+    ]
+    const runs = async (n: number) => {
+      for (let i = 0; i < n; i++) await run(cmds)
+    }
+    await runs(SETTLE_RUNS)
+    const settled = loroHeapBytes()
+    await runs(MEASURED_RUNS)
+    expect((loroHeapBytes() - settled) / MEASURED_RUNS, 'bytes of Loro heap a run kept').toBeLessThan(KEPT_BYTES_PER_RUN)
+    // 600 runs take seconds; the deadline is a hundred times that, for a machine shared with other suites.
+  }, 600_000)
 })
+
+/**
+ * T-F3E-05's bound. A run of its seven commands that frees nothing keeps 286 kB of Loro's heap; one that frees its
+ * documents and turns the event loop keeps 0 once 300 runs have settled it. 16 KiB is far under the first and is
+ * bytes, not a time, so machine load moves neither.
+ */
+const SETTLE_RUNS = 300
+const MEASURED_RUNS = 300
+const KEPT_BYTES_PER_RUN = 16 * 1024
