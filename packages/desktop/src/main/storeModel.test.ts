@@ -9,6 +9,7 @@ import fc from 'fast-check'
 import { LoroDoc } from 'loro-crdt'
 import { COMPACT_IDLE_MS, DocStore, type DocCursor } from './store'
 import { testKey } from './db/testModule'
+import { dbModule } from './db/dbModule'
 import { fcParams, fuzzTimeout } from '../../test/fuzz'
 
 const A = 'page:a'
@@ -80,7 +81,7 @@ afterEach(() => {
 })
 
 /** One run of the model; every invariant is checked after every command. */
-function runModel(ops: Op[], keyed: boolean): void {
+function runModel(ops: Op[], keyed: boolean, afterOpen: () => void = () => {}): void {
   const file = tempDb()
   const key = keyed ? testKey() : null
   const truthA = textEdits(EDITS, 'a')
@@ -104,6 +105,7 @@ function runModel(ops: Op[], keyed: boolean): void {
   const second = new DocStore(file, { key, compact: false })
   let seq = 0
   try {
+    afterOpen()
     for (const o of ops) {
       const seqBefore = seq
       let appended: string | null = null
@@ -200,6 +202,7 @@ function runModel(ops: Op[], keyed: boolean): void {
   } finally {
     second.close()
     store.close()
+    if (key) dbModule().native.keyDestroy(key)
   }
 }
 
@@ -224,7 +227,8 @@ describe('DocStore model', () => {
         fc.property(fc.integer({ min: 500, max: 540 }), fc.option(fc.nat(499), { nil: null }), fc.boolean(), (n, gap, keyed) => {
           const file = tempDb()
           const updates = textEdits(n, 'w')
-          const store = new DocStore(file, { key: keyed ? testKey() : null })
+          const key = keyed ? testKey() : null
+          const store = new DocStore(file, { key })
           try {
             const delivered = updates.filter((_, i) => i !== gap)
             for (const u of delivered) store.append(A, u)
@@ -241,6 +245,7 @@ describe('DocStore model', () => {
             }
           } finally {
             store.close()
+            if (key) dbModule().native.keyDestroy(key)
           }
         }),
         { ...fcParams, numRuns: Math.max(5, Math.floor(fcParams.numRuns / 200)) },
@@ -248,6 +253,30 @@ describe('DocStore model', () => {
     },
     fuzzTimeout(40_000),
   )
+
+  // The module has 64 key slots (MAX_HANDLES); a run that keeps its key spends one for the whole process.
+  const moduleUse = (): { used: number; live: number } => {
+    const s = dbModule().native.status()
+    return { used: s.secureHeapUsed, live: s.liveHandles }
+  }
+
+  it('FX-29: a keyed model run gives its key handle and secure heap back, even when the run fails', () => {
+    const before = moduleUse()
+    for (let i = 0; i < 100; i++) runModel([{ t: 'append' }, { t: 'reopen' }, { t: 'second' }], true)
+    expect(() => runModel([{ t: 'append' }], true, () => { throw new Error('a failing case') })).toThrow('a failing case')
+    expect(moduleUse()).toEqual(before)
+  })
+
+  it('FX-29: opening and closing a keyed DocStore 200 times on one key spends no secure heap and no handle', () => {
+    const key = testKey()
+    try {
+      const before = moduleUse()
+      for (let i = 0; i < 200; i++) new DocStore(tempDb(), { key }).close()
+      expect(moduleUse()).toEqual(before)
+    } finally {
+      dbModule().native.keyDestroy(key)
+    }
+  })
 
   it('FX-6: an append after removing the doc that held the newest seq is listed to a cursor taken before the remove, also after a reopen', () => {
     const file = tempDb()
