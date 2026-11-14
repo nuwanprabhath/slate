@@ -112,7 +112,8 @@ async function world() {
   const dir = mkdtempSync(join(tmpdir(), 'slate-canary-'))
   const store = new DocStore(join(dir, 'slate.db'), { compact: false })
   const saved: string[] = []
-  const server = createSlateMcpServer(storeDocSource(() => store, (docId) => saved.push(docId)))
+  const source = storeDocSource(() => store, (docId) => saved.push(docId))
+  const server = createSlateMcpServer(source)
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
   await server.connect(serverSide)
   const client = new Client({ name: 'canary', version: '0.0.0' })
@@ -246,6 +247,8 @@ async function world() {
       store.close()
       rmSync(dir, { recursive: true, force: true })
     } finally {
+      // The source's cached docs end with the run, as the app's end with its MCP server (FX-32).
+      source.close()
       for (const d of built.splice(0)) d.doc.free()
     }
   }
