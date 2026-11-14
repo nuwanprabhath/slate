@@ -3,7 +3,7 @@ import fc from 'fast-check'
 import * as loro from 'loro-crdt'
 import { LoroDoc } from 'loro-crdt'
 import { SaveQueue, type SaveSink } from '../src/saveQueue'
-import { fcParams } from '../../desktop/test/fuzz'
+import { fcParams, fuzzTimeout } from '../../desktop/test/fuzz'
 
 // T-F2B: a SaveQueue over a live LoroDoc and a scripted sink. The model is the list of updates the sink
 // acknowledged; the real queue must never store an update that depends on one the sink rejected.
@@ -161,7 +161,7 @@ describe('SaveQueue model', () => {
       fc.asyncProperty(fc.commands(commands, { maxCommands: 25 }), run),
       { ...fcParams, numRuns: Math.max(100, Math.floor(fcParams.numRuns / 10)) },
     )
-  })
+  }, fuzzTimeout())
 
   it("T-F2B-02: a run gives back the Loro documents it built, so Loro's WebAssembly heap stops growing (FX-44)", async () => {
     const cmds: Cmd[] = [
