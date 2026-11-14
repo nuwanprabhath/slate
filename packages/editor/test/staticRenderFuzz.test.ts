@@ -47,9 +47,6 @@ const block: fc.Arbitrary<PMJSON> = fc.oneof(
   node,
 )
 
-// FX-F3B-1 (open, security): an image's src is rendered with any scheme (`{ type: 'image', attrs: { src:
-// 'javascript:alert(1)' } }` draws `<img src="javascript:alert(1)">`); excluded from the oracle until it lands.
-const unsafeOutsideImgSrc = (root: ParentNode): string[] => unsafeMarkup(root, SCHEMES).filter((f) => !f.startsWith('<img src='))
 
 /** The fragment, or null when the content is empty; an error the schema raised means the box is not drawn. */
 function render(content: PMJSON[]): HTMLElement | 'refused' | null {
@@ -77,7 +74,7 @@ describe('T-F3B renderStaticHtml', () => {
       fc.property(fc.array(block, { maxLength: 5 }), (content) => {
         const out = render(content)
         if (out instanceof HTMLElement) rendered++
-        const found = out instanceof HTMLElement ? unsafeOutsideImgSrc(out) : []
+        const found = out instanceof HTMLElement ? unsafeMarkup(out, SCHEMES) : []
         expect(found).toEqual([])
       }),
       fcRuns(4, 300),

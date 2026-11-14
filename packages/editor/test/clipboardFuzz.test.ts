@@ -61,29 +61,18 @@ function throughSchema(html: string): HTMLElement {
 
 const text = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
-// FX-F3B-3 (open): happy-dom's innerHTML throws on a <template> inside svg or math (`<svg><template>`), in the
-// test environment's serialiser, not Slate's code; Chromium does not. Excluded until happy-dom is fixed or F3f covers it.
+// FX-F3B-3 (not a Slate defect): happy-dom's HTMLSerializer reads `.content` from any element named `template`
+// (html-serializer/HTMLSerializer.js, `tagName === 'template' ? root.content[nodeArray]`), but inside svg or math
+// the parser makes a foreign-namespace element with no `.content`, so innerHTML throws a TypeError. The HTML
+// serialisation algorithm special-cases only the HTML-namespace template, so a real DOM serialises it normally.
+// Excluded here only because the test environment cannot serialise it; F3f's Chromium run covers it.
 const pasteHtml = hostileHtml.filter((h) => !/<(svg|math)\b[\s\S]*<template/i.test(h))
-// FX-F3B-2 (open): cleanPastedHtml is not idempotent, since its output is re-parsed by a different
-// insertion mode (`<table><td>` cleans to `<td></td><table></table>`, which cleans to `<table></table>`).
-// FX-F3B-1 (open, security): an image's src keeps any scheme end to end (`<img src="javascript:alert(1)">`, `file:`),
-// since neither cleanPastedHtml nor the Image node checks it. Excluded from property 3 until FX-F3B-1 lands.
-const unsafeOutsideImgSrc = (root: ParentNode): string[] => unsafeMarkup(root, SCHEMES).filter((f) => !f.startsWith('<img src='))
-
 describe('T-F3B clipboard corpus', () => {
   replayCorpus('editor', 'paste-html', (bytes) => {
     const cleaned = cleanPastedHtml(text(bytes))
     expect(cleanViolations(cleaned)).toEqual([])
-    expect(cleanViolations(cleanPastedHtml(cleaned))).toEqual([])
-    // A paste that throws lands nothing, which is safe; FX-F3B-4 (open): the 2,000-deep div chain overflows
-    // ProseMirror's recursive DOM parser, so that paste fails instead of landing.
-    let landed: HTMLElement | null = null
-    try {
-      landed = throughSchema(text(bytes))
-    } catch (e) {
-      expect(e).toBeInstanceOf(RangeError)
-    }
-    if (landed) expect(unsafeOutsideImgSrc(landed)).toEqual([])
+    expect(cleanPastedHtml(cleaned)).toBe(cleaned)
+    expect(unsafeMarkup(throughSchema(text(bytes)), SCHEMES)).toEqual([])
   })
 })
 
@@ -97,13 +86,11 @@ describe('T-F3B cleanPastedHtml', () => {
     )
   }, fuzzTimeout(60_000))
 
-  // Idempotence is not asserted: it fails on main (FX-F3B-2, see the comment above pasteHtml). What is kept:
-  // a second clean never throws and still keeps only what property 1 allows.
-  it('T-F3B-02: never throws, and cleaning its own output keeps property 1', () => {
+  it('T-F3B-02: never throws, and cleaning its own output changes nothing', () => {
     fc.assert(
       fc.property(pasteHtml, (html) => {
         const once = cleanPastedHtml(html)
-        expect(cleanViolations(cleanPastedHtml(once))).toEqual([])
+        expect(cleanPastedHtml(once)).toBe(once)
       }),
       fcParams,
     )
@@ -121,7 +108,7 @@ describe('T-F3B cleanPastedHtml', () => {
   it('T-F3B-04: end to end through the schema, nothing that can run survives', () => {
     fc.assert(
       fc.property(pasteHtml, (html) => {
-        expect(unsafeOutsideImgSrc(throughSchema(html))).toEqual([])
+        expect(unsafeMarkup(throughSchema(html), SCHEMES)).toEqual([])
       }),
       fcRuns(2, 300),
     )

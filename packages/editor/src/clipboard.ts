@@ -1,5 +1,73 @@
 import { DOMSerializer, type Fragment, type Schema, type Slice } from '@tiptap/pm/model'
 import { toPlainText, type PMJSON } from '@slate/core'
+import { urlScheme } from './links'
+
+// data: is stored by storeDataImages and comes back as slate-blob; a src with no scheme or any other is refused.
+const IMAGE_SCHEMES = new Set(['http', 'https', 'data', 'slate-blob'])
+
+/** Whether a picture may load from `src`. Applied on paste and by the Image node, so neither layer trusts the other. */
+export function isSafeImageSrc(src: string): boolean {
+  const scheme = urlScheme(src)
+  return scheme !== null && IMAGE_SCHEMES.has(scheme)
+}
+
+// The deepest element a paste keeps. The schema's deepest real structure is a few levels (a table cell in a
+// list item in a nested list in a blockquote, about a dozen elements with marks); 32 leaves room for real
+// documents' wrapper divs and keeps ProseMirror's recursive DOM parser far from the stack's end.
+export const MAX_PASTE_DEPTH = 32
+
+// Where a table's parts may stand; anything else a re-parse would move out (foster parenting) or drop.
+const TABLE_CHILDREN: Record<string, Set<string>> = {
+  TABLE: new Set(['CAPTION', 'COLGROUP', 'THEAD', 'TBODY', 'TFOOT', 'TR']),
+  THEAD: new Set(['TR']),
+  TBODY: new Set(['TR']),
+  TFOOT: new Set(['TR']),
+  TR: new Set(['TD', 'TH']),
+  COLGROUP: new Set(['COL']),
+}
+const TABLE_PARTS = /^(CAPTION|COLGROUP|COL|THEAD|TBODY|TFOOT|TR|TD|TH)$/
+const TABLE_PARENTS: Record<string, RegExp> = {
+  CAPTION: /^TABLE$/,
+  COLGROUP: /^TABLE$/,
+  THEAD: /^TABLE$/,
+  TBODY: /^TABLE$/,
+  TFOOT: /^TABLE$/,
+  TR: /^(TABLE|THEAD|TBODY|TFOOT)$/,
+  TD: /^TR$/,
+  TH: /^TR$/,
+  COL: /^COLGROUP$/,
+}
+
+/**
+ * Makes table markup what a parser would read back unchanged: a cell, row or section outside its
+ * parent is unwrapped to its contents, and content standing directly in a table's structure moves
+ * out in front of the table. Without this a second parse restructures it and can lose a cell.
+ */
+function settleTables(body: HTMLElement): void {
+  for (const el of Array.from(body.querySelectorAll('*')).reverse()) {
+    if (TABLE_PARTS.test(el.tagName) && !TABLE_PARENTS[el.tagName]!.test(el.parentElement?.tagName ?? '')) unwrap(el)
+  }
+  for (const el of Array.from(body.querySelectorAll('table, thead, tbody, tfoot, tr, colgroup'))) {
+    const allowed = TABLE_CHILDREN[el.tagName]!
+    const table = el.closest('table')!
+    for (const child of Array.from(el.childNodes)) {
+      const misplaced = child.nodeType === 1 ? !allowed.has((child as Element).tagName) : child.nodeType === 3 && /\S/.test(child.textContent ?? '')
+      if (misplaced) table.before(child)
+    }
+  }
+}
+
+/** Unwraps elements deeper than MAX_PASTE_DEPTH, deepest first, so their text stays and the nesting does not. */
+function capDepth(body: HTMLElement): void {
+  const depth = new Map<Element, number>([[body, 0]])
+  const tooDeep: Element[] = []
+  for (const el of Array.from(body.querySelectorAll('*'))) {
+    const d = (depth.get(el.parentElement!) ?? 0) + 1
+    depth.set(el, d)
+    if (d > MAX_PASTE_DEPTH) tooDeep.push(el)
+  }
+  for (const el of tooDeep.reverse()) unwrap(el)
+}
 
 const KEEP_PASTE_ATTRS = new Set(['href', 'src', 'alt', 'start', 'colspan', 'rowspan'])
 
@@ -23,6 +91,11 @@ const indentMargin = (el: HTMLElement): string => (ALIGNABLE.test(el.tagName) &&
 export function cleanPastedHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   doc.querySelectorAll('style, script, meta, link, title').forEach((e) => e.remove())
+  // Comments carry nothing a page keeps (Word's conditional blocks) and a CDATA-turned-comment re-parses differently.
+  const comments = doc.createTreeWalker(doc.body, 128 /* NodeFilter.SHOW_COMMENT */)
+  const dropped: Node[] = []
+  while (comments.nextNode()) dropped.push(comments.currentNode)
+  dropped.forEach((c) => c.parentNode?.removeChild(c))
   for (const el of Array.from(doc.body.querySelectorAll<HTMLElement>('*'))) {
     const weight = el.style.fontWeight
     if ((el.tagName === 'B' || el.tagName === 'STRONG') && /^(normal|[1-4]00)$/.test(weight)) {
@@ -44,6 +117,14 @@ export function cleanPastedHtml(html: string): string {
     if (margin) el.style.marginLeft = margin
   }
   doc.body.querySelectorAll('font, span').forEach(unwrap)
+  doc.body.querySelectorAll('img').forEach((img) => {
+    if (!isSafeImageSrc(img.getAttribute('src') ?? '')) img.remove()
+  })
+  settleTables(doc.body)
+  capDepth(doc.body)
+  // A parser drops whitespace before the body's first content, so the output starts without it.
+  const first = doc.body.firstChild
+  if (first?.nodeType === 3) first.textContent = (first.textContent ?? '').replace(/^[\t\n\f\r ]+/, '')
   return doc.body.innerHTML
 }
 

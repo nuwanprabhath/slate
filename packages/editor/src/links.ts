@@ -12,17 +12,23 @@ const HOST_PORT = /^[^/?#:]+:\d+(?:[/?#]|$)/
 const DOMAIN_OR_PATH = /^(?:localhost|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:[/?#]\S*)?$/i
 
 /**
- * Turns what the user typed into a link target. Browsers ignore tabs and newlines inside a
- * scheme, so `java\tscript:` is checked as `javascript:`.
+ * The scheme a URL is read with, lower-cased, or null for none. Browsers ignore tabs and newlines
+ * inside a scheme, so `java\tscript:` is `javascript`. Every scheme check (links, image sources) uses this one.
  */
+export function urlScheme(raw: string): string | null {
+  // eslint-disable-next-line no-control-regex -- control characters are what the pattern strips before the scheme check
+  const squashed = raw.trim().replace(/[\s\u0000-\u001f]/g, '')
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(squashed)
+  return scheme && !HOST_PORT.test(squashed) ? scheme[1]!.toLowerCase() : null
+}
+
+/** Turns what the user typed into a link target. */
 export function normalizeLinkInput(raw: string): LinkInput {
   const text = raw.trim()
   if (!text) return { error: 'Enter a web address' }
-  // eslint-disable-next-line no-control-regex -- control characters are what the pattern strips before the scheme check
-  const squashed = text.replace(/[\s\u0000-\u001f]/g, '')
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(squashed)
-  if (scheme && !HOST_PORT.test(squashed)) {
-    if (!SAFE_SCHEMES.has(scheme[1]!.toLowerCase())) return { error: `Links can't use ${scheme[1]!.toLowerCase()}:` }
+  const scheme = urlScheme(text)
+  if (scheme !== null) {
+    if (!SAFE_SCHEMES.has(scheme)) return { error: `Links can't use ${scheme}:` }
     return { href: text }
   }
   if (!DOMAIN_OR_PATH.test(text)) return { error: 'Enter a web address' }
