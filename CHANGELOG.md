@@ -6,6 +6,26 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-11-15
+
+A link could carry an address Slate does not allow, because the editor's link extension checked it
+with a guess rather than a list.
+
+### Fixed
+
+- A link can no longer carry an address whose scheme Slate does not allow. The check came from the
+  link extension's own guess, which reads "letters followed by something that is not a letter" as a
+  relative path -- so any scheme holding a digit (`web3:`, `h323:`, and nonsense like `l1ra:`) was
+  treated as safe, kept by a paste, and drawn into a page synced from another device. Links are now
+  held to the same three schemes everywhere Slate states them -- `http`, `https` and `mailto` --
+  through the one reader that already sees through tricks like `java<tab>script:`. Opening a link was
+  never affected: that path allows only `https:` and `mailto:` and still does (FX-50).
+- Test: the hostile-address generator now includes schemes that carry a digit, so the property
+  written to catch exactly this class can see it. Every curated address it had was digit-free, which
+  is why a random one found the hole first (FX-50).
+- Test: the one remaining fuzz deadline that did not scale with the run count now does, finishing
+  the change made in 0.7.8 (FX-49).
+
 ## [0.7.8] - 2026-11-15
 
 The nightly soak on 0.7.7 ran the whole suite to completion for the first time: 147 of 148
