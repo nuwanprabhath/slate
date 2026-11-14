@@ -39,8 +39,14 @@ export function refuse(channel: string): never {
 }
 
 // The grammar lives in core so sync refuses the same ids main does.
-import { isDocId, isId } from '@slate/core'
-export { isDocId, isId }
+// Declared here, not re-exported, because the ipcValidation guard reads this file's declarations.
+import { isDocId as coreIsDocId, isId as coreIsId } from '@slate/core'
+
+/** An id as `newId` makes it. */
+export const isId = (value: unknown): value is string => coreIsId(value)
+
+/** A document's key in the store: its kind, then an id. */
+export const isDocId = (value: unknown): value is string => coreIsDocId(value)
 
 /** A theme the person saved (`main/theme/themeStore.ts`); a `builtin:` theme is not renamed or removed. */
 export const isSavedThemeId = (value: unknown): value is string => typeof value === 'string' && value.startsWith('user:') && isId(value.slice('user:'.length))
