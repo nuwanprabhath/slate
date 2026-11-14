@@ -120,7 +120,7 @@ export class Library {
     // later notebook update never depends on one the store does not have.
     const saves = new SaveQueue(notebookDocId(id), doc.doc, this.api.docs)
     const offChanges = doc.doc.subscribe(() => this.bump())
-    const entry = { id, doc, detach: () => (offChanges(), saves.close()) }
+    const entry = { id, doc, detach: () => (offChanges(), void saves.close()) }
     this.entries.push(entry)
     return entry
   }

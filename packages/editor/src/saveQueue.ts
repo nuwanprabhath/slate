@@ -64,6 +64,7 @@ export class SaveQueue {
   private pending = false
   private running: Promise<void> | null = null
   private closed = false
+  private closing: Promise<void> = Promise.resolve()
   private retryMs = FIRST_RETRY_MS
   private current: SaveState = 'saved'
   private errorText: string | undefined
@@ -163,9 +164,12 @@ export class SaveQueue {
     }
   }
 
-  /** Stops retrying and leaves the aggregate state; a flush already under way still finishes. */
-  close(): void {
-    if (this.closed) return
+  /**
+   * Stops retrying and leaves the aggregate state; a flush already under way still finishes. Resolves
+   * once the queue will never touch its document again, so only then may the owner free it (FX-45).
+   */
+  close(): Promise<void> {
+    if (this.closed) return this.closing
     this.closed = true
     this.unsubscribe()
     live.delete(this)
@@ -174,6 +178,10 @@ export class SaveQueue {
     // switching page) never drops the edit that was just made.
     if (this.pending) this.start()
     notify()
+    // Once closed nothing restarts a flush (`schedule` and `start`'s finally both check `closed`),
+    // so the flush running now is the last one that reads the document.
+    this.closing = (this.running ?? Promise.resolve()).catch(() => undefined)
+    return this.closing
   }
 
   private sleep(ms: number): Promise<void> {

@@ -99,7 +99,7 @@ const closeCmd = (): Cmd => ({
   check: (m) => !m.closed,
   toString: () => 'close()',
   run: async (m) => {
-    m.q.close()
+    void m.q.close()
     m.closed = true
     await flush()
   },
@@ -203,10 +203,12 @@ async function run(cmds: Iterable<Cmd>): Promise<void> {
     }
     checkStored(m)
   } finally {
-    q.close()
-    // A run's pending timers (a late append, a retry) would fire in a later run's advance and reach this doc after
-    // free(): "null pointer passed to rust" at 20,000 runs. Each run's timers end with it.
-    vi.clearAllTimers()
+    // free() only once close() says the queue is done with the doc: its last flush may still be waiting on a
+    // late append or a retry, whose fake timers would otherwise fire in a later run's advance and reach the
+    // freed doc ("null pointer passed to rust", FX-45).
+    const closing = q.close()
+    await vi.runAllTimersAsync()
+    await closing
     doc.free()
     // free() releases nothing while a handle read from the doc (the commands' getText) is alive; only Loro's
     // FinalizationRegistry frees those, in a task of its own. The test's fake timers replace setImmediate, so the
