@@ -147,7 +147,9 @@ export class BackupSource implements GraphSource {
     const file = this.pageFiles.get(pageId)
     if (!file) throw new Error(`Unknown backup page ${pageId}`)
     const pageDir = dirname(file)
-    return normalizeOne2HtmlPage(readFileSync(file, 'utf8'), { rewriteSrc: (src) => RESOURCE_PREFIX + resolve(pageDir, decodeURI(src)) })
+    // The file name, not the page id: a page that parses to nothing is a damaged file, and the name
+    // is what the person can look for (FX-9).
+    return normalizeOne2HtmlPage(readFileSync(file, 'utf8'), { page: basename(file), rewriteSrc: (src) => RESOURCE_PREFIX + resolve(pageDir, decodeURI(src)) })
   }
 
   async resource(url: string): Promise<{ bytes: Uint8Array; mime: string }> {

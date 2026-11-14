@@ -144,6 +144,23 @@ describe('runImport', () => {
     expect(state.map.get('p2')!.status).toBe('done')
   })
 
+  it('fails a page that parses to nothing by name, and imports the rest (FX-9)', async () => {
+    const sink = memorySink()
+    const state = memoryState()
+    const empty: GraphSource = {
+      listTree: () => graph.listTree(),
+      listPages: (id) => graph.listPages(id),
+      resource: (url) => graph.resource(url),
+      pageContent: async (id) => (id === 'p1' ? '<!-- nothing -->' : graph.pageContent(id)),
+    }
+    const result = await run({ ids: ['s1'], sink, state, graph: empty })
+    expect(result.failed.map((f) => f.pageId)).toEqual(['p1'])
+    // The page's title, not "(unnamed)": the engine passes it so the person can find the file.
+    expect(result.failed[0]!.error).toContain('First')
+    expect(result.failed[0]!.error).not.toContain('unnamed')
+    expect(result.imported).toBeGreaterThan(0)
+  })
+
   it('stops on abort and resumes on a rerun', async () => {
     const sink = memorySink()
     const state = memoryState()

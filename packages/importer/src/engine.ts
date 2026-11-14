@@ -82,7 +82,7 @@ export async function runImport(opts: RunImportOptions): Promise<ImportProgress>
         progress.skipped++
       } else {
         try {
-          const mapped = mapOneNotePage(await graph.pageContent(meta.id))
+          const mapped = mapOneNotePage(await graph.pageContent(meta.id), { page: meta.title })
           // One upload per distinct resource within a page.
           const blobs = new Map<string, Promise<string>>()
           const swap = (src: string): Promise<string> => {
