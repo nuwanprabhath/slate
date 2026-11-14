@@ -204,6 +204,9 @@ async function run(cmds: Iterable<Cmd>): Promise<void> {
     checkStored(m)
   } finally {
     q.close()
+    // A run's pending timers (a late append, a retry) would fire in a later run's advance and reach this doc after
+    // free(): "null pointer passed to rust" at 20,000 runs. Each run's timers end with it.
+    vi.clearAllTimers()
     doc.free()
     // free() releases nothing while a handle read from the doc (the commands' getText) is alive; only Loro's
     // FinalizationRegistry frees those, in a task of its own. The test's fake timers replace setImmediate, so the
