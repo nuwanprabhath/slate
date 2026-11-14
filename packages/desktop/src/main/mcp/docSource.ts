@@ -120,8 +120,13 @@ export function storeDocSource(
     },
     createPage: async (pageId, blocks) => {
       const page = new PageDoc()
-      if (blocks) page.addBox({ x: 40, y: 40, width: 480, content: blocks })
-      save(`page:${pageId}`, page.doc.export({ mode: 'snapshot' }))
+      try {
+        if (blocks) page.addBox({ x: 40, y: 40, width: 480, content: blocks })
+        save(`page:${pageId}`, page.doc.export({ mode: 'snapshot' }))
+      } finally {
+        // Only the saved bytes outlive this call; the next read decodes its own doc.
+        page.doc.free()
+      }
     },
     save: async (docId, update) => save(docId, update),
     audit: async (entry) => db().appendAudit(entry),

@@ -97,6 +97,19 @@ describe('storeDocSource frees what it stops using (FX-32)', () => {
     expect(made.map((m) => m.frees)).toEqual([1, 1, 1, 1, 1])
   })
 
+  it('frees the page doc createPage builds once it is saved', async () => {
+    const store = newStore()
+    const probe = new PageDoc()
+    const loroProto = Object.getPrototypeOf(probe.doc) as { free(): void }
+    probe.doc.free()
+    const source = storeDocSource(() => store)
+    const free = vi.spyOn(loroProto, 'free')
+    await source.createPage('n1', [{ type: 'paragraph' }])
+    expect(free).toHaveBeenCalledTimes(1)
+    free.mockRestore()
+    expect((await source.readPage('n1')).boxes).toHaveLength(1)
+  })
+
   it('frees cached notebook docs on close', async () => {
     const store = newStore()
     const nb = NotebookDoc.create('Work')
