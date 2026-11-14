@@ -10,6 +10,7 @@ import testsRegisteredUnconditionally from './tests-registered-unconditionally.m
 import sqlTextIsLiteral from './sql-text-is-literal.mjs'
 import noKeyText from './no-key-text.mjs'
 import mcpPagesThroughDocSource from './mcp-pages-through-docsource.mjs'
+import loroHandlesThroughScope from './loro-handles-through-scope.mjs'
 
 /**
  * The `slate/*` ESLint rules: "there is one sanctioned way to do X here", one rule per X.
@@ -87,6 +88,16 @@ export const CUSTOM = [
     name: 'mcp-pages-through-docsource',
     rule: mcpPagesThroughDocSource,
     files: ['packages/mcp/src/tools.ts', 'packages/mcp/src/server.ts'],
+  },
+  {
+    // FX-38: a Loro handle nobody frees keeps its whole document, so core and the main process read Loro
+    // inside `withHandles`. No file is let off: the functions that hand a handle out are named, one by
+    // one, in allowlists/loro-handles.json, which the rule reads itself. The editor and the renderer are
+    // outside `files`: the window holds a box's handles for as long as the box is open, by design.
+    name: 'loro-handles-through-scope',
+    rule: loroHandlesThroughScope,
+    files: ['packages/core/src/**/*.ts', ...MAIN_PROCESS],
+    ignores: TESTS,
   },
   {
     name: 'skip-needs-reason',
