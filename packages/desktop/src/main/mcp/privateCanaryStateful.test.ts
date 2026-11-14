@@ -251,6 +251,10 @@ async function world() {
       // The source's cached docs end with the run, as the app's end with its MCP server (FX-32).
       source.close()
       for (const d of built.splice(0)) d.doc.free()
+      // free() releases nothing while a container handle read from the doc (a LoroMap, a LoroTreeNode) is alive, and
+      // only Loro's FinalizationRegistry frees those, in a task of its own. A run awaits nothing but settled promises,
+      // so without this turn of the event loop no finalizer ran in 7,000 runs and every decoded doc stayed (FX-30).
+      await new Promise((resolve) => setImmediate(resolve))
     }
   }
   return { store, client, saved, sections, pages, person, touched: () => touched, accessNow, forbidden, privateState, pool, notebook, close }
@@ -370,7 +374,7 @@ describe('private boxes stay private while the person edits (F4d)', () => {
     expect(seen.cleanReads).toBeGreaterThan(0)
     expect(seen.flipsThenReads).toBeGreaterThan(0)
     expect(seen.refusals).toBeGreaterThan(0)
-    // 7,131 runs took 630 s at soak depth, about 9 s per 1000 FUZZ_RUNS; 30 s keeps a margin under load.
+    // The soak's 20,000 runs take about 165 s, under 1 s per 1000 FUZZ_RUNS; 30 s keeps a margin under load.
   }, fuzzTimeout(30_000))
 
   it('T-F4D-02: a box made private after the agent read it is gone from the next read, from the cache too', async () => {
