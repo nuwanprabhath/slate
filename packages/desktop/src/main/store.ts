@@ -44,6 +44,15 @@ const MIGRATIONS: ReadonlyArray<(db: Database.Database) => void> = [
   (db) => {
     db.exec(`CREATE TABLE IF NOT EXISTS doc_heads (doc_id TEXT PRIMARY KEY, local_seq INTEGER NOT NULL);`)
   },
+  // 3 (FX-6): the append sequence's high-water mark, kept apart from doc_heads so a `remove` that
+  // deletes the newest head cannot hand its number out again below a stored sync cursor. Seeded
+  // from doc_heads so an existing vault continues where it was and re-pushes nothing.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS seq_counter (id INTEGER PRIMARY KEY CHECK (id = 1), seq INTEGER NOT NULL);
+      INSERT OR IGNORE INTO seq_counter (id, seq) SELECT 1, COALESCE(MAX(local_seq), 0) FROM doc_heads;
+    `)
+  },
 ]
 /**
  * Compaction rebuilds the whole doc on the main thread, which also routes the window's key presses,
@@ -319,7 +328,7 @@ export class DocStore {
 
   /** The newest append sequence in the database; 0 when nothing has been appended. */
   headSeq(): number {
-    return (this.prepare('SELECT COALESCE(MAX(local_seq), 0) AS m FROM doc_heads').get() as { m: number }).m
+    return (this.prepare('SELECT seq AS m FROM seq_counter WHERE id = 1').get() as { m: number }).m
   }
 
   /** The names in `names` that this scope has not marked synced, as one query rather than one each. */
@@ -343,10 +352,8 @@ export class DocStore {
   append(docId: string, update: Uint8Array, origin: 'local' | 'remote' = 'local'): void {
     this.db.transaction(() => {
       this.prepare('INSERT INTO updates (doc_id, data, origin) VALUES (?, ?, ?)').run(docId, Buffer.from(update), origin)
-      this.prepare(
-        'INSERT INTO doc_heads (doc_id, local_seq) VALUES (?, (SELECT COALESCE(MAX(local_seq), 0) + 1 FROM doc_heads)) ' +
-          'ON CONFLICT(doc_id) DO UPDATE SET local_seq = excluded.local_seq',
-      ).run(docId)
+      const { seq } = this.prepare('UPDATE seq_counter SET seq = seq + 1 WHERE id = 1 RETURNING seq').get() as { seq: number }
+      this.prepare('INSERT INTO doc_heads (doc_id, local_seq) VALUES (?, ?) ON CONFLICT(doc_id) DO UPDATE SET local_seq = excluded.local_seq').run(docId, seq)
     })()
     if (this.options.compact === false) return
     const counted = this.rowCounts.get(docId)

@@ -185,10 +185,7 @@ function runModel(ops: Op[], keyed: boolean): void {
       // 3. The change cursor never goes back, and lists what was appended since it.
       const changed = store.changedDocs(seqBefore)
       expect(changed.seq).toBeGreaterThanOrEqual(seqBefore)
-      // Open finding FX-F2A-1: `remove` deletes the doc_heads row that held the newest seq, so the next
-      // append reuses a seq at or below a stored cursor and is not listed. Checked only before a remove
-      // until the fix lands; the branch that fixes it removes this exclusion.
-      if (appended !== null && !m.removed) expect(changed.ids).toContain(appended)
+      if (appended !== null) expect(changed.ids).toContain(appended)
       seq = changed.seq
       // 4. A removed doc loads empty and its reader starts over.
       if (o.t === 'remove') {
