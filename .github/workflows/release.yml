@@ -242,7 +242,7 @@ jobs:
           SLATE_UPDATE_SIGNING_KEY: ${{ secrets.SLATE_UPDATE_SIGNING_KEY }}
           SLATE_UPDATE_SIGNING_KEY_MLDSA: ${{ secrets.SLATE_UPDATE_SIGNING_KEY_MLDSA }}
         run: node scripts/sign-update.mjs dist
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           name: Slate ${{ github.ref_name }}
           generate_release_notes: true
