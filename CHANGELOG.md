@@ -6,6 +6,24 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-11-18
+
+Dependency bumps, and a latent packaging fault they exposed.
+
+### Fixed
+
+- `packages/desktop` used `@tiptap/core` and `@tiptap/pm` without declaring either: both resolved
+  only because npm had hoisted them to the root for `packages/editor`. Bumping TipTap nested them
+  under `packages/editor`, and the desktop typecheck stopped finding them. They are declared now,
+  so the build no longer rests on where npm happens to put a package.
+
+### Changed
+
+- `electron` to 45.3.4 and the `@tiptap/*` packages to 3.34.0 (Dependabot #20, which proposed
+  45.3.0 and 3.33.1; the declared ranges resolve higher).
+- `electronVersion` in `packages/desktop/electron-builder.cjs` follows the lockfile's Electron, as
+  `tools/guards/packaging.test.ts` requires.
+
 ## [0.7.11] - 2026-11-18
 
 Nothing a person sees changes: a fuzz oracle asserted something the store is right to refuse, and
