@@ -6,6 +6,23 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.11] - 2026-11-18
+
+Nothing a person sees changes: a fuzz oracle asserted something the store is right to refuse, and
+the dependency bumps of the week.
+
+### Fixed
+
+- Test: the compaction property demanded that the store fold its rows into one snapshot in a case
+  where the threshold forbids it. It generates 500 to 540 edits and may withhold one; withholding
+  the *last* one delivers only 499 at the low end, one short of the 500 the store needs before it
+  folds anything. The oracle now reads the threshold from the store instead of assuming the count
+  always crosses it. Found by the nightly soak at seed 49 (FX-53).
+
+### Changed
+
+- `vite` to 8.3.8 and `@vitejs/plugin-react` to 6.3.0.
+
 ## [0.7.10] - 2026-11-17
 
 A pasted picture could be lost instead of kept, because the paste path looked for one spelling of
