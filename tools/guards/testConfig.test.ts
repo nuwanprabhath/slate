@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { baseCommit, git, read, readAt, ROOT, walk } from './repo'
+import { baseCommit, git, read, readAllAt, readAt, ROOT, walk } from './repo'
 
 /**
  * The test suites cannot be quietly shrunk (red team 10a/10b): every project collects what its
@@ -129,11 +129,26 @@ describe('ratchet: tests only grow', () => {
     expect(countSkips("const { skip } = it\nconst { todo: later, runIf } = test\nit['skip']('a')\ndescribe[\"skipIf\"](x)")).toBe(5)
   })
 
+  // The ratchet above reads every file at the base in one batch; if that reader went quietly wrong it
+  // would compare against nothing and pass whatever happened. So it is held against `git show`, which
+  // it replaced, on a file that exists, one that does not, and one that is not a test.
+  it.skipIf(base === null)('the batched base reader agrees with git show (self-test)', () => {
+    const probe = ['tools/guards/testConfig.test.ts', 'tools/guards/no-such-file.test.ts', 'CHANGELOG.md']
+    const batch = readAllAt(base!, probe)
+    expect(probe.map((rel) => batch.get(rel) ?? null)).toEqual(probe.map((rel) => readAt(base!, rel)))
+    expect(batch.get('tools/guards/no-such-file.test.ts') ?? null).toBeNull()
+    expect(batch.get('CHANGELOG.md')).toContain('# Changelog')
+  })
+
   // Outside a checkout with history there is no base to compare with.
   it.skipIf(base === null)('no test file gained a skip or todo since the base', () => {
     const grown: string[] = []
-    for (const file of testFiles(walk('packages', ['.ts', '.tsx']))) {
-      const was = readAt(base!, file)
+    const files = testFiles(walk('packages', ['.ts', '.tsx']))
+    // One `git cat-file --batch` for every file: a `git show` each spent most of this test's deadline
+    // on process spawns, so a busy machine timed it out.
+    const atBase = readAllAt(base!, files)
+    for (const file of files) {
+      const was = atBase.get(file) ?? null
       const before = was === null ? 0 : countSkips(was)
       const now = countSkips(read(file))
       if (now > before) grown.push(`${file}: ${String(before)} → ${String(now)} skipped or todo`)

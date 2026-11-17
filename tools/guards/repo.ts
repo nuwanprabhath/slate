@@ -73,3 +73,46 @@ export function readAt(commit: string, rel: string): string | null {
   const r = spawnSync('git', ['show', `${commit}:${rel}`], { cwd: ROOT, encoding: 'utf8' })
   return r.status === 0 ? r.stdout : null
 }
+
+/**
+ * `readAt` for many paths in one `git cat-file --batch` process, mapping each path to its text at
+ * `commit` or null. A ratchet that compared every test file one `git show` at a time spent 34 s of
+ * its 60 s deadline on process spawns alone, so it timed out whenever the machine was busy; the whole
+ * batch costs about a second.
+ *
+ * The batch protocol is line-based, so a path holding a newline would desynchronise it: those few go
+ * through `readAt` instead.
+ */
+export function readAllAt(commit: string, rels: readonly string[]): Map<string, string | null> {
+  const out = new Map<string, string | null>()
+  const batched = rels.filter((rel) => !rel.includes('\n'))
+  for (const rel of rels) if (rel.includes('\n')) out.set(rel, readAt(commit, rel))
+  if (batched.length === 0) return out
+  const r = spawnSync('git', ['cat-file', '--batch'], {
+    cwd: ROOT,
+    input: batched.map((rel) => `${commit}:${rel}\n`).join(''),
+    maxBuffer: 1024 * 1024 * 1024,
+  })
+  const buf: Buffer = r.stdout
+  let at = 0
+  for (const rel of batched) {
+    const end = buf.indexOf(0x0a, at)
+    if (end === -1) {
+      out.set(rel, null)
+      continue
+    }
+    const header = buf.toString('utf8', at, end)
+    // `<sha> <type> <size>` for an object that is there, `<request> missing` for one that is not.
+    const size = /^[0-9a-f]{40,} \w+ (\d+)$/.exec(header)?.[1]
+    if (size === undefined) {
+      out.set(rel, null)
+      at = end + 1
+      continue
+    }
+    const from = end + 1
+    const to = from + Number(size)
+    out.set(rel, buf.toString('utf8', from, to))
+    at = to + 1 // the newline git writes after each object
+  }
+  return out
+}
