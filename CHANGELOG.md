@@ -6,6 +6,25 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-11-17
+
+A pasted picture could be lost instead of kept, because the paste path looked for one spelling of
+the picture tag and a browser's parser accepts two.
+
+### Fixed
+
+- A pasted picture written as `<image>` rather than `<img>` is kept again. The HTML standard renames
+  that tag to `img` while parsing, so the picture existed for every later step but not for the cheap
+  test that decides whether a paste needs its pictures stored. The paste therefore skipped storing
+  them, and the cleaner then dropped the embedded address it cannot allow -- losing the picture
+  rather than keeping it by address (FX-52).
+- Test: the hostile-markup generator now emits `<image>`, the tag no generator had produced, closing
+  the same kind of gap as 0.7.9's digit-carrying schemes (FX-52).
+
+### Changed
+
+- `@azure/msal-node` to 7.2.2 and `hash-wasm` to 4.13.0.
+
 ## [0.7.9] - 2026-11-15
 
 A link could carry an address Slate does not allow, because the editor's link extension checked it
