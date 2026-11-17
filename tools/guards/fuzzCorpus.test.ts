@@ -13,7 +13,10 @@ import { baseCommit, exists, git, isTestFile, read, ROOT, walk } from './repo'
  *     of the SHA-256 of its own bytes;
  *  3. the regression corpus only grows: no corpus file on the base is missing;
  *  4. every `fc.assert(` takes its runs and seed from the kit (`fcParams`, `fcRuns(`) or a literal `seed:`;
- *  5. no shipped source imports fast-check or a kit file.
+ *  5. no shipped source imports fast-check or a kit file;
+ *  6. a test whose run count scales with SLATE_FUZZ_RUNS has a deadline that scales too. A constant
+ *     one sits inside the run count at PR depth and outside it at soak depth, so the harness times
+ *     out only in the nightly, hours in and far from the change that caused it (FX-49).
  * The native corpus (packages/native/fuzz/corpus) is replayed by the C standalone driver, not by
  * replayCorpus, so rule 1 leaves it out; rules 2 and 3 cover it.
  */
@@ -84,6 +87,40 @@ export function unseededAsserts(text: string): number[] {
   return bad
 }
 
+/** The index of the `)` closing the `(` at `from`. */
+function closingParen(text: string, from: number): number {
+  let depth = 0
+  for (let j = from; j < text.length; j++) {
+    if (text[j] === '(') depth++
+    else if (text[j] === ')' && --depth === 0) return j
+  }
+  return text.length - 1
+}
+
+/**
+ * Rule 6: the lines where a test whose run count scales carries a constant deadline, which FX-49 was.
+ * No explicit deadline is fine -- the soak passes `--testTimeout` -- and `fuzzTimeout(...)` scales by
+ * design; only a numeric literal stays put while the run count grows past it.
+ */
+export function constantDeadlines(text: string): number[] {
+  const bad: number[] = []
+  for (const m of text.matchAll(/\b(?:it|test)(?:\.\w+)*\s*\(/g)) {
+    const at = m.index
+    let open = at + m[0].length - 1
+    let close = closingParen(text, open)
+    // `it.each(rows)('name', fn, timeout)`: the cases are the first group, the test is the second.
+    const second = /^\s*\(/.exec(text.slice(close + 1))
+    if (second !== null) {
+      open = close + 1 + second[0].length - 1
+      close = closingParen(text, open)
+    }
+    const call = text.slice(open, close + 1)
+    if (!/\bfcParams\b|\bfcRuns\(/.test(call)) continue
+    if (/,\s*[\d_]+(?:\.\d+)?\s*\)$/.test(call)) bad.push(text.slice(0, at).split('\n').length)
+  }
+  return bad
+}
+
 /** Rule 5: does this module text import fast-check or a kit file? */
 export function importsFuzzKit(text: string): boolean {
   return [...text.matchAll(/(?:from\s+|import\s*\(\s*|require\(\s*|import\s+)['"`]([^'"`]+)['"`]/g)].some((m) => m[1] === 'fast-check' || KIT.test(m[1] ?? ''))
@@ -136,6 +173,18 @@ describe('fuzz corpus and kit guard', () => {
     expect(bad).toEqual([])
   })
 
+  it('a scaling run count has a scaling deadline (rule 6)', () => {
+    const bad = walk('packages', ['.ts', '.tsx'])
+      .filter(isTestFile)
+      .flatMap((f) =>
+        constantDeadlines(read(f)).map(
+          (line) =>
+            `${f}:${String(line)}: a constant deadline on a test whose run count scales: pass fuzzTimeout(msPer1000Runs) from packages/desktop/test/fuzz.ts, or leave the deadline to --testTimeout, so the soak's depth cannot time it out (${GUIDE})`,
+        ),
+      )
+    expect(bad).toEqual([])
+  })
+
   it('each rule catches what it is for (self-test)', () => {
     const t = 'packages/sync/test/corpus/loro-update'
     expect(replayTargets(`replayCorpus('sync', 'loro-update', (b) => {})`)).toEqual([t])
@@ -159,6 +208,14 @@ describe('fuzz corpus and kit guard', () => {
     expect(unseededAsserts('fc.assert(p, { numRuns: 5, seed: 1 })')).toEqual([])
     expect(unseededAsserts('const params = { ...fcParams, numRuns: 9 }\nfc.assert(p, params)')).toEqual([])
     expect(unseededAsserts('const params = { numRuns: 9 }\nfc.assert(p, params)')).toEqual([2])
+
+    expect(constantDeadlines(`it('x', () => { fc.assert(p, fcRuns(30)) }, 120_000)`)).toEqual([1])
+    expect(constantDeadlines(`it('x', () => { fc.assert(p, fcRuns(30)) }, fuzzTimeout(10_000))`)).toEqual([])
+    expect(constantDeadlines(`it('x', () => { fc.assert(p, fcRuns(30)) })`)).toEqual([])
+    expect(constantDeadlines(`it('y', () => { fc.assert(p, { ...fcParams, numRuns: 50 }) }, 30000)`)).toEqual([1])
+    // A fixed seed and run count does not scale, so a constant deadline holds.
+    expect(constantDeadlines(`it('z', () => { fc.assert(p, { seed: 7, numRuns: 10 }) }, 30000)`)).toEqual([])
+    expect(constantDeadlines(`it.each(rows)('w %s', () => { fc.assert(p, fcRuns(2, 200)) }, 1000)`)).toEqual([1])
 
     expect(importsFuzzKit(`import fc from 'fast-check'`)).toBe(true)
     expect(importsFuzzKit(`import { fcParams } from '../../test/fuzz'`)).toBe(true)
