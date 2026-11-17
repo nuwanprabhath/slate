@@ -20,10 +20,18 @@ the picture tag and a browser's parser accepts two.
   rather than keeping it by address (FX-52).
 - Test: the hostile-markup generator now emits `<image>`, the tag no generator had produced, closing
   the same kind of gap as 0.7.9's digit-carrying schemes (FX-52).
+- Test: the nightly fuzz soak now also runs three harnesses its file list had never matched, so a
+  harness can no longer rot unnoticed at depth.
+- Test: a guard refuses a fuzz harness whose run count scales while its deadline does not -- the
+  defect behind 0.7.8's timeout, which showed up only hours into a nightly (FX-49).
+- Test: the ratchet that checks no test file gained a skip read every file at the base in its own
+  `git show`, spending 34 s of its 60 s deadline on process spawns, so a busy machine timed it out.
+  One batched read instead: 2 s.
 
 ### Changed
 
-- `@azure/msal-node` to 7.2.2 and `hash-wasm` to 4.13.0.
+- `@azure/msal-node` to 7.2.2 and `hash-wasm` to 4.13.0, `actions/cache` to 6.1.0 and
+  `softprops/action-gh-release` to 3.0.4.
 
 ## [0.7.9] - 2026-11-15
 
