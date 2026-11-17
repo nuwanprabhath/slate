@@ -192,9 +192,14 @@ const BASE64_PICTURE = /^data:(image\/[a-z]+);base64,([a-z0-9+/=\s]*)$/i
  * Whether pasted HTML has any picture, which then goes through `storeDataImages`. A cheap test on
  * the text: whether a src holds a data URL is decided from the parsed attribute, since entities
  * (`&#100;ata:`) and `<img/src=…>` hide it from any pattern.
+ *
+ * `<image>` counts because the HTML Standard's tree construction renames that start tag to `img`
+ * and reprocesses it, so the parser downstream holds a picture (FX-52). Missing it meant the paste
+ * skipped `storeDataImages` and the cleaner then dropped the unstorable data URL, losing the
+ * picture rather than keeping it by address.
  */
 export function mayHoldImages(html: string): boolean {
-  return /<img/i.test(html)
+  return /<im(?:g|age)/i.test(html)
 }
 
 /** A src as the URL parser reads it: tabs and newlines removed, surrounding spaces and controls trimmed. */

@@ -111,6 +111,17 @@ describe('pasted HTML checks', () => {
     expect(put).toHaveLength(3)
   })
 
+  it("sees a picture written as <image>, which the parser reads as an img (FX-52)", () => {
+    // The HTML Standard's tree construction renames an `image` start tag to `img` and reprocesses it, so a
+    // browser's parser holds a picture the prefilter's old `/<img/i` never saw: the paste then skipped
+    // storeDataImages and the cleaner dropped the data URL, losing the picture instead of storing it.
+    expect(mayHoldImages(`<image src="${DATA}">`)).toBe(true)
+    expect(mayHoldImages('<IMAGE SRC="x.png">')).toBe(true)
+    expect(mayHoldImages('<img src="x.png">')).toBe(true)
+    // Still no false positive on ordinary prose that merely says the word.
+    expect(mayHoldImages('<p>an image of a cat</p>')).toBe(false)
+  })
+
   it('stays fast on a crafted paste', () => {
     const start = performance.now()
     mayHoldImages('<img '.repeat(40_000))

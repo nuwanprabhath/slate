@@ -1,7 +1,9 @@
 // Hostile HTML and URLs for the paste and copy paths, and the oracle that says what in a parsed tree could run.
 import fc from 'fast-check'
 
-const TAGS = ['p', 'b', 'i', 'a', 'img', 'div', 'span', 'table', 'tr', 'td', 'li', 'ul', 'ol', 'pre', 'code', 'svg', 'math', 'script', 'style', 'iframe', 'object', 'embed', 'form', 'textarea', 'title', 'template', 'noscript', 'select', 'option', 'foreignObject', 'mglyph', 'malignmark', 'annotation-xml', 'base', 'meta', 'link']
+// `image` is a tag no generator emitted: the parser renames it to `img`, which is how a picture reached the
+// page past a prefilter that only looked for `<img` (FX-52).
+const TAGS = ['p', 'b', 'i', 'a', 'img', 'image', 'div', 'span', 'table', 'tr', 'td', 'li', 'ul', 'ol', 'pre', 'code', 'svg', 'math', 'script', 'style', 'iframe', 'object', 'embed', 'form', 'textarea', 'title', 'template', 'noscript', 'select', 'option', 'foreignObject', 'mglyph', 'malignmark', 'annotation-xml', 'base', 'meta', 'link']
 const ATTRS = ['href', 'src', 'xlink:href', 'action', 'formaction', 'data', 'style', 'class', 'onerror', 'onload', 'onclick', 'OnMouseOver', 'srcdoc', 'width', 'data-color', 'is', 'id']
 
 // web3, h323 and s3 carry a digit, which is the shape that defeated the Link extension's own check and let an
