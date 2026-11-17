@@ -5,7 +5,8 @@ import type { ImportRecord } from '@slate/importer'
 import type { ConflictRecord } from '@slate/sync'
 import type { PqLevel, TransportObservation } from '../shared/api'
 
-const COMPACT_THRESHOLD = 500
+/** Rows below this are left alone; at or above it an idle moment folds them into one snapshot. */
+export const COMPACT_THRESHOLD = 500
 /** Diagnostics, pruned on open: the newest rows are the only ones anything reads. */
 const AUDIT_KEEP = 10_000
 const NOTICES_KEEP = 1_000

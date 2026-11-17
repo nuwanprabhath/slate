@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { LoroDoc } from 'loro-crdt'
-import { COMPACT_IDLE_MS, DocStore, type DocCursor } from './store'
+import { COMPACT_IDLE_MS, COMPACT_THRESHOLD, DocStore, type DocCursor } from './store'
 import { testKey } from './db/testModule'
 import { dbModule } from './db/dbModule'
 import { fcParams, fuzzTimeout } from '../../test/fuzz'
@@ -237,9 +237,12 @@ describe('DocStore model', () => {
             for (const u of delivered) store.append(A, u)
             vi.advanceTimersByTime(COMPACT_IDLE_MS)
             expectSameDoc(docOf(store.load(A)), docOf(delivered), 'after idle')
-            // Folded to one snapshot unless a gap keeps the rows; a gap at the last edit leaves nothing pending.
-            if (gap === null || gap === n - 1) expect(store.load(A)).toHaveLength(1)
-            else expect(store.load(A)).toHaveLength(delivered.length)
+            // Folded to one snapshot unless a gap keeps the rows; a gap at the last edit leaves nothing
+            // pending, so those rows fold too -- but only if enough of them arrived. Withholding the last
+            // edit delivers n - 1, which at n = 500 is one short of the threshold, so the store leaves them
+            // alone and is right to: the oracle used to demand a fold there and the soak found it (FX-53).
+            const folds = gap === null || (gap === n - 1 && delivered.length >= COMPACT_THRESHOLD)
+            expect(store.load(A)).toHaveLength(folds ? 1 : delivered.length)
             if (gap !== null) {
               store.append(A, updates[gap]!)
               vi.advanceTimersByTime(COMPACT_IDLE_MS)
