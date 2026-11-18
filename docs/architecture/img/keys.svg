@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 440" width="880" height="440" role="img" aria-label="Which key opens what: three unlock routes wrap one master key">
+<title>Which key opens what: three unlock routes wrap one master key</title>
+<style>
+  .bg { fill: #ffffff; }
+  .t { fill: #1f2328; font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .s { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .g { fill: #59636e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .02em; }
+  .l { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .box { fill: #ffffff; stroke: #d0d7de; stroke-width: 1; }
+  .ui { fill: #ddf4ff; stroke: #54aeff; }
+  .main { fill: #fff8c5; stroke: #d4a72c; }
+  .crypto { fill: #dafbe1; stroke: #4ac26b; }
+  .secret { fill: #fbefff; stroke: #c297ff; }
+  .out { fill: #f6f8fa; stroke: #d0d7de; }
+  .grp { stroke-width: 1; }
+  .sub { fill: #ffffff; fill-opacity: .55; stroke: #d0d7de; stroke-dasharray: 4 3; }
+  .a { stroke: #6e7781; stroke-width: 1.5; fill: none; }
+  .d { stroke-dasharray: 5 4; }
+  .ah { fill: #6e7781; }
+  .stop { stroke: #cf222e; stroke-width: 1.5; fill: none; }
+  .stopt { fill: #cf222e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .bad { fill: #ffebe9; stroke: #cf222e; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .t { fill: #e6edf3; }
+    .s, .g, .l { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .ui { fill: #0c2d6b; fill-opacity: .55; stroke: #1f6feb; }
+    .main { fill: #3b2e00; fill-opacity: .7; stroke: #9e6a03; }
+    .crypto { fill: #033a16; fill-opacity: .7; stroke: #238636; }
+    .secret { fill: #2b1c42; fill-opacity: .8; stroke: #a371f7; }
+    .out { fill: #161b22; stroke: #3d444d; }
+    .sub { fill: #0d1117; fill-opacity: .45; stroke: #3d444d; }
+    .a { stroke: #8b949e; }
+    .ah { fill: #8b949e; }
+    .stop { stroke: #f85149; }
+    .stopt { fill: #f85149; }
+    .bad { fill: #3c1618; fill-opacity: .8; stroke: #f85149; }
+  }
+</style>
+<rect class="bg" x="0" y="0" width="880" height="440" rx="12"/>
+<text class="g" x="40" y="34" text-anchor="start">THREE WAYS IN</text>
+<rect class="box secret" x="40" y="50" width="230" height="62" rx="8"/>
+<text class="t" x="155" y="78" text-anchor="middle">Your password</text>
+<text class="s" x="155" y="95" text-anchor="middle">Argon2id · PBKDF2 in FIPS</text>
+<rect class="box secret" x="40" y="132" width="230" height="62" rx="8"/>
+<text class="t" x="155" y="160" text-anchor="middle">Recovery key</text>
+<text class="s" x="155" y="177" text-anchor="middle">shown once, kept by you</text>
+<rect class="box secret" x="40" y="214" width="230" height="62" rx="8"/>
+<text class="t" x="155" y="242" text-anchor="middle">Quick unlock</text>
+<text class="s" x="155" y="259" text-anchor="middle">Touch ID or system keyring</text>
+<text class="l" x="40" y="300" text-anchor="start">Each wraps the same master key, so</text>
+<text class="l" x="40" y="317" text-anchor="start">changing how you get in never</text>
+<text class="l" x="40" y="334" text-anchor="start">re-encrypts a single note.</text>
+<path class="a" d="M270 81 L360 150"/>
+<path class="ah" d="M360.0 150.0 L355.6 141.0 L350.1 148.1 Z"/>
+<path class="a" d="M270 163 L360 163"/>
+<path class="ah" d="M360.0 163.0 L351.0 158.5 L351.0 167.5 Z"/>
+<path class="a" d="M270 245 L360 176"/>
+<path class="ah" d="M360.0 176.0 L350.1 177.9 L355.6 185.0 Z"/>
+<rect class="box crypto" x="360" y="132" width="180" height="62" rx="8"/>
+<text class="t" x="450" y="160" text-anchor="middle">Master key</text>
+<text class="s" x="450" y="177" text-anchor="middle">random, all your devices</text>
+<text class="g" x="630" y="34" text-anchor="start">WHAT THAT OPENS</text>
+<path class="a" d="M540 150 L630 76"/>
+<path class="ah" d="M630.0 76.0 L620.2 78.2 L625.9 85.2 Z"/>
+<path class="a" d="M540 163 L630 163"/>
+<path class="ah" d="M630.0 163.0 L621.0 158.5 L621.0 167.5 Z"/>
+<path class="a" d="M540 176 L630 250"/>
+<path class="ah" d="M630.0 250.0 L625.9 240.8 L620.2 247.8 Z"/>
+<rect class="box crypto" x="630" y="46" width="210" height="60" rx="8"/>
+<text class="t" x="735" y="73" text-anchor="middle">Database key</text>
+<text class="s" x="735" y="90" text-anchor="middle">opens SQLCipher here</text>
+<rect class="box crypto" x="630" y="133" width="210" height="60" rx="8"/>
+<text class="t" x="735" y="160" text-anchor="middle">Sync key</text>
+<text class="s" x="735" y="177" text-anchor="middle">a fresh key per remote file</text>
+<rect class="box crypto" x="630" y="220" width="210" height="60" rx="8"/>
+<text class="t" x="735" y="247" text-anchor="middle">Name key</text>
+<text class="s" x="735" y="264" text-anchor="middle">HMAC paths in the folder</text>
+<text class="l" x="630" y="310" text-anchor="start">The database key is random per device</text>
+<text class="l" x="630" y="327" text-anchor="start">and stored only wrapped, so joining</text>
+<text class="l" x="630" y="344" text-anchor="start">another vault rewraps it instead of</text>
+<text class="l" x="630" y="361" text-anchor="start">re-encrypting the database.</text>
+<text class="l" x="440" y="404" text-anchor="middle">Rotating keys makes a new master key: that, and only that, re-encrypts everything.</text>
+<text class="l" x="440" y="426" text-anchor="middle">Lose both the password and the recovery key and the notes are gone — nobody can recover them.</text>
+</svg>

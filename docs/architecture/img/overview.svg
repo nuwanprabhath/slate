@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 700" width="880" height="700" role="img" aria-label="Slate overview: the renderer, preload, the main process, the cryptographic module and what they reach">
+<title>Slate overview: the renderer, preload, the main process, the cryptographic module and what they reach</title>
+<style>
+  .bg { fill: #ffffff; }
+  .t { fill: #1f2328; font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .s { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .g { fill: #59636e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .02em; }
+  .l { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .box { fill: #ffffff; stroke: #d0d7de; stroke-width: 1; }
+  .ui { fill: #ddf4ff; stroke: #54aeff; }
+  .main { fill: #fff8c5; stroke: #d4a72c; }
+  .crypto { fill: #dafbe1; stroke: #4ac26b; }
+  .secret { fill: #fbefff; stroke: #c297ff; }
+  .out { fill: #f6f8fa; stroke: #d0d7de; }
+  .grp { stroke-width: 1; }
+  .sub { fill: #ffffff; fill-opacity: .55; stroke: #d0d7de; stroke-dasharray: 4 3; }
+  .a { stroke: #6e7781; stroke-width: 1.5; fill: none; }
+  .d { stroke-dasharray: 5 4; }
+  .ah { fill: #6e7781; }
+  .stop { stroke: #cf222e; stroke-width: 1.5; fill: none; }
+  .stopt { fill: #cf222e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .bad { fill: #ffebe9; stroke: #cf222e; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .t { fill: #e6edf3; }
+    .s, .g, .l { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .ui { fill: #0c2d6b; fill-opacity: .55; stroke: #1f6feb; }
+    .main { fill: #3b2e00; fill-opacity: .7; stroke: #9e6a03; }
+    .crypto { fill: #033a16; fill-opacity: .7; stroke: #238636; }
+    .secret { fill: #2b1c42; fill-opacity: .8; stroke: #a371f7; }
+    .out { fill: #161b22; stroke: #3d444d; }
+    .sub { fill: #0d1117; fill-opacity: .45; stroke: #3d444d; }
+    .a { stroke: #8b949e; }
+    .ah { fill: #8b949e; }
+    .stop { stroke: #f85149; }
+    .stopt { fill: #f85149; }
+    .bad { fill: #3c1618; fill-opacity: .8; stroke: #f85149; }
+  }
+</style>
+<rect class="bg" x="0" y="0" width="880" height="700" rx="12"/>
+<rect class="grp ui" x="20" y="20" width="840" height="118" rx="12"/>
+<text class="g" x="34" y="40">RENDERER · SANDBOXED, NO NODE, A CSP THAT ALLOWS NO NETWORK</text>
+<rect class="box" x="40" y="50" width="253" height="68" rx="8"/>
+<text class="t" x="166.5" y="81" text-anchor="middle">Canvas and boxes</text>
+<text class="s" x="166.5" y="98" text-anchor="middle">TipTap, bound to the CRDT</text>
+<rect class="box" x="313" y="50" width="254" height="68" rx="8"/>
+<text class="t" x="440" y="81" text-anchor="middle">Sidebar and search</text>
+<text class="s" x="440" y="98" text-anchor="middle">notebooks · sections · pages</text>
+<rect class="box" x="587" y="50" width="253" height="68" rx="8"/>
+<text class="t" x="713.5" y="81" text-anchor="middle">Settings and dialogs</text>
+<text class="s" x="713.5" y="98" text-anchor="middle">security · sync · AI access</text>
+<path class="a" d="M440 140 L440 174"/>
+<path class="ah" d="M440.0 174.0 L444.5 165.0 L435.5 165.0 Z"/>
+<path class="ah" d="M440.0 140.0 L435.5 149.0 L444.5 149.0 Z"/>
+<text class="l" x="452" y="162" text-anchor="start">asks for everything; nothing is reached directly</text>
+<rect class="box" x="290" y="174" width="300" height="58" rx="8"/>
+<text class="t" x="440" y="200" text-anchor="middle">preload: window.slate</text>
+<text class="s" x="440" y="217" text-anchor="middle">the only bridge there is</text>
+<path class="a" d="M440 234 L440 268"/>
+<path class="ah" d="M440.0 268.0 L444.5 259.0 L435.5 259.0 Z"/>
+<path class="ah" d="M440.0 234.0 L435.5 243.0 L444.5 243.0 Z"/>
+<text class="l" x="452" y="256" text-anchor="start">one handler a channel, every argument checked, refused while locked</text>
+<rect class="grp main" x="20" y="268" width="840" height="232" rx="12"/>
+<text class="g" x="34" y="288">MAIN PROCESS · OWNS EVERY FILE, KEY AND SOCKET</text>
+<rect class="grp sub" x="36" y="300" width="392" height="182" rx="12"/>
+<text class="g" x="50" y="320">Your notes</text>
+<rect class="box" x="48" y="330" width="184" height="60" rx="8"/>
+<text class="t" x="140" y="357" text-anchor="middle">DocStore</text>
+<text class="s" x="140" y="374" text-anchor="middle">CRDT updates, in SQLite</text>
+<rect class="box" x="242" y="330" width="174" height="60" rx="8"/>
+<text class="t" x="329" y="357" text-anchor="middle">BlobStore</text>
+<text class="s" x="329" y="374" text-anchor="middle">images on disk</text>
+<rect class="box" x="48" y="402" width="184" height="60" rx="8"/>
+<text class="t" x="140" y="429" text-anchor="middle">MCP server</text>
+<text class="s" x="140" y="446" text-anchor="middle">serves AI agents</text>
+<rect class="box" x="242" y="402" width="174" height="60" rx="8"/>
+<text class="t" x="329" y="429" text-anchor="middle">SearchIndex</text>
+<text class="s" x="329" y="446" text-anchor="middle">SQLite FTS5</text>
+<rect class="grp sub" x="444" y="300" width="400" height="182" rx="12"/>
+<text class="g" x="458" y="320">Keys, sync and updates</text>
+<rect class="box" x="456" y="330" width="184" height="60" rx="8"/>
+<text class="t" x="548" y="357" text-anchor="middle">Vault</text>
+<text class="s" x="548" y="374" text-anchor="middle">unlock · lock · key ring</text>
+<rect class="box" x="650" y="330" width="182" height="60" rx="8"/>
+<text class="t" x="741" y="357" text-anchor="middle">Sync engine</text>
+<text class="s" x="741" y="374" text-anchor="middle">merge · seal · upload</text>
+<rect class="box" x="456" y="402" width="184" height="60" rx="8"/>
+<text class="t" x="548" y="429" text-anchor="middle">Updater</text>
+<text class="s" x="548" y="446" text-anchor="middle">both signatures verify</text>
+<rect class="box" x="650" y="402" width="182" height="60" rx="8"/>
+<text class="t" x="741" y="429" text-anchor="middle">Self-test gate</text>
+<text class="s" x="741" y="446" text-anchor="middle">before any key is used</text>
+<path class="a" d="M440 500 L440 540"/>
+<path class="ah" d="M440.0 540.0 L444.5 531.0 L435.5 531.0 Z"/>
+<text class="l" x="452" y="526" text-anchor="start">every key and every byte of cipher text</text>
+<rect class="box crypto" x="170" y="540" width="540" height="62" rx="8"/>
+<text class="t" x="440" y="568" text-anchor="middle">@slate/native — the cryptographic module</text>
+<text class="s" x="440" y="585" text-anchor="middle">OpenSSL + FIPS Provider 3.1.2 · SQLCipher · keys in a secure heap</text>
+<path class="a" d="M250 602 L250 640"/>
+<path class="ah" d="M250.0 640.0 L254.5 631.0 L245.5 631.0 Z"/>
+<path class="a" d="M630 602 L630 640"/>
+<path class="ah" d="M630.0 640.0 L634.5 631.0 L625.5 631.0 Z"/>
+<path class="box" d="M80 647 A150 7 0 0 1 380 647 V689 A150 7 0 0 1 80 689 Z"/>
+<path class="box" style="fill:none" d="M80 647 A150 7 0 0 0 380 647"/>
+<text class="t" x="230" y="667.5" text-anchor="middle">This computer</text>
+<text class="s" x="230" y="684.5" text-anchor="middle">encrypted database + images</text>
+<path class="box" d="M500 647 A150 7 0 0 1 800 647 V689 A150 7 0 0 1 500 689 Z"/>
+<path class="box" style="fill:none" d="M500 647 A150 7 0 0 0 800 647"/>
+<text class="t" x="650" y="667.5" text-anchor="middle">Your git repository or OneDrive</text>
+<text class="s" x="650" y="684.5" text-anchor="middle">sealed files under HMAC names</text>
+<rect class="box out" x="20" y="540" width="130" height="62" rx="8"/>
+<text class="t" x="85" y="568" text-anchor="middle">AI agent</text>
+<text class="s" x="85" y="585" text-anchor="middle">bin/slate-mcp</text>
+<path class="a d" d="M85 540 L85 466"/>
+<path class="ah" d="M85.0 466.0 L80.5 475.0 L89.5 475.0 Z"/>
+<text class="l" x="20" y="622" text-anchor="start">Over a local socket, and only</text>
+<text class="l" x="20" y="639" text-anchor="start">the sections you shared.</text>
+</svg>

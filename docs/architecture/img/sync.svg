@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 430" width="880" height="430" role="img" aria-label="How an edit reaches your other devices, and what the sync folder can see">
+<title>How an edit reaches your other devices, and what the sync folder can see</title>
+<style>
+  .bg { fill: #ffffff; }
+  .t { fill: #1f2328; font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .s { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .g { fill: #59636e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .02em; }
+  .l { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .box { fill: #ffffff; stroke: #d0d7de; stroke-width: 1; }
+  .ui { fill: #ddf4ff; stroke: #54aeff; }
+  .main { fill: #fff8c5; stroke: #d4a72c; }
+  .crypto { fill: #dafbe1; stroke: #4ac26b; }
+  .secret { fill: #fbefff; stroke: #c297ff; }
+  .out { fill: #f6f8fa; stroke: #d0d7de; }
+  .grp { stroke-width: 1; }
+  .sub { fill: #ffffff; fill-opacity: .55; stroke: #d0d7de; stroke-dasharray: 4 3; }
+  .a { stroke: #6e7781; stroke-width: 1.5; fill: none; }
+  .d { stroke-dasharray: 5 4; }
+  .ah { fill: #6e7781; }
+  .stop { stroke: #cf222e; stroke-width: 1.5; fill: none; }
+  .stopt { fill: #cf222e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .bad { fill: #ffebe9; stroke: #cf222e; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .t { fill: #e6edf3; }
+    .s, .g, .l { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .ui { fill: #0c2d6b; fill-opacity: .55; stroke: #1f6feb; }
+    .main { fill: #3b2e00; fill-opacity: .7; stroke: #9e6a03; }
+    .crypto { fill: #033a16; fill-opacity: .7; stroke: #238636; }
+    .secret { fill: #2b1c42; fill-opacity: .8; stroke: #a371f7; }
+    .out { fill: #161b22; stroke: #3d444d; }
+    .sub { fill: #0d1117; fill-opacity: .45; stroke: #3d444d; }
+    .a { stroke: #8b949e; }
+    .ah { fill: #8b949e; }
+    .stop { stroke: #f85149; }
+    .stopt { fill: #f85149; }
+    .bad { fill: #3c1618; fill-opacity: .8; stroke: #f85149; }
+  }
+</style>
+<rect class="bg" x="0" y="0" width="880" height="430" rx="12"/>
+<rect class="box ui" x="40" y="40" width="180" height="60" rx="8"/>
+<text class="t" x="130" y="67" text-anchor="middle">You type</text>
+<text class="s" x="130" y="84" text-anchor="middle">in a box on a page</text>
+<path class="a" d="M220 70 L300 70"/>
+<path class="ah" d="M300.0 70.0 L291.0 65.5 L291.0 74.5 Z"/>
+<rect class="box main" x="300" y="40" width="190" height="60" rx="8"/>
+<text class="t" x="395" y="67" text-anchor="middle">A CRDT update</text>
+<text class="s" x="395" y="84" text-anchor="middle">appended, never a rewrite</text>
+<path class="a" d="M490 70 L570 70"/>
+<path class="ah" d="M570.0 70.0 L561.0 65.5 L561.0 74.5 Z"/>
+<rect class="box main" x="570" y="40" width="270" height="60" rx="8"/>
+<text class="t" x="705" y="67" text-anchor="middle">Stored and indexed</text>
+<text class="s" x="705" y="84" text-anchor="middle">encrypted with the database key</text>
+<path class="a" d="M705 100 L705 150"/>
+<path class="ah" d="M705.0 150.0 L709.5 141.0 L700.5 141.0 Z"/>
+<text class="l" x="713" y="130" text-anchor="start">later, on a sync run</text>
+<rect class="box crypto" x="530" y="150" width="310" height="62" rx="8"/>
+<text class="t" x="685" y="178" text-anchor="middle">Sealed, one file at a time</text>
+<text class="s" x="685" y="195" text-anchor="middle">fresh salt, so a fresh key, per file</text>
+<path class="a" d="M530 181 L400 181"/>
+<path class="ah" d="M400.0 181.0 L409.0 185.5 L409.0 176.5 Z"/>
+<path class="box" d="M140 157 A130 7 0 0 1 400 157 V205 A130 7 0 0 1 140 205 Z"/>
+<path class="box" style="fill:none" d="M140 157 A130 7 0 0 0 400 157"/>
+<text class="t" x="270" y="180.5" text-anchor="middle">Your git repo or OneDrive</text>
+<text class="s" x="270" y="197.5" text-anchor="middle">e2ee/… under HMAC names</text>
+<path class="a" d="M270 212 L270 262"/>
+<path class="ah" d="M270.0 262.0 L274.5 253.0 L265.5 253.0 Z"/>
+<rect class="box ui" x="140" y="262" width="260" height="60" rx="8"/>
+<text class="t" x="270" y="289" text-anchor="middle">Your other device</text>
+<text class="s" x="270" y="306" text-anchor="middle">downloads, decrypts, merges</text>
+<rect class="grp sub" x="440" y="240" width="400" height="110" rx="12"/>
+<text class="g" x="454" y="260">WHAT THE FOLDER STILL REVEALS</text>
+<text class="l" x="456" y="286" text-anchor="start">How many files there are, how big they are,</text>
+<text class="l" x="456" y="303" text-anchor="start">and when they change. Not a note, a title, an</text>
+<text class="l" x="456" y="320" text-anchor="start">image, a file name, or which page a file is.</text>
+<text class="l" x="40" y="382" text-anchor="start">Two devices that changed the same page both append, and the data structure defines the merge:</text>
+<text class="l" x="40" y="404" text-anchor="start">that is why editing offline works. A file that will not decrypt is an error, never read as plain text.</text>
+</svg>

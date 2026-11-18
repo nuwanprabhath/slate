@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 430" width="880" height="430" role="img" aria-label="Start-up: the power-up self-test gate, and the states a vault moves through">
+<title>Start-up: the power-up self-test gate, and the states a vault moves through</title>
+<style>
+  .bg { fill: #ffffff; }
+  .t { fill: #1f2328; font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .s { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .g { fill: #59636e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .02em; }
+  .l { fill: #59636e; font: 400 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .box { fill: #ffffff; stroke: #d0d7de; stroke-width: 1; }
+  .ui { fill: #ddf4ff; stroke: #54aeff; }
+  .main { fill: #fff8c5; stroke: #d4a72c; }
+  .crypto { fill: #dafbe1; stroke: #4ac26b; }
+  .secret { fill: #fbefff; stroke: #c297ff; }
+  .out { fill: #f6f8fa; stroke: #d0d7de; }
+  .grp { stroke-width: 1; }
+  .sub { fill: #ffffff; fill-opacity: .55; stroke: #d0d7de; stroke-dasharray: 4 3; }
+  .a { stroke: #6e7781; stroke-width: 1.5; fill: none; }
+  .d { stroke-dasharray: 5 4; }
+  .ah { fill: #6e7781; }
+  .stop { stroke: #cf222e; stroke-width: 1.5; fill: none; }
+  .stopt { fill: #cf222e; font: 600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .bad { fill: #ffebe9; stroke: #cf222e; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .t { fill: #e6edf3; }
+    .s, .g, .l { fill: #9198a1; }
+    .box { fill: #161b22; stroke: #3d444d; }
+    .ui { fill: #0c2d6b; fill-opacity: .55; stroke: #1f6feb; }
+    .main { fill: #3b2e00; fill-opacity: .7; stroke: #9e6a03; }
+    .crypto { fill: #033a16; fill-opacity: .7; stroke: #238636; }
+    .secret { fill: #2b1c42; fill-opacity: .8; stroke: #a371f7; }
+    .out { fill: #161b22; stroke: #3d444d; }
+    .sub { fill: #0d1117; fill-opacity: .45; stroke: #3d444d; }
+    .a { stroke: #8b949e; }
+    .ah { fill: #8b949e; }
+    .stop { stroke: #f85149; }
+    .stopt { fill: #f85149; }
+    .bad { fill: #3c1618; fill-opacity: .8; stroke: #f85149; }
+  }
+</style>
+<rect class="bg" x="0" y="0" width="880" height="430" rx="12"/>
+<rect class="box main" x="40" y="40" width="190" height="64" rx="8"/>
+<text class="t" x="135" y="69" text-anchor="middle">Slate starts</text>
+<text class="s" x="135" y="86" text-anchor="middle">module gated: no service</text>
+<path class="a" d="M230 72 L288 72"/>
+<path class="ah" d="M288.0 72.0 L279.0 67.5 L279.0 76.5 Z"/>
+<rect class="box crypto" x="290" y="40" width="200" height="64" rx="8"/>
+<text class="t" x="390" y="69" text-anchor="middle">Power-up self-test</text>
+<text class="s" x="390" y="86" text-anchor="middle">module hash pinned</text>
+<path class="a" d="M490 72 L558 72"/>
+<path class="ah" d="M558.0 72.0 L549.0 67.5 L549.0 76.5 Z"/>
+<text class="l" x="524" y="60" text-anchor="middle">passes</text>
+<rect class="box main" x="560" y="40" width="280" height="64" rx="8"/>
+<text class="t" x="700" y="69" text-anchor="middle">Ready</text>
+<text class="s" x="700" y="86" text-anchor="middle">plaintext, or locked</text>
+<path class="stop" d="M390 104 L390 178"/>
+<path class="ah" d="M390.0 178.0 L394.5 169.0 L385.5 169.0 Z"/>
+<text class="stopt" x="398" y="146" text-anchor="start">fails</text>
+<rect class="box bad" x="290" y="180" width="200" height="68" rx="8"/>
+<text class="t" x="390" y="203" text-anchor="middle">selftest-failed</text>
+<text class="s" x="390" y="220" text-anchor="middle">terminal: nobody</text>
+<text class="s" x="390" y="237" text-anchor="middle">gets in, ever</text>
+<path class="a" d="M700 104 L700 178"/>
+<path class="ah" d="M700.0 178.0 L704.5 169.0 L695.5 169.0 Z"/>
+<text class="l" x="708" y="146" text-anchor="start">you unlock</text>
+<rect class="box crypto" x="560" y="180" width="280" height="64" rx="8"/>
+<text class="t" x="700" y="209" text-anchor="middle">Unlocked</text>
+<text class="s" x="700" y="226" text-anchor="middle">keys live in the secure heap</text>
+<path class="a" d="M700 244 L700 308"/>
+<path class="ah" d="M700.0 308.0 L704.5 299.0 L695.5 299.0 Z"/>
+<text class="l" x="692" y="282" text-anchor="end">idle · sleep · screen lock</text>
+<rect class="box main" x="560" y="310" width="280" height="64" rx="8"/>
+<text class="t" x="700" y="339" text-anchor="middle">Keys wiped</text>
+<text class="s" x="700" y="356" text-anchor="middle">back to locked</text>
+<path class="a d" d="M560 342 L530 342 L530 88 L558 88"/>
+<path class="ah" d="M558.0 88.0 L549.0 83.5 L549.0 92.5 Z"/>
+<text class="l" x="40" y="300" text-anchor="start">A fips-140-3 vault latches the module</text>
+<text class="l" x="40" y="317" text-anchor="start">approved-only before the first key, so</text>
+<text class="l" x="40" y="334" text-anchor="start">Argon2id, HKDF and AES-ECB are</text>
+<text class="l" x="40" y="351" text-anchor="start">unreachable for the rest of the run.</text>
+<text class="l" x="40" y="404" text-anchor="start">The self-test runs before any key is used, every start, whether or not your notes are encrypted.</text>
+</svg>

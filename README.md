@@ -218,6 +218,86 @@ while Slate is unlocked. [`docs/compliance/security-policy.md`](docs/compliance/
 services, roles, self-tests, error behaviour, per-key wiping and open points;
 [`docs/compliance/poam.md`](docs/compliance/poam.md) lists what is still open.
 
+## How Slate is built
+
+- **The renderer** is the window: React, TipTap and the canvas.
+- **The main process** is Node: it owns every file, key and socket.
+- **The cryptographic module** (`@slate/native`) is where keys exist at all.
+
+The renderer draws and nothing else. It owns no file, no database, no key and no network socket,
+and it cannot reach one: it asks the main process, over channels that preload exposes as
+`window.slate`, and main checks every argument before a handler runs. That single rule is what the
+rest of the design hangs off, and it is why a bug in the editor cannot read your notes off the disk.
+
+In every picture, blue is the renderer, amber is the main process, green is the cryptographic
+module, purple is a secret you supply, and grey is outside Slate.
+
+![Overview: the renderer, preload, the main process, the cryptographic module and what they reach](docs/architecture/img/overview.svg)
+
+**Three rules hold everywhere.**
+
+- **A page is a CRDT, not a file.** Every page and notebook is a [Loro](https://loro.dev) document,
+  and an edit appends an update instead of rewriting anything. That is what makes offline editing
+  and merging work: two devices that changed the same page both append, and the data structure
+  defines the merge rather than a diff. Updates are folded into one snapshot once a page has
+  enough of them and the app is idle.
+- **Keys never become JavaScript bytes.** They are made, used and wiped inside the module; the rest
+  of Slate holds handles to them. A password or recovery key you type crosses as bytes, never a
+  string, and is wiped after use.
+- **Nothing runs before the self-test.** The module starts gated, and no service is available until
+  the power-up self-test has passed.
+
+### Which key opens what
+
+Encryption is off until you turn it on. Once it is on, one master key sits at the centre and
+everything else is derived from it, so the way you unlock Slate is independent of what the keys
+protect. That is why changing your password rewraps one small envelope in milliseconds, while
+rotating keys — the one operation that makes a new master key — re-encrypts everything.
+
+![Which key opens what: three unlock routes wrap one master key](docs/architecture/img/keys.svg)
+
+### How an edit reaches your other devices
+
+Sync is a folder you own: a git repository or OneDrive. Slate never runs a server, and the folder
+never sees a note. Each file is sealed on its own with a fresh salt, so a fresh key, and the path
+it lives at is an HMAC of the real one, which hides which document a file belongs to and whether it
+is a page or a notebook. A file that will not decrypt is an error, never read as plain text.
+
+![How an edit reaches your other devices, and what the sync folder can see](docs/architecture/img/sync.svg)
+
+### Start-up, unlocking and locking
+
+The self-test is the first thing that happens and it has no bypass: until it passes, the module
+serves nothing, so neither an encrypted nor an unencrypted vault opens. A failure is not retried —
+`selftest-failed` is terminal for that run. After that the vault is a small state machine, and the
+only state in which keys exist is `unlocked`.
+
+![Start-up: the power-up self-test gate, and the states a vault moves through](docs/architecture/img/startup.svg)
+
+### The layers that check themselves
+
+Slate's security properties are checks that run, not claims in a document.
+
+| Layer | What it does | When it fires |
+| --- | --- | --- |
+| Power-up self-test | The module self-tests before any key is used, and its hash is pinned and verified | Every start. Failure is terminal: `selftest-failed` blocks everyone, encrypted or not |
+| Approved-mode latch | A `fips-140-3` vault latches the module approved-only before the first key, putting Argon2id, HKDF and AES-ECB out of reach | At unlock |
+| Keys as handles | Keys live in the module's secure heap, and a key used outside its purpose is refused | Every operation |
+| Zeroisation | Keys are wiped at lock; typed secrets cross as bytes and are wiped after use, and the lock window's own process ends once you are in | Every lock and unlock |
+| Electron boundary | Sandbox and context isolation on, navigation and `window.open` refused, permissions denied by default, a production CSP that allows no network | Every window |
+| IPC validation | One handler a channel, every argument checked before main acts, channels refused while locked | Every call |
+| Update signatures | An update must carry a valid ML-DSA-65 **and** Ed25519 signature before it is downloaded or installed | Every update |
+| AI access | Agents reach notes over a local socket, see only what you shared, never a private box, and only while Slate is unlocked | Every agent call |
+
+The same rules are enforced while the code is written, so they cannot quietly decay: custom lint
+rules and guard tests fail the build if the renderer reaches the network, a key becomes bytes, SQL
+stops being a literal, crypto moves out of the module, or an exception list grows.
+[`CLAUDE.md`](CLAUDE.md) pairs every rule with the check that enforces it.
+
+The pictures are drawn by [`scripts/diagrams/architecture.mjs`](scripts/diagrams/architecture.mjs):
+edit one there and run `node scripts/diagrams/architecture.mjs` to rewrite
+`docs/architecture/img/`. It refuses to finish if a label no longer fits its box.
+
 ## Develop
 
 ```bash
