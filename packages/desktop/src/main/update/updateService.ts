@@ -111,6 +111,8 @@ export class UpdateService {
   private downloaded: { path: string; sha512: string; version: string } | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private started = false
+  /** The settings the running schedule was armed with, so an unrelated settings write leaves it alone. */
+  private armedWith: UpdateSettings | null = null
 
   constructor(private readonly deps: UpdateServiceDeps) {
     this.s = { phase: 'idle', kind: deps.kind }
@@ -120,7 +122,9 @@ export class UpdateService {
   start(): void {
     this.started = true
     clearTimeout(this.timer)
-    if (!this.settings().automaticChecks) return
+    const settings = this.settings()
+    this.armedWith = { ...settings }
+    if (!settings.automaticChecks) return
     this.timer = setTimeout(() => void this.runScheduled(), this.deps.firstCheckMs ?? FIRST_CHECK_MS)
   }
 
@@ -128,11 +132,20 @@ export class UpdateService {
     this.started = false
     clearTimeout(this.timer)
     this.timer = undefined
+    this.armedWith = null
   }
 
-  /** Called when Settings change: re-arms the schedule, but only where updates were started (not in a dev run). */
+  /**
+   * Called on every settings write, whatever it changed. Re-arming the schedule restarts it at the
+   * first-check delay, so doing that for an unrelated write (a theme, an autocorrect toggle) meant the
+   * configured interval never elapsed and the app checked seconds after each write instead of hours
+   * later. Only a change to the update settings themselves re-arms it.
+   */
   settingsChanged(): void {
-    if (this.started) this.start()
+    if (!this.started) return
+    const { automaticChecks, intervalHours } = this.settings()
+    if (this.armedWith && this.armedWith.automaticChecks === automaticChecks && this.armedWith.intervalHours === intervalHours) return
+    this.start()
   }
 
   private settings(): UpdateSettings {

@@ -256,6 +256,23 @@ describe('UpdateService', () => {
     expect(backend.check).toHaveBeenCalledTimes(1)
   })
 
+  it('a settings write that leaves the update settings alone does not restart the interval', async () => {
+    // Every settings write calls settingsChanged -- a theme, an autocorrect toggle, anything. Re-arming
+    // the schedule there restarts it at the first-check delay, so the configured interval never elapses
+    // and the app checks seconds after each write instead of hours later.
+    const { service, backend, settings } = setup({ settings: { automaticChecks: true, intervalHours: 6 } })
+    service.start()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(backend.check).toHaveBeenCalledTimes(1)
+    for (let i = 0; i < 5; i++) {
+      settings.intervalHours = 6
+      service.settingsChanged()
+      await vi.advanceTimersByTimeAsync(60_000)
+    }
+    expect(backend.check).toHaveBeenCalledTimes(1)
+    service.stop()
+  })
+
   it('unskip brings a skipped version back and clears the pref', async () => {
     const { service, prefs } = setup({ prefs: { skipped: '0.2.0' } })
     await service.check()

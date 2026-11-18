@@ -6,6 +6,16 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.13] - 2026-11-18
+
+### Fixed
+
+- The update check ran far more often than the interval in Settings. Every settings write re-armed
+  the schedule, whatever it changed -- a theme, an autocorrect toggle -- and re-arming restarts the
+  timer at the ten-second first-check delay, so the configured interval never elapsed and a new
+  release was noticed seconds after any settings change rather than hours later. Only a change to
+  the update settings themselves re-arms the schedule now.
+
 ## [0.7.12] - 2026-11-18
 
 Dependency bumps, and a latent packaging fault they exposed.
