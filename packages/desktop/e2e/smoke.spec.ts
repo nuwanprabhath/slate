@@ -10,11 +10,16 @@ test('boots and round-trips a document through IPC', async ({ page }) => {
   expect(bytes).toEqual([1, 2, 3])
 })
 
-test('keeps the window hidden during e2e runs', async ({ app }) => {
+test('keeps the window hidden during e2e runs', async ({ app, page }) => {
   // CI shows it on a virtual display (SLATE_E2E_SHOW, see src/main/index.ts); everywhere else it stays hidden.
   const shown = process.env.SLATE_E2E_SHOW === '1'
-  const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())
-  expect(visible).toBe(shown)
+  const visible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())
+  await expect(page).toHaveTitle('Slate')
+  // The window is created hidden and shown on ready-to-show, which can land after the page has its
+  // title. Sampling once raced that, so CI read "not visible" for a window it had asked to be shown.
+  // Hidden is asserted on the spot: that direction must never become true, so waiting cannot help it.
+  if (shown) await expect.poll(visible).toBe(true)
+  else expect(await visible()).toBe(false)
 })
 
 test('every window runs sandboxed and isolated, with no Node and web security on', async ({ app, page }) => {

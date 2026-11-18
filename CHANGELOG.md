@@ -15,6 +15,10 @@ All notable changes to Slate are recorded here. The format follows
   timer at the ten-second first-check delay, so the configured interval never elapsed and a new
   release was noticed seconds after any settings change rather than hours later. Only a change to
   the update settings themselves re-arms the schedule now.
+- Test: the e2e smoke check of the hidden window sampled the window once, before `ready-to-show`
+  had necessarily landed, so on CI -- the only side that asks for the window to be shown, on its
+  virtual display -- it could read "not visible" for a window that was about to appear. It waits
+  for that now. The hidden direction is still asserted on the spot, since it must never become true.
 
 ## [0.7.12] - 2026-11-18
 
