@@ -37,7 +37,17 @@ describe('isLinkHref', () => {
   it('keeps an address with no scheme at all', () => {
     // Nothing Slate writes is relative, but a pasted page's "/a" or "#x" cannot name a program, and
     // hardening refuses navigation off app://slate/ anyway.
-    for (const ok of ['/a/b', '#x', '?q=1', 'example.com:8080/x']) expect(isLinkHref(ok)).toBe(true)
+    for (const ok of ['/a/b', '#x', '?q=1']) expect(isLinkHref(ok)).toBe(true)
+  })
+  it('reads a stored href as a URL parser does, so "name:digits" is a scheme, not a host and port (FX-54)', () => {
+    // seeds 59 and 60, the nightly soak drew <a href="m:"> and <a href="pr:"> from the hrefs "m:6" and "pr:9".
+    // new URL('example.com:8080/x').protocol is "example.com:": a host and port is only what a person types,
+    // and normalizeLinkInput makes that https:// before it is stored.
+    for (const bad of ['m:6', 'pr:9', 'localhost:3000', 'example.com:8080/x', 'javascript:8080/x', ' java\tscript:1'])
+      expect(isLinkHref(bad), bad).toBe(false)
+    expect(normalizeLinkInput('example.com:8080/x')).toEqual({ href: 'https://example.com:8080/x' })
+    expect(normalizeLinkInput('localhost:3000')).toEqual({ href: 'https://localhost:3000' })
+    expect(normalizeLinkInput('javascript:8080/x')).toHaveProperty('error')
   })
   it('refuses a scheme that carries a digit (FX-50)', () => {
     // TipTap's own isAllowedUri reads "letters then a non-letter" as a relative path, so a digit anywhere
@@ -78,6 +88,11 @@ describe('a link mark never reaches the page with an unsanctioned scheme (FX-50)
   it('does not draw a digit-bearing scheme, which is the nightly counterexample', () => {
     // seed 45, path "28499": the soak drew <a href="l1ra:">.
     for (const bad of ['l1ra:', 'web3:pay', 'h323:x']) expect(renderHref(bad), bad).not.toContain(bad.slice(0, bad.indexOf(':')))
+  })
+
+  it('does not draw a "name:digits" href, which is the seed 59 and 60 counterexample (FX-54)', () => {
+    // As FX-50: the link mark stays and its href is drawn empty.
+    for (const bad of ['m:6', 'pr:9', 'localhost:3000']) expect(renderHref(bad), bad).toBe('')
   })
 })
 

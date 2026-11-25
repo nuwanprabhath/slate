@@ -12,19 +12,21 @@ export type LinkInput = { href: string } | { error: string }
  * clipboard.ts); neither restates the other.
  */
 export const LINK_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'mailto'])
-// "example.com:8080/x" is a host and port, not a scheme.
+// Typed "example.com:8080/x" means a host and port. Stored, a URL parser reads the same text as the scheme
+// "example.com:", so only normalizeLinkInput, which makes it https:// first, may read it this way (FX-54).
 const HOST_PORT = /^[^/?#:]+:\d+(?:[/?#]|$)/
 const DOMAIN_OR_PATH = /^(?:localhost|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:[/?#]\S*)?$/i
 
 /**
- * The scheme a URL is read with, lower-cased, or null for none. Browsers ignore tabs and newlines
- * inside a scheme, so `java\tscript:` is `javascript`. Every scheme check (links, image sources) uses this one.
+ * The scheme a URL parser reads, lower-cased, or null for none. Browsers ignore tabs and newlines
+ * inside a scheme, so `java\tscript:` is `javascript`, and `pr:9` is the scheme `pr`. Every check of an
+ * address that is already stored (links, image sources) uses this one.
  */
 export function urlScheme(raw: string): string | null {
   // eslint-disable-next-line no-control-regex -- control characters are what the pattern strips before the scheme check
   const squashed = raw.trim().replace(/[\s\u0000-\u001f]/g, '')
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(squashed)
-  return scheme && !HOST_PORT.test(squashed) ? scheme[1]!.toLowerCase() : null
+  return scheme ? scheme[1]!.toLowerCase() : null
 }
 
 /**
@@ -45,7 +47,8 @@ export function isLinkHref(href: string): boolean {
 export function normalizeLinkInput(raw: string): LinkInput {
   const text = raw.trim()
   if (!text) return { error: 'Enter a web address' }
-  const scheme = urlScheme(text)
+  // eslint-disable-next-line no-control-regex -- the same squashing urlScheme does, so "a\t:80" is a host and port too
+  const scheme = HOST_PORT.test(text.replace(/[\s\u0000-\u001f]/g, '')) ? null : urlScheme(text)
   if (scheme !== null) {
     if (!LINK_SCHEMES.has(scheme)) return { error: `Links can't use ${scheme}:` }
     return { href: text }
