@@ -6,6 +6,16 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.7.14] - 2026-11-25
+
+Dependency bumps only; nothing a user sees changes.
+
+### Changed
+
+- `@playwright/test` 1.65.0 → 1.65.1, `eslint` 10.14.0 → 10.15.0 and `typescript-eslint`
+  8.72.1 → 8.72.2 (Dependabot #21). The code already passes ESLint 10.15's stricter `func-names`,
+  `no-shadow` and `no-invalid-this` checks unchanged.
+
 ## [0.7.13] - 2026-11-18
 
 ### Fixed
