@@ -162,13 +162,23 @@ export function holdsBytes(value: unknown): boolean {
 
 const MAX_SUFFIX = '…[+99999 chars]'.length
 
+const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1
+
+/**
+ * How often `secret.body` may still appear once redaction has run: as often as `text` holds it outside the
+ * credential. The generators can spell the body elsewhere by chance -- in a URL's host (seed 59 made
+ * `ssh://u:prototype@h.fprototypenxs`) or as a noise word -- and that copy is not the secret, so a plain
+ * "not.toContain" would fail on correct output. A leak always adds one more (FX-55).
+ */
+const allowedCopies = (text: string, secret: Secret): number => occurrences(text.replace(secret.full, secret.full.replace(secret.body, '')), secret.body)
+
 describe('T-F4E-01: no credential survives, wherever it sits', () => {
   for (const [name, shape] of Object.entries(SECRET_SHAPES)) {
     it(`${name}: the body is gone`, () => {
       fc.assert(
         fc.property(placed(shape), ({ text, secret }) => {
           const out = redactString(text)
-          expect(out, `redactString(${JSON.stringify(text)})`).not.toContain(secret.body)
+          expect(occurrences(out, secret.body), `redactString(${JSON.stringify(text)}) = ${JSON.stringify(out)}`).toBeLessThanOrEqual(allowedCopies(text, secret))
           for (const part of secret.parts ?? []) expect(out).not.toContain(part)
         }),
         fcParams,
@@ -179,11 +189,29 @@ describe('T-F4E-01: no credential survives, wherever it sits', () => {
   it('every shape at once, in one string', () => {
     fc.assert(
       fc.property(fc.array(placed(fc.oneof(...Object.values(SECRET_SHAPES))), { minLength: 1, maxLength: 6 }), (items) => {
-        const out = redactString(items.map((i) => i.text).join('\n'))
-        for (const { secret } of items) expect(out).not.toContain(secret.body)
+        const text = items.map((i) => i.text).join('\n')
+        const out = redactString(text)
+        const rest = items.reduce((t, { secret }) => t.replace(secret.full, secret.full.replace(secret.body, '')), text)
+        for (const { secret } of items) expect(occurrences(out, secret.body), JSON.stringify(out)).toBeLessThanOrEqual(occurrences(rest, secret.body))
       }),
       fcParams,
     )
+  })
+})
+
+describe('T-F4E fixed findings', () => {
+  it('FX-55: a password the host also spells is redacted, and the host is kept (seed 59, path "136687")', () => {
+    const out = redactString('<! ssh://u:prototype@h.fprototypenxs sync')
+    expect(out).toBe('<! ssh://[redacted]@h.fprototypenxs sync')
+    expect(allowedCopies('ssh://u:prototype@h.fprototypenxs', { full: 'ssh://u:prototype@h.fprototypenxs', body: 'prototype' })).toBe(1)
+  })
+
+  it('FX-55: the relaxed check still catches a leak: a body left in place is one copy too many', () => {
+    const secret = { full: 'ssh://u:prototype@h.fprototypenxs', body: 'prototype' }
+    expect(occurrences(secret.full, secret.body)).toBeGreaterThan(allowedCopies(secret.full, secret))
+    const pair = { full: 'password=failed', body: 'failed' }
+    expect(occurrences(`sync failed ${pair.full}`, pair.body)).toBeGreaterThan(allowedCopies(`sync failed ${pair.full}`, pair))
+    expect(occurrences(redactString(`sync failed ${pair.full}`), pair.body)).toBeLessThanOrEqual(allowedCopies(`sync failed ${pair.full}`, pair))
   })
 })
 
