@@ -8,7 +8,18 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [0.7.14] - 2026-11-25
 
-Dependency bumps only; nothing a user sees changes.
+Dependency bumps, and what the nightly fuzz soak found on 23 and 24 November.
+
+### Fixed
+
+- A link whose stored address looked like a host and port -- `m:6`, `pr:9`, `localhost:3000` -- was
+  kept and drawn, because Slate read the text before the colon as a host. A browser reads it as a
+  scheme, so the link carried one Slate never allows. A stored link is now judged as the browser
+  reads it and is drawn without an address. Typing `example.com:8080` in the link box still makes
+  `https://example.com:8080` (FX-54).
+- Test: the log-redaction fuzz property failed on correct output when a generated host name
+  happened to contain the password's letters (`ssh://u:prototype@h.fprototypenxs`). It now counts
+  the password's copies instead of refusing any, so a leak still fails it (FX-55).
 
 ### Changed
 
