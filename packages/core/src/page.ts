@@ -1,6 +1,7 @@
 import { LoroDoc, LoroMap, type ContainerID } from 'loro-crdt'
 import { contentToJSON, writeContent } from './content'
 import { withHandles, type Handles } from './handles'
+import { importParts } from './importParts'
 import { newId } from './ids'
 import type { PMJSON } from './plaintext'
 
@@ -55,7 +56,7 @@ export class PageDoc {
 
   static fromUpdates(updates: Uint8Array[]): PageDoc {
     const doc = new LoroDoc()
-    if (updates.length > 0) doc.importBatch(updates)
+    importParts(doc, updates)
     return new PageDoc(doc)
   }
 

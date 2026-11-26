@@ -44,7 +44,9 @@ import { SUITE } from '../vault/suite'
 import { EncryptingDrive } from './encryptingDrive'
 import { docStoreLocal, scopedLocal } from './localStore'
 import { notebookFacts, ownCurrent, pickNotebook } from './openNotebook'
-import { probeTransports } from './transportProbe'
+import { ONEDRIVE_HOSTS, probeTransports } from './transportProbe'
+import { ConsentRequired } from '../privacy/gate'
+import { egressAllowed } from '../../shared/privacy/consent'
 
 const INTERVAL_MS = 30_000
 const AFTER_EDIT_MS = 2_000
@@ -147,6 +149,27 @@ const SUPERSEDED = 'c9:superseded'
 
 const DEVICE_PATH = /^devices\/[0-9a-f-]{36}\.json$/
 
+/** GDPR-03: what a run says, once, when a consent it needs was withdrawn. */
+export const CONSENT_PAUSED = 'Sync paused: consent withdrawn'
+
+/** GDPR-03: strict mode refuses unencrypted sync until the person allows it (or encrypts first). */
+export class PlaintextSyncRefused extends Error {
+  override name = 'PlaintextSyncRefused'
+  constructor() {
+    super('Encrypt your notes first, or allow unencrypted sync')
+  }
+}
+
+/** `DocStore.forgetSync` (workstream D, GDPR-06): the sync bookkeeping rows of one connection. */
+interface SyncRowsForgetter {
+  forgetSync(prefix: string | null, remote: string | null): void
+}
+
+/** The folder name of a git remote's clone: short and stable, an identifier, not a secret. */
+const cloneName = (key: string) => toHex(vaultNative().sha256(utf8(key))).slice(0, 16)
+const gitKey = (git: GitSettings) => `git|${git.remoteUrl}|${git.branch}`
+const gitPrefix = (git: GitSettings) => `git:${git.remoteUrl}#${git.branch}:`
+
 /** Logs a git command that failed or timed out. Only the subcommand is named: the rest carries URLs. */
 function loggedGit(run: GitRunner, log: ScopedLog): GitRunner {
   return async (args, opts) => {
@@ -165,6 +188,8 @@ function loggedGit(run: GitRunner, log: ScopedLog): GitRunner {
 
 interface Connection {
   key: string
+  /** Built under strict mode: the remote then sees only the pseudonymous identity. */
+  strict: boolean
   engine: SyncEngine
   drive: RemoteDrive
   local: LocalStore
@@ -211,8 +236,11 @@ export class SyncService {
   private closed = false
   private readonly abort = new AbortController()
   private paused = false
+  /** `whilePaused` calls in flight; they nest with each other and with `pause`. */
+  private holds = 0
   private lastOpen: { id: string; at: number } | undefined
   private choseDuringSync = false
+  private consentPaused = false
 
   private get log(): ScopedLog {
     return this.deps.log ?? noLog
@@ -228,7 +256,10 @@ export class SyncService {
     this.deviceId = readSettings(this.store).deviceId ?? writeSettings(this.store, { deviceId: newId() }).deviceId!
     // Every Graph request asks for a token first, so this is the one door OneDrive traffic passes.
     const getToken = () => {
-      if (this.settings().syncRequirePq) return Promise.reject(this.refused(PQ_REFUSAL.onedrive))
+      const settings = this.settings()
+      // GDPR-03: no Graph request of any caller (sync, the migration's device records, an image fetch) without consent.
+      if (!egressAllowed(settings, 'oneDriveSync')) return Promise.reject(new ConsentRequired('oneDriveSync'))
+      if (settings.syncRequirePq) return Promise.reject(this.refused(PQ_REFUSAL.onedrive))
       return deps.auth.token(SIGN_IN_SCOPES)
     }
     const http = new GraphHttp({ baseUrl: deps.graphUrl, getToken })
@@ -294,16 +325,19 @@ export class SyncService {
   private connection(settings: Settings): Connection | undefined {
     const { syncProvider: provider, git } = settings
     if (!provider || (provider === 'git' && !git?.remoteUrl)) return undefined
-    const key = provider === 'git' ? `git|${git!.remoteUrl}|${git!.branch}` : 'onedrive'
-    if (this.current?.key === key) return this.current
+    const key = provider === 'git' ? gitKey(git!) : 'onedrive'
+    const strict = settings.gdprStrictMode
+    if (this.current?.key === key && this.current.strict === strict) return this.current
+    // GDPR-03: strict mode, like an encrypted remote, names no host or person in what it writes there.
+    const pseudonymous = strict || this.deps.keyRing !== undefined
+    const deviceName = strict ? `Device ${this.deviceId.slice(0, 8)}` : this.deviceName
     let drive: RemoteDrive = this.oneDrive
     let vault: VaultRemote = this.oneDriveVault
     // OneDrive's sync state predates providers, so it keeps the unprefixed keys.
     let local = this.baseLocal
     if (provider === 'git') {
       const { remoteUrl, branch } = git!
-      // A short, stable folder name for this remote: an identifier, not a secret.
-      const hash = toHex(vaultNative().sha256(utf8(key))).slice(0, 16)
+      const hash = cloneName(key)
       const run = this.remoteGit(remoteUrl)
       vault = new GitVaultRemote({
         run,
@@ -318,15 +352,15 @@ export class SyncService {
         remoteUrl,
         branch,
         authEnv: () => this.gitAuthEnv(this.settings().git ?? git!),
-        // Encrypted remotes name no host or device in their history (§5.4).
-        ...(this.deps.keyRing
+        // Encrypted remotes (§5.4) and strict mode (GDPR-03) name no host or device in their history.
+        ...(pseudonymous
           ? { author: { name: 'Slate', email: 'slate@invalid' }, commitMessage: 'slate: sync' }
           : { author: { name: `Slate (${this.deviceName})`, email: `slate@${this.deviceId}.local` }, deviceName: this.deviceName }),
       })
       local = scopedLocal(this.baseLocal, `git:${remoteUrl}#${branch}:`, this.store)
     }
     if (provider === 'git') {
-      const cloneDir = join(this.deps.gitDir, toHex(vaultNative().sha256(utf8(key))).slice(0, 16))
+      const cloneDir = join(this.deps.gitDir, cloneName(key))
       drive = this.noticeUnrelated(drive, async () => {
         // C9 (R-2): another device replaced the branch's history with one commit of this same vault's files, so this
         // clone's history is the old one. The clone goes (what only it held is pushed again) and sync starts afresh.
@@ -346,7 +380,7 @@ export class SyncService {
       local,
       remote: drive,
       deviceId: this.deviceId,
-      deviceName: this.deviceName,
+      deviceName,
       platform: platform(),
       ...(this.deps.appVersion ? { appVersion: this.deps.appVersion } : {}),
       // D-7 (review C9 L3): this build reads key epochs; a rekey waits for every device record to say so.
@@ -364,7 +398,7 @@ export class SyncService {
           }
         : {}),
     })
-    this.current = { key, engine, drive, local, vault }
+    this.current = { key, strict, engine, drive, local, vault }
     return this.current
   }
 
@@ -518,7 +552,52 @@ export class SyncService {
     await this.configure({ provider: on ? 'onedrive' : null })
   }
 
+  /**
+   * GDPR-06: turns sync off and forgets the connection: both GitHub tokens, this remote's clones, and its sync
+   * bookkeeping rows. The run in flight finishes first (a push is never cut in half). The Microsoft sign-in is
+   * the renderer's to end, only when the person asks for it too.
+   */
+  async forget(): Promise<void> {
+    await this.whilePaused(async () => {
+      const settings = this.settings()
+      if (this.timer) clearTimeout(this.timer)
+      if (this.soon) clearTimeout(this.soon)
+      this.timer = this.soon = undefined
+      await this.tokenSecret.clear()
+      await this.deviceSecret.clear()
+      const rows = this.store as DocStore & SyncRowsForgetter
+      if (settings.git?.remoteUrl && settings.syncProvider !== 'onedrive') {
+        const hash = cloneName(gitKey(settings.git))
+        rmSync(join(this.deps.gitDir, hash), { recursive: true, force: true })
+        rmSync(join(this.deps.gitDir, `${hash}.vault`), { recursive: true, force: true })
+        rows.forgetSync(gitPrefix(settings.git), remoteTransport(settings.git.remoteUrl)?.remote ?? null)
+      } else if (settings.syncProvider === 'onedrive') {
+        for (const host of ONEDRIVE_HOSTS) rows.forgetSync(null, `onedrive:${host}`)
+      }
+      writeSettings(this.store, { syncProvider: null, git: null })
+      this.current = undefined
+      this.lastSyncedAt = undefined
+      this.vaultProblem = undefined
+      this.plaintextWarning = false
+      this.consentPaused = false
+      await this.setReport(this.idle('disabled'))
+    })
+  }
+
+  /** The consent a provider needs under strict mode that is missing; null when it may sync (GDPR-03). */
+  private missingConsent(settings: Settings): ConsentRequired | PlaintextSyncRefused | null {
+    const provider = settings.syncProvider
+    if (!provider) return null
+    if (!egressAllowed(settings, provider === 'git' ? 'gitSync' : 'oneDriveSync')) return new ConsentRequired(provider === 'git' ? 'gitSync' : 'oneDriveSync')
+    // A vault made later lifts this by itself: services restart with its key ring.
+    if (!this.deps.keyRing && !egressAllowed(settings, 'plaintextSync')) return new PlaintextSyncRefused()
+    return null
+  }
+
   async configure(config: SyncConfig): Promise<void> {
+    const refusal = this.missingConsent({ ...this.settings(), syncProvider: config.provider })
+    // Before anything is saved, the token included.
+    if (refusal) throw refusal
     if (config.token && config.git?.auth === 'token') await this.tokenSecret.set(config.token)
     const before = this.settings()
     writeSettings(this.store, { syncProvider: config.provider, ...(config.git ? { git: config.git } : {}) })
@@ -704,10 +783,31 @@ export class SyncService {
     this.paused = false
   }
 
+  /**
+   * Runs `fn` with no sync starting, after the run in flight finished. Unlike `pause`/`resume` it nests: a pause
+   * someone else holds (the migration's remote claim) is still in place when `fn` ends, even if it throws.
+   */
+  async whilePaused<T>(fn: () => Promise<T>): Promise<T> {
+    this.holds++
+    try {
+      await this.running?.catch(() => {})
+      return await fn()
+    } finally {
+      this.holds--
+    }
+  }
+
   private async run(): Promise<SyncReport> {
-    if (this.closed || this.paused) return this.report
+    if (this.closed || this.paused || this.holds > 0) return this.report
     const settings = this.settings()
     if (!settings.syncProvider) return this.setReport(this.idle('disabled'))
+    // GDPR-03: a withdrawn consent stops the next run, never one in flight.
+    if (this.missingConsent(settings)) {
+      if (!this.consentPaused) this.deps.emitNotice(CONSENT_PAUSED)
+      this.consentPaused = true
+      return this.setReport({ ...this.idle('disabled'), message: CONSENT_PAUSED })
+    }
+    this.consentPaused = false
     this.pqRefusal = undefined
     const refusal = requireRefusal(settings)
     if (refusal) {
@@ -818,6 +918,7 @@ export class SyncService {
     if (this.deps.blobs.has(name)) return true
     const settings = this.settings()
     if (settings.syncProvider === 'onedrive' && !(await this.deps.auth.status()).signedIn) return false
+    if (this.missingConsent(settings)) return false
     const connection = this.connection(settings)
     if (!connection) return false
     try {

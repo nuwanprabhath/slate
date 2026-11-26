@@ -130,6 +130,9 @@ export function openDatabase(file: string, key: KeyHandle | null, opts: { readon
       if ((err as { code?: string }).code === 'SQLITE_NOTADB') throw new WrongKey(file)
       throw err
     }
+    // GDPR-04: a deleted row's bytes are overwritten with zeros, so a removed page is not left readable
+    // in a free page of a plaintext file. After the key is proven: nothing is written before that.
+    if (!opts.readonly) db.pragma('secure_delete = ON')
     if (!opts.readonly && opts.wal !== false) {
       db.pragma('journal_mode = WAL')
       db.pragma('synchronous = NORMAL')

@@ -1,6 +1,7 @@
 import tls from 'node:tls'
 import { classifyKex, PqTransportUnavailable, remoteTransport, sshCommand, type SshKexProbe } from '@slate/sync'
-import type { GitSettings, SyncProvider, TransportObservation, VaultState } from '../../shared/api'
+import type { GitSettings, Settings, SyncProvider, TransportObservation, VaultState } from '../../shared/api'
+import { egressAllowed } from '../../shared/privacy/consent'
 import type { GitConnectionCheck } from './git/auth'
 
 /** Graph serves the files, login.microsoftonline.com the tokens: both carry OneDrive sync. */
@@ -41,7 +42,8 @@ export function tlsGroup(host: string, port = 443, opts: TlsProbeOptions = {}): 
 export interface ProbeInput {
   /** Probing reaches the network from the notes' settings, so it runs only while they are open. */
   state: VaultState
-  settings: { syncProvider: SyncProvider | null; git?: GitSettings | null; syncRequirePq: boolean }
+  /** The consents too: a probe connects to the provider, so it waits for the same consent sync does (GDPR-03). */
+  settings: { syncProvider: SyncProvider | null; git?: GitSettings | null; syncRequirePq: boolean } & Pick<Settings, 'gdprStrictMode' | 'consents'>
   /** OneDrive is probed only when this is https (a test drive on loopback is not Microsoft's). */
   graphUrl: string
   /** `testConnection` over the configured remote with this GIT_SSH_COMMAND (undefined: not ssh). */
@@ -66,14 +68,14 @@ export async function probeTransports(input: ProbeInput): Promise<TransportObser
   const at = (input.now ?? Date.now)()
   const seen: TransportObservation[] = []
   const { syncProvider, git, syncRequirePq } = input.settings
-  if (syncProvider === 'onedrive' && new URL(input.graphUrl).protocol === 'https:') {
+  if (syncProvider === 'onedrive' && egressAllowed(input.settings, 'oneDriveSync') && new URL(input.graphUrl).protocol === 'https:') {
     const connect = input.tls ?? ((host: string, port: number) => tlsGroup(host, port))
     for (const host of ONEDRIVE_HOSTS) {
       const kex = await connect(host, 443)
       seen.push({ remote: `onedrive:${host}`, transport: 'tls', kex, pq: classifyKex(kex), source: 'probe', at })
     }
   }
-  if (syncProvider === 'git' && git?.remoteUrl) {
+  if (syncProvider === 'git' && git?.remoteUrl && egressAllowed(input.settings, 'gitSync')) {
     const transport = remoteTransport(git.remoteUrl)
     if (transport?.kind === 'ssh') {
       let command: string | undefined

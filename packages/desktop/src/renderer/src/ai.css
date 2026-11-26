@@ -4,7 +4,10 @@
 .ai-activity { width: min(820px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
 .ai-activity header { display: flex; align-items: center; justify-content: space-between; }
 .ai-activity h2 { margin: 0; font-size: 16px; }
-.ai-activity header button { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
+.ai-activity-tools { display: flex; align-items: center; gap: 8px; }
+.ai-activity-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 8px; font-size: 13px; }
+.ai-activity-error { color: var(--danger); margin: 8px 0 0; }
+.ai-activity header button:not(.btn) { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
 .ai-activity table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
 .ai-activity th, .ai-activity td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .ai-activity td.target { font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }

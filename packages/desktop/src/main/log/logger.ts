@@ -1,4 +1,4 @@
-import { appendFileSync, chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { redact, redactString } from '../../shared/redact'
 import { filesToPrune, shouldRotate, type LogFile } from './rotation'
@@ -62,7 +62,15 @@ export class Logger {
     // Another process's rotation, or a folder emptied by hand, changes the size from outside.
     this.ready = false
     this.activeBytes = 0
-    if (!opts.enabled) return
+    if (!opts.enabled) {
+      // GDPR-13: files left from when the log was on still age out; the folder is never made here.
+      try {
+        if (opts.dir !== '' && existsSync(opts.dir)) this.prune()
+      } catch {
+        // Pruning is housekeeping; the next configure tries again.
+      }
+      return
+    }
     try {
       this.prepare()
       this.prune()
@@ -181,6 +189,17 @@ export class Logger {
       try { rmSync(join(this.opts.dir, file.name), { force: true }) } catch { /* it can go next time */ }
     }
     this.activeBytes = 0
+  }
+
+  /** `clear`, then the folder too when nothing else is in it (GDPR-13: off in strict mode leaves no trace). */
+  purgeAll(): void {
+    this.clear()
+    this.ready = false
+    try {
+      if (this.opts.dir !== '' && readdirSync(this.opts.dir).length === 0) rmdirSync(this.opts.dir)
+    } catch {
+      // Already gone, or not ours to remove.
+    }
   }
 }
 

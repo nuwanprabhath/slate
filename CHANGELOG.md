@@ -6,6 +6,70 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-26
+
+Privacy by design and by default (GDPR). Slate sends nothing off this computer until you allow it,
+says what each feature sends and to whom, and gives you your data back or erases it. Based on the
+review in `docs/reviews/gdpr-compliance-review.md`; the notice is `PRIVACY.md`.
+
+### Added
+
+- **Strict mode, on by default.** Each feature that contacts a server asks first, naming the
+  servers, what is sent and who receives it: automatic update checks (GitHub), git and OneDrive
+  sync, unencrypted sync, Microsoft and GitHub sign-in, and Claude theme generation. A grant counts
+  only for the wording it was given against. While an encrypted vault is locked nothing is allowed.
+- A first-run card asks about update checks. Upgrading installs keep the features they already use
+  and see a one-time card to keep or withdraw each.
+- **Settings → Privacy:** the strict-mode switch, your consents with Withdraw, Export everything
+  (Markdown, images, settings, AI activity and the security record, to a folder you pick), Erase
+  edit history of a page (deleted text leaves the database; the open page reloads without it or its
+  undo steps), Purge caches and logs, view and clear the security record, and Erase all Slate data (type `ERASE`).
+- Sync: turning sync on asks for consent, and without a vault asks again about unencrypted sync with
+  "Encrypt my notes first" as the main button. **Turn off and forget this connection** removes both
+  GitHub tokens, the local clones and the sync bookkeeping, and can sign you out of Microsoft.
+- AI Activity has a Clear button.
+- `PRIVACY.md`: every flow, what Slate keeps and for how long, and how to use your rights.
+
+### Changed
+
+- In strict mode git sync commits as `Slate <slate@invalid>` with the message `slate: sync`, and a
+  device is listed as `Device <id>` instead of the computer's name. Earlier commits keep theirs.
+- Freed database pages are overwritten with zeros, so a deleted note's text does not linger in the
+  file. Purge removes images no page uses and leftover import and theme temp folders.
+- Retention: AI activity 30 days in strict mode (90 otherwise), and an agent's search is recorded
+  only as its length; the security record 30 days in strict mode (90 otherwise, and under
+  FIPS 140-3); sync conflicts at most 90 days in strict mode. In strict mode, turning the diagnostic
+  log off deletes it.
+- Logs hide email addresses, git repository owners and names, and Windows home folders.
+- Microsoft sign-in asks only for import permissions unless OneDrive sync is on; signing out deletes
+  its cache. GitHub sign-in shows what the `repo` permission grants and recommends a fine-grained
+  token for one repository.
+- An installer Slate downloaded is deleted after a confirmed install, if it is still the verified file.
+- Opening Appearance no longer runs your login shell to look for `claude` until you allow Claude
+  themes.
+- Every load path reads a page whose history was shortened (Loro 1.17 loaded it empty when a later
+  edit came in the same batch). Sync uploads such a page whole, imports snapshots before the edits
+  built on them, and when another device's erased page cannot merge, keeps both versions, says so
+  and lists the other as a conflict.
+
+### Guardrails
+
+- `slate/no-personal-identifiers` refuses `os.hostname()`, `os.userInfo()` and
+  `os.networkInterfaces()` in main-process code outside a reasoned allowlist.
+- `tools/guards/egress.test.ts`: every file that reaches the network is on an allowlist that only
+  shrinks, and checks consent for a named feature in its own code.
+- `tools/guards/privacyNotice.test.ts`: `PRIVACY.md` names every database table, every endpoint and
+  every consent feature.
+- Guarded specs: strict mode is the default, and the new redaction cases.
+
+### Not yet
+
+- Erase edit history works only for a page never synced, with sync off. A page already on another
+  device would split in two if both devices edited it around the erase (Loro cannot merge edits
+  across an erased history), so Slate refuses it and says why.
+- Purge cannot shrink the database file: the native module's SQL guard refuses the attach VACUUM
+  needs. Freed space is still zeroed.
+
 ## [0.7.14] - 2026-11-25
 
 Dependency bumps, and what the nightly fuzz soak found on 23 and 24 November.

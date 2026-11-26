@@ -8,11 +8,12 @@ import { builtinTheme } from '../../shared/theme/builtins'
 import { resolveTheme } from '../../shared/theme/resolve'
 import type { ThemeSpec } from '../../shared/theme/spec'
 import { DEFAULT_PALETTE } from '../../shared/theme/spec'
+import { allowed, requireConsent } from '../privacy/gate'
 import { readSettings } from '../settings'
 import type { DocStore } from '../store'
 import type { PreunlockContent } from '../vault/preunlock'
 import { ClaudeOneShot, findClaude } from './claudeOneShot'
-import { fakeThemeRunner, ThemeGenerator } from './themeGenerator'
+import { fakeThemeRunner, ThemeGenerator, type ThemeRunner } from './themeGenerator'
 import type { ThemeStore } from './themeStore'
 
 /** `SLATE_SAFE_THEME=1`: Dark for this run, whatever is saved; the way back from a broken theme. */
@@ -36,9 +37,16 @@ export interface ThemeSource {
   preunlock(): PreunlockContent | null
 }
 
-export function registerThemeIpc(ipc: IpcRegistrar, source: ThemeSource, isE2E: boolean): void {
+/** What the Claude theme channels run; tests pass fakes so no `claude` is spawned. */
+export interface ThemeDeps {
+  runner?: ThemeRunner
+  findClaude?: () => Promise<string | null>
+}
+
+export function registerThemeIpc(ipc: IpcRegistrar, source: ThemeSource, isE2E: boolean, deps: ThemeDeps = {}): void {
   const fake = isE2E && env('SLATE_FAKE_CLAUDE_THEME') === '1'
-  const generator = new ThemeGenerator({ runner: fake ? fakeThemeRunner() : new ClaudeOneShot() })
+  const find = deps.findClaude ?? findClaude
+  const generator = new ThemeGenerator({ runner: deps.runner ?? (fake ? fakeThemeRunner() : new ClaudeOneShot()) })
   const notes = () => {
     const open = source.open()
     if (!open) throw new Error('Slate is locked')
@@ -76,9 +84,14 @@ export function registerThemeIpc(ipc: IpcRegistrar, source: ThemeSource, isE2E: 
     if (!isSavedThemeId(id)) refuse(CH.themesRemove)
     return notes().themes.remove(id)
   })
-  ipc.handle(CH.themesClaude, async () => fake || (await findClaude()) !== null)
-  ipc.handle(CH.themesGenerate, (_e, request: unknown, current: unknown) => {
+  // Looking for `claude` starts the login shell, so without consent it is not even asked (GDPR-16).
+  ipc.handle(CH.themesClaude, async () => {
+    if (!allowed('claudeTheme')) return false
+    return fake || (await find()) !== null
+  })
+  ipc.handle(CH.themesGenerate, async (_e, request: unknown, current: unknown) => {
     if (!isText(request, MAX_REQUEST) || !isSpec(current)) refuse(CH.themesGenerate)
+    requireConsent('claudeTheme')
     return generator.generate({ request, current })
   })
   ipc.handle(CH.themesCancel, () => generator.cancel())

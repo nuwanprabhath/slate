@@ -1,5 +1,6 @@
 import { LoroDoc, type LoroMap, type LoroTree, type LoroTreeNode, type TreeID } from 'loro-crdt'
 import { withHandles, type Handles } from './handles'
+import { importParts } from './importParts'
 import { newId } from './ids'
 
 export type Access = 'read' | 'readwrite'
@@ -68,7 +69,7 @@ export class NotebookDoc {
 
   static fromUpdates(updates: Uint8Array[]): NotebookDoc {
     const doc = new LoroDoc()
-    if (updates.length > 0) doc.importBatch(updates)
+    importParts(doc, updates)
     return new NotebookDoc(doc)
   }
 

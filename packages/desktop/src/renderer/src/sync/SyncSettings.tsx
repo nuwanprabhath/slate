@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { DeviceCode, GitAuthInfo, GitAuthMode, GitCheck, GitSettings, SyncProvider } from '../../../shared/api'
-import { SyncTokenField } from './SyncTokenField'
+import type { ConsentFeature } from '../../../shared/privacy/consent'
+import { DEVICE_FLOW_SCOPE_HELP } from '../../../shared/sync/githubScope'
+import { errorText } from '../vault/events'
+import { askSyncConsent, withSyncConsent } from './syncConsent'
+import { SyncTokenField, SyncTokenHelp } from './SyncTokenField'
 import { classicalWarning, REQUIRE_PQ_CHECKING, REQUIRE_PQ_CHECK_FAILED, REQUIRE_PQ_HELP, REQUIRE_PQ_LABEL, requirePqAvailability } from './requirePqText'
 
 const AUTH_LABELS: Record<GitAuthMode, string> = {
@@ -9,6 +13,9 @@ const AUTH_LABELS: Record<GitAuthMode, string> = {
   token: 'Personal access token',
   device: 'Sign in with GitHub',
 }
+
+export const STAYS_OFF = 'Sync stays off until you allow it.'
+export const PSEUDONYMOUS_NOTE = 'Slate signs its commits as "Slate" and names this device by a number, never by its computer name. Commits made earlier keep the name they were made with.'
 
 /**
  * Settings → Sync: where notebooks sync to. Saved with its own button, not field by field, because
@@ -29,10 +36,15 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
   const [loaded, setLoaded] = useState(false)
   const [requirePq, setRequirePq] = useState(false)
   const [pqNote, setPqNote] = useState<{ text: string; warn: boolean } | null>(null)
+  const [saved, setSaved] = useState<SyncProvider | null>(null)
+  const [strict, setStrict] = useState(false)
+  const [signOutToo, setSignOutToo] = useState(false)
 
   useEffect(() => {
     void Promise.all([window.slate.settings.get(), window.slate.sync.gitAuthInfo()]).then(([settings, authInfo]) => {
       setProvider(settings.syncProvider)
+      setSaved(settings.syncProvider)
+      setStrict(settings.gdprStrictMode)
       setRequirePq(settings.syncRequirePq)
       if (settings.git) {
         setRemoteUrl(settings.git.remoteUrl)
@@ -48,6 +60,17 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
   const typedToken = auth === 'token' && token ? token : undefined
   const canCreate = auth === 'gh' || auth === 'device' || (auth === 'token' && (token !== '' || info?.hasToken === true))
   const modes = (Object.keys(AUTH_LABELS) as GitAuthMode[]).filter((m) => m !== 'device' || info?.deviceFlow)
+
+  const ask = (feature: ConsentFeature) => askSyncConsent(feature, onClose)
+
+  /** The steps sync needs before it may start (GDPR-03): the provider, then unencrypted sync while there is no vault. */
+  const consentFirst = async (p: SyncProvider): Promise<boolean> => {
+    const [privacy, vault] = await Promise.all([window.slate.privacy.status(), window.slate.vault.status()])
+    const feature: ConsentFeature = p === 'git' ? 'gitSync' : 'oneDriveSync'
+    if (!privacy.allowed[feature] && !(await ask(feature))) return false
+    if (vault.state === 'plaintext' && !privacy.allowed.plaintextSync && !(await ask('plaintextSync'))) return false
+    return true
+  }
 
   const run = async (task: () => Promise<GitCheck>) => {
     setBusy(true)
@@ -69,7 +92,7 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
     })
   const signIn = () =>
     run(async () => {
-      setDeviceCode(await window.slate.sync.deviceSignIn())
+      if (!(await withSyncConsent(async () => setDeviceCode(await window.slate.sync.deviceSignIn()), onClose))) return { ok: false, message: 'Sign-in needs your permission first.' }
       const result = await window.slate.sync.deviceSignInWait()
       setDeviceCode(null)
       if (result.ok) setInfo(await window.slate.sync.gitAuthInfo())
@@ -102,14 +125,39 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
       return
     }
     setBusy(true)
+    setCheck(null)
+    const configure = () => window.slate.sync.configure({ provider, ...(provider === 'git' ? { git: git(), ...(typedToken ? { token: typedToken } : {}) } : {}) })
     try {
-      await window.slate.sync.configure({ provider, ...(provider === 'git' ? { git: git(), ...(typedToken ? { token: typedToken } : {}) } : {}) })
+      if (provider && !(await consentFirst(provider))) {
+        setCheck({ ok: false, message: STAYS_OFF })
+        setBusy(false)
+        return
+      }
+      // main has the last word (a vault state the window had not seen): each refusal is one more step, then a retry.
+      if (!(await withSyncConsent(configure, onClose))) {
+        setCheck({ ok: false, message: STAYS_OFF })
+        setBusy(false)
+        return
+      }
       onClose()
     } catch (err) {
-      setCheck({ ok: false, message: err instanceof Error ? err.message : String(err) })
+      setCheck({ ok: false, message: errorText(err) })
       setBusy(false)
     }
   }
+  /** GDPR-06: off, and the tokens, clones and sync records of this connection go too. */
+  const forget = async () => {
+    setBusy(true)
+    try {
+      await window.slate.privacy.syncForget()
+      if (saved === 'onedrive' && signOutToo) await window.slate.onenote.signOut()
+      onClose()
+    } catch (err) {
+      setCheck({ ok: false, message: errorText(err) })
+      setBusy(false)
+    }
+  }
+  const turningOff = provider === null && saved !== null
 
   return (
     <div data-testid="sync-settings">
@@ -153,10 +201,18 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
                   ))}
                 </fieldset>
                 {auth === 'token' && (
-                  <label className="sync-field">
-                    Personal access token{info?.hasToken ? ' (one is saved; type to replace it)' : ''}
-                    <SyncTokenField value={token} onChange={setToken} />
-                  </label>
+                  <div className="sync-field-group">
+                    <label className="sync-field">
+                      Personal access token{info?.hasToken ? ' (one is saved; type to replace it)' : ''}
+                      <SyncTokenField value={token} onChange={setToken} />
+                    </label>
+                    <SyncTokenHelp />
+                  </div>
+                )}
+                {auth === 'device' && (
+                  <p className="sync-help" data-testid="git-device-scope">
+                    {DEVICE_FLOW_SCOPE_HELP}
+                  </p>
                 )}
                 {auth === 'device' && (
                   <div className="sync-row">
@@ -179,6 +235,22 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
                   </div>
                 )}
               </>
+            )}
+            {provider === 'git' && strict && (
+              <p className="sync-help" data-testid="sync-pseudonymous">
+                {PSEUDONYMOUS_NOTE}
+              </p>
+            )}
+            {turningOff && (
+              <div className="sync-forget" data-testid="sync-forget-group">
+                <p className="sync-help">Turning off keeps this connection's sign-in, its copy of your notes and its sync records, so turning on again is quick. Forget removes them from this computer.</p>
+                {saved === 'onedrive' && (
+                  <label>
+                    <input type="checkbox" data-testid="sync-forget-sign-out" checked={signOutToo} onChange={(e) => setSignOutToo(e.target.checked)} />
+                    Also sign out of Microsoft
+                  </label>
+                )}
+              </div>
             )}
             {pq && (
               <div className="sync-pq" data-testid="sync-require-pq">
@@ -210,8 +282,13 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
               <button type="button" onClick={onClose}>
                 Cancel
               </button>
+              {turningOff && (
+                <button type="button" data-testid="sync-forget" disabled={busy} onClick={() => void forget()}>
+                  Turn off and forget this connection
+                </button>
+              )}
               <button type="button" data-testid="sync-settings-save" disabled={busy} onClick={() => void save()}>
-                Save &amp; sync
+                {turningOff ? 'Turn off' : 'Save & sync'}
               </button>
             </div>
           </>

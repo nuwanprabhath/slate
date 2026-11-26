@@ -1,0 +1,13 @@
+/* Settings → Privacy: the settings groups (vault.css), plus the few pieces they lack. */
+.privacy-section > .settings-group { align-self: stretch; }
+.privacy-confirm { align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 4px; background: var(--panel-2); }
+.privacy-confirm > p { margin: 0; line-height: 1.45; }
+.privacy-disclosures, .privacy-consent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
+.privacy-disclosures > li { display: flex; flex-direction: column; gap: 2px; }
+.privacy-consent { display: flex; align-items: center; gap: 12px; }
+.privacy-consent-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.privacy-erase-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.privacy-warning { color: var(--text); font-weight: 600; }
+.privacy-note { overflow-wrap: anywhere; }
+/* A read-only field, so the log scrolls inside its own box. */
+.privacy-log { align-self: stretch; box-sizing: border-box; width: 100%; margin: 0; resize: vertical; font-family: var(--font-mono, monospace); font-size: 12px; line-height: 1.4; }

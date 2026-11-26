@@ -78,6 +78,8 @@ function mapBlobs(): BlobStore & { files: Map<string, Uint8Array> } {
     read,
     write: (name, bytes) => void files.set(name, bytes.slice()),
     readForUrl: () => null,
+    remove: (name) => void files.delete(name),
+    sweep: () => 0,
   }
 }
 

@@ -1,5 +1,5 @@
-import { LoroDoc, LoroList, LoroMap, LoroText } from 'loro-crdt'
-import { PageDoc, writeContent } from '@slate/core'
+import { LoroDoc, LoroList, LoroMap, LoroText, VersionVector } from 'loro-crdt'
+import { importParts, PageDoc, writeContent } from '@slate/core'
 import type { ConflictRecord, LocalStore } from '../src/types'
 
 export type MemoryLocal = LocalStore & {
@@ -11,8 +11,11 @@ export type MemoryLocal = LocalStore & {
   doc(docId: string): LoroDoc
 }
 
-/** A LocalStore in memory: each doc is its list of updates, as in the desktop's SQLite. */
-export function memoryLocal(): MemoryLocal {
+/**
+ * A LocalStore in memory: each doc is its list of updates, as in the desktop's SQLite. `canReplace: false`
+ * leaves out `replaceDoc`, as the desktop's store does.
+ */
+export function memoryLocal(opts: { canReplace?: boolean } = {}): MemoryLocal {
   const docs = new Map<string, Uint8Array[]>()
   const meta = new Map<string, string>()
   const bytesMeta = new Map<string, Uint8Array>()
@@ -37,7 +40,7 @@ export function memoryLocal(): MemoryLocal {
     doc(docId) {
       const doc = new LoroDoc()
       const updates = docs.get(docId) ?? []
-      if (updates.length > 0) doc.importBatch(updates)
+      importParts(doc, updates)
       return doc
     },
     async docIds() {
@@ -54,6 +57,23 @@ export function memoryLocal(): MemoryLocal {
     async appendRemote(docId, update) {
       append(docId, update)
     },
+    ...(opts.canReplace === false
+      ? {}
+      : {
+          async replaceDoc(docId: string, snapshot: Uint8Array, covers: Uint8Array) {
+            const doc = new LoroDoc()
+            try {
+              importParts(doc, docs.get(docId) ?? [])
+              const cmp = doc.oplogVersion().compare(VersionVector.decode(covers))
+              if (cmp === undefined || cmp > 0) return false
+            } finally {
+              doc.free()
+            }
+            docs.set(docId, [snapshot.slice()])
+            heads.set(docId, ++seq)
+            return true
+          }
+        }),
     async getMeta(key) {
       return meta.get(key)
     },
@@ -135,4 +155,9 @@ export function appendText(page: PageDoc, boxId: string, text: string): void {
 
 export function boxText(page: PageDoc, boxId: string): string | undefined {
   return firstText(page, boxId)?.toString()
+}
+
+export function deleteText(page: PageDoc, boxId: string, at: number, length: number): void {
+  firstText(page, boxId)?.delete(at, length)
+  page.doc.commit()
 }

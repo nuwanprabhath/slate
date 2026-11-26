@@ -60,7 +60,10 @@ describe('input bounds (A2)', () => {
 
   it('truncates the audit target to 200 characters', async () => {
     const { client, audits } = await connect()
-    await client.callTool({ name: 'search', arguments: { query: 'z'.repeat(1000) } })
+    // A search's target is only its length since GDPR-07; create_page's `<notebook>/<section>` can still reach 257.
+    await client.callTool({ name: 'create_page', arguments: { notebookId: 'n'.repeat(128), sectionId: 's'.repeat(128), title: 't' } })
     expect(audits.at(-1)!.target).toHaveLength(200)
+    await client.callTool({ name: 'search', arguments: { query: 'z'.repeat(1000) } })
+    expect(audits.at(-1)!.target).toBe('[1000 chars]')
   })
 })

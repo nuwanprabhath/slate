@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSecretStorage, secretFile, type SecretStorage } from '../secretStorage'
 import { createAuthService, encryptedCachePlugin } from './auth'
+import { DEFAULT_SETTINGS as PRIVACY_DEFAULTS } from '../../shared/settings/schema'
+import { setPrivacySource } from '../privacy/gate'
+
+// These tests are about sign-in and sync, not consent: strict mode is off here (the consent gate has its own tests).
+beforeEach(() => setPrivacySource(() => ({ ...PRIVACY_DEFAULTS, gdprStrictMode: false })))
+afterEach(() => setPrivacySource(() => null))
 
 const dirs: string[] = []
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))

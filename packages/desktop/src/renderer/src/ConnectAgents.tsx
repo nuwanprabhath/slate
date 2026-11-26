@@ -26,6 +26,7 @@ export function ConnectAgents({ onClose }: { onClose: () => void }) {
           </button>
         </header>
         <p>Slate shares nothing until you allow it: right-click a notebook, section or page → AI access.</p>
+        <p className="empty" data-testid="connect-agents-provider">Agents you connect may send what they read to their provider (for Claude Code: Anthropic).</p>
         <pre className="connect-command" data-testid="connect-agents-command">{claudeCommand ?? ''}</pre>
         <button type="button" data-testid="connect-agents-copy" disabled={!claudeCommand} onClick={() => void copy()}>
           {copied ? 'Copied' : 'Copy'}

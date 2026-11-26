@@ -1,5 +1,6 @@
 import type { KeyHandle } from '@slate/native'
 import { openDatabase, type Database } from './db/openDatabase'
+import { importParts } from '@slate/core'
 import { LoroDoc } from 'loro-crdt'
 import type { ImportRecord } from '@slate/importer'
 import type { ConflictRecord } from '@slate/sync'
@@ -10,6 +11,18 @@ export const COMPACT_THRESHOLD = 500
 /** Diagnostics, pruned on open: the newest rows are the only ones anything reads. */
 const AUDIT_KEEP = 10_000
 const NOTICES_KEEP = 1_000
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * How long the personal rows live (GDPR-07, GDPR-15): agents' audit rows by age, and sync conflicts,
+ * which hold both versions and the other device's name. `conflictDays: null` keeps conflicts until the
+ * person resolves them. The caller reads these from the settings; the store never imports them.
+ */
+export interface StoreRetention {
+  auditDays: number
+  conflictDays: number | null
+}
+export const DEFAULT_RETENTION: StoreRetention = { auditDays: 90, conflictDays: null }
 
 /**
  * The schema, as the ordered list of migrations that builds it; `PRAGMA user_version` is how many of
@@ -60,6 +73,8 @@ const MIGRATIONS: ReadonlyArray<(db: Database.Database) => void> = [
  * so it waits for this long without an append to that doc rather than stalling a keystroke.
  */
 export const COMPACT_IDLE_MS = 3_000
+/** A sync engine key naming a doc that went through a connection: `[<connection prefix>](pushed|base):<docId>`. */
+const SYNCED_KEY = /(?:^|:)(?:pushed|base):((?:page|notebook):[^:]+)$/
 
 export interface AuditRow {
   id: number
@@ -91,6 +106,7 @@ export class DocStore {
 
   /** `compact: false` is for the MCP CLI: only the app compacts, so the two never race on it. */
   private readonly options: { compact?: boolean }
+  private retention: StoreRetention
   /**
    * Run just before a doc is compacted, so whoever polls other connections' rows can deliver them
    * while they still exist: compaction deletes the rows it folded, and a reader that never saw one
@@ -111,10 +127,11 @@ export class DocStore {
   /** The key is used to open the connection and not kept (§15 N9). */
   constructor(
     fileOrDb: string | Database.Database,
-    options: { compact?: boolean; key?: KeyHandle | null; beforeCompact?: (docId: string) => void } = {},
+    options: { compact?: boolean; key?: KeyHandle | null; beforeCompact?: (docId: string) => void; retention?: StoreRetention } = {},
   ) {
     this.db = typeof fileOrDb === 'string' ? openDatabase(fileOrDb, options.key ?? null) : fileOrDb
     this.options = { compact: options.compact }
+    this.retention = options.retention ?? DEFAULT_RETENTION
     this.beforeCompact = options.beforeCompact ?? (() => {})
     this.migrate()
     this.prune()
@@ -135,15 +152,29 @@ export class DocStore {
   }
 
   /**
-   * Both tables are diagnostics nobody reads past the recent end, and nothing else ever deletes a row.
-   * Each count comes first so that the usual open, with both tables under their cap, takes no write
-   * lock at all: several connections (the app, sync, an import) open the same file while it is in use.
+   * The diagnostics tables are kept to their recent end, and the personal rows to their age limit.
+   * Each check reads first so that the usual open, with nothing to drop, takes no write lock at all:
+   * several connections (the app, sync, an import) open the same file while it is in use.
    */
   private prune(): void {
     if ((this.prepare('SELECT COUNT(*) AS n FROM audit').get() as { n: number }).n > AUDIT_KEEP)
       this.prepare('DELETE FROM audit WHERE id <= (SELECT MAX(id) FROM audit) - ?').run(AUDIT_KEEP)
     if ((this.prepare('SELECT COUNT(*) AS n FROM notices').get() as { n: number }).n > NOTICES_KEEP)
       this.prepare('DELETE FROM notices WHERE id <= (SELECT MAX(id) FROM notices) - ?').run(NOTICES_KEEP)
+    const auditCutoff = Date.now() - this.retention.auditDays * DAY_MS
+    if (this.prepare('SELECT 1 FROM audit WHERE ts < ? LIMIT 1').get(auditCutoff) !== undefined)
+      this.prepare('DELETE FROM audit WHERE ts < ?').run(auditCutoff)
+    if (this.retention.conflictDays !== null) {
+      const conflictCutoff = Date.now() - this.retention.conflictDays * DAY_MS
+      if (this.prepare('SELECT 1 FROM conflicts WHERE at < ? LIMIT 1').get(conflictCutoff) !== undefined)
+        this.prepare('DELETE FROM conflicts WHERE at < ?').run(conflictCutoff)
+    }
+  }
+
+  /** The limits from the settings, which can only be read once the store is open; prunes at once. */
+  applyRetention(retention: StoreRetention): void {
+    this.retention = retention
+    this.prune()
   }
 
   /**
@@ -266,6 +297,11 @@ export class DocStore {
     this.prepare('INSERT INTO audit (ts, tool, target, outcome) VALUES (?, ?, ?, ?)').run(Date.now(), entry.tool, entry.target, entry.outcome)
   }
 
+  /** The person's "Clear" in AI activity (GDPR-07). */
+  clearAudit(): void {
+    this.prepare('DELETE FROM audit').run()
+  }
+
   listAudit(limit = 200): AuditRow[] {
     return this.prepare('SELECT id, ts, tool, target, outcome FROM audit ORDER BY id DESC LIMIT ?').all(limit) as AuditRow[]
   }
@@ -346,6 +382,111 @@ export class DocStore {
   }
 
   /**
+   * Forgets one sync connection's bookkeeping (GDPR-06), in one transaction. `prefix` is a git
+   * connection's scope, `git:<remoteUrl>#<branch>:` exactly as `scopedLocal` writes it: its `sync_meta`
+   * keys and its `sync_seen` items carry it. `null` is OneDrive, whose state predates providers and is
+   * unprefixed: the engine's own keys (packages/sync engine `META`), every unprefixed seen item, and
+   * `blob_synced`. Other rows in `sync_meta` (the search index's, the transport probe's) stay. `remote`
+   * is the host-level transport observation to drop (`<scheme>:<host>[:<port>]`), if any.
+   */
+  forgetSync(prefix: string | null, remote: string | null): void {
+    if (prefix === '') throw new Error('forgetSync needs a connection prefix, or null for OneDrive: an empty one matches every key')
+    this.db.transaction(() => {
+      // What `wasSynced` reads outlives the bookkeeping: another device may still hold these docs (GDPR-04).
+      const scope = prefix === null ? this.syncMetaKeys('').filter((k) => !k.startsWith('git:')) : this.syncMetaKeys(prefix)
+      for (const key of scope) {
+        const docId = SYNCED_KEY.exec(key)?.[1]
+        if (docId !== undefined) this.prepare('INSERT INTO sync_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING').run(`synced:${docId}`, Buffer.alloc(0))
+      }
+      if (prefix !== null) {
+        const like = prefix.replace(/[\\%_]/g, (c) => `\\${c}`) + '%'
+        this.prepare(`DELETE FROM sync_meta WHERE key LIKE ? ESCAPE '\\'`).run(like)
+        this.prepare(`DELETE FROM sync_seen WHERE item_id LIKE ? ESCAPE '\\'`).run(like)
+      } else {
+        this.prepare(
+          `DELETE FROM sync_meta WHERE key IN ('deviceRecord', 'deltaCursor', 'changedSeq')
+             OR key LIKE 'pushed:%' OR key LIKE 'seq:%' OR key LIKE 'chunks:%' OR key LIKE 'snapshot:%' OR key LIKE 'stale:%' OR key LIKE 'base:%'`,
+        ).run()
+        this.prepare(`DELETE FROM sync_seen WHERE item_id NOT LIKE 'git:%'`).run()
+        this.prepare('DELETE FROM blob_synced').run()
+      }
+      if (remote !== null) this.prepare('DELETE FROM transport_observations WHERE remote = ?').run(remote)
+    })()
+  }
+
+  /**
+   * Whether a doc ever went through a sync connection, pushed or pulled, under any provider, including one
+   * forgotten since (`forgetSync` leaves a `synced:` marker). Such a doc may be on another device.
+   */
+  wasSynced(docId: string): boolean {
+    const like = (field: string) => `%${field}:${docId.replace(/[\\%_]/g, (c) => `\\${c}`)}`
+    const row = this.prepare(`SELECT 1 AS hit FROM sync_meta WHERE key = ? OR key LIKE ? ESCAPE '\\' OR key LIKE ? ESCAPE '\\' LIMIT 1`).get(`synced:${docId}`, like('pushed'), like('base'))
+    return row !== undefined
+  }
+
+  /** The database's size in bytes: what a VACUUM needs free on the disk. */
+  sizeBytes(): number {
+    const pages = this.db.pragma('page_count', { simple: true }) as number
+    const size = this.db.pragma('page_size', { simple: true }) as number
+    return pages * size
+  }
+
+  /**
+   * Folds the WAL into the file and truncates it, and rewrites the file without its free pages where
+   * SQLite may (GDPR-04). Refused inside a transaction, where SQLite cannot run it; the caller pauses
+   * sync first. Every connection runs with `secure_delete`, so a deleted row's bytes are already zeros
+   * in the file and the checkpoint is what removes the WAL's older copies of them.
+   *
+   * `@slate/native`'s authorizer refuses every ATTACH, and VACUUM attaches a temporary database of its
+   * own, so today the VACUUM step is refused with SQLITE_AUTH and the file keeps its size (zeroed free
+   * pages). Only that refusal is passed over; any other failure is the caller's.
+   */
+  vacuum(): void {
+    if (this.db.inTransaction) throw new Error('VACUUM cannot run inside a transaction')
+    this.db.pragma('wal_checkpoint(TRUNCATE)')
+    try {
+      this.db.exec('VACUUM')
+    } catch (e) {
+      if ((e as { code?: unknown }).code !== 'SQLITE_AUTH') throw e
+    }
+    // VACUUM in WAL mode writes the new file through the WAL: fold it back and truncate it.
+    this.db.pragma('wal_checkpoint(TRUNCATE)')
+  }
+
+  /** Merges the search index's segments, which drops the entries its deletes only marked (GDPR-04). */
+  optimizeSearch(): void {
+    this.prepare(`INSERT INTO search (search) VALUES ('optimize')`).run()
+  }
+
+  /**
+   * Replaces a doc's stored history with `snapshot` (erase history, GDPR-04), on the path `compact`
+   * takes: one transaction upserts the snapshot and deletes the doc's update rows. Unlike `remove`
+   * followed by `append` it never reuses a sequence (FX-6): the doc's head moves to a fresh one, so
+   * sync's `changedDocs` sees the doc changed, and readers of `loadSince` start over.
+   */
+  replaceWithSnapshot(docId: string, snapshot: Uint8Array): void {
+    // Bytes Loro cannot read would replace the doc with nothing: check before anything is deleted.
+    const check = new LoroDoc()
+    try {
+      check.import(snapshot)
+    } finally {
+      check.free()
+    }
+    clearTimeout(this.compactTimers.get(docId))
+    this.compactTimers.delete(docId)
+    this.db.transaction(() => {
+      this.db
+        .prepare('INSERT INTO snapshots (doc_id, data) VALUES (?, ?) ON CONFLICT(doc_id) DO UPDATE SET data = excluded.data')
+        .run(docId, Buffer.from(snapshot))
+      this.prepare('DELETE FROM updates WHERE doc_id = ?').run(docId)
+      const { seq } = this.prepare('UPDATE seq_counter SET seq = seq + 1 WHERE id = 1 RETURNING seq').get() as { seq: number }
+      this.prepare('INSERT INTO doc_heads (doc_id, local_seq) VALUES (?, ?) ON CONFLICT(doc_id) DO UPDATE SET local_seq = excluded.local_seq').run(docId, seq)
+    })()
+    this.removals.set(docId, (this.removals.get(docId) ?? 0) + 1)
+    this.rowCounts.set(docId, 0)
+  }
+
+  /**
    * An append of either origin bumps the doc's head in the same transaction as the row: a restore the
    * sync engine appends as 'remote' is a local edit that still has to be pushed, so "changed" cannot
    * mean "origin local".
@@ -387,7 +528,7 @@ export class DocStore {
       const doc = new LoroDoc()
       let snapshot: Uint8Array
       try {
-        const status = doc.importBatch(parts)
+        const status = importParts(doc, parts)
         // A pending update depends on one that has not arrived (a gapped sync or an unfinished import).
         // The snapshot would not contain it, so deleting the rows would destroy that edit for good:
         // leave them and let the next append reschedule, by which time the gap may have been filled.

@@ -1,0 +1,30 @@
+/* The consent step (ConsentDialog): the vault dialog's surface and spacing, on theme tokens only. */
+.consent-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; background: rgb(0 0 0 / 0.35); }
+.consent-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 22px 24px 18px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.consent-dialog:focus { outline: none; }
+.consent-dialog h2 { margin: 0 0 2px; font-size: 17px; }
+.consent-dialog h3 { margin: 0 0 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.consent-dialog p { margin: 0; line-height: 1.45; }
+.consent-part { display: flex; flex-direction: column; }
+.consent-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; line-height: 1.45; }
+.consent-list code { font-family: var(--font-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
+.consent-hint { color: var(--muted); font-size: 12px; }
+.consent-error { color: var(--danger); }
+.consent-error:empty { display: none; }
+.consent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.consent-dialog a { color: var(--link); }

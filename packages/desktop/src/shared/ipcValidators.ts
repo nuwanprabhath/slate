@@ -3,7 +3,8 @@
 // renderer is untrusted (audit B-2), and the registrar only proves the sender and the vault state.
 // Hand-written in the style of `isSearchQuery`, so no dependency decides what main accepts.
 
-import type { GitSettings, RendererErrorReport, Settings, SyncConfig } from './api'
+import type { GitSettings, PurgeScope, RendererErrorReport, Settings, SyncConfig } from './api'
+import { isConsentFeature as consentFeature, type ConsentFeature } from './privacy/consent'
 import { LIMITS } from './theme/spec'
 
 /** The most bytes one CRDT update may carry; a page's whole history arrives as many of these. */
@@ -148,3 +149,13 @@ export function isSyncConfig(value: unknown): value is SyncConfig {
 /** The menu path `chrome:invoke-menu` walks: a short list of item indexes. */
 export const isMenuPath = (value: unknown): value is number[] =>
   Array.isArray(value) && value.length > 0 && value.length <= 16 && value.every((i) => typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < 1000)
+
+/** A feature `privacy:grant` and `privacy:revoke` may name (shared/privacy/consent.ts). */
+export const isConsentFeature = (value: unknown): value is ConsentFeature => consentFeature(value)
+
+export const PURGE_SCOPES: readonly PurgeScope[] = ['caches', 'logs', 'audit', 'all']
+export const isPurgeScope = (value: unknown): value is PurgeScope => isOneOf(PURGE_SCOPES, value)
+
+/** "Erase all Slate data" goes ahead only with the word the person typed, exactly. */
+export const isEraseConfirmation = (value: unknown): value is 'ERASE' => value === 'ERASE'
+

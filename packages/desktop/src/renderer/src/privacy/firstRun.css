@@ -1,0 +1,31 @@
+/* The first-run privacy card: a corner card, not a modal, on theme tokens only. */
+.first-run {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  padding: 16px 18px 14px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.first-run h2 { margin: 0; font-size: 15px; }
+.first-run p { margin: 0; line-height: 1.45; }
+.first-run-toggle { display: flex; align-items: flex-start; gap: 8px; line-height: 1.45; }
+.first-run-toggle input { margin-top: 3px; }
+.first-run-legacy { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.first-run-legacy li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.first-run-buttons { display: flex; gap: 8px; }
+.first-run-error { color: var(--danger); }
+.first-run-error:empty { display: none; }
+.first-run-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }

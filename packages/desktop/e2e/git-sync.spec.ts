@@ -29,6 +29,8 @@ async function openSettings(page: Page) {
 
 async function configureGit(page: Page) {
   await openSettings(page)
+  // Strict mode (GDPR-03): sync starts only with the provider's consent and, on a plaintext device, unencrypted sync's.
+  await page.evaluate(() => Promise.all([window.slate.privacy.grant('gitSync'), window.slate.privacy.grant('plaintextSync')]))
   await page.getByTestId('sync-provider-git').check()
   await page.getByTestId('git-remote-url').fill(remoteUrl)
   await expect(page.getByTestId('git-auth-system')).toBeChecked()
@@ -137,9 +139,13 @@ test.describe.serial('git sync between two devices', () => {
     await expect(button).toHaveAttribute('title', /Last synced just now/)
   })
 
-  test('the repository has commits from both devices and no credentials anywhere', async () => {
-    const emails = execFileSync('git', ['--git-dir', bare, 'log', '--format=%ae', 'main']).toString().trim().split('\n')
-    expect(new Set(emails.filter((e) => e.startsWith('slate@'))).size).toBe(2)
+  test('the repository has records from both devices, a pseudonymous identity and no credentials anywhere', async () => {
+    // GDPR-03: strict mode signs every commit as Slate <slate@invalid>, so the devices show only as their records.
+    const identities = execFileSync('git', ['--git-dir', bare, 'log', '--format=%an %ae', 'main']).toString().trim().split('\n')
+    expect(new Set(identities)).toEqual(new Set(['Slate slate@invalid']))
+    const records = execFileSync('git', ['--git-dir', bare, 'ls-tree', '--name-only', 'main', 'devices/']).toString().trim().split('\n')
+    expect(records).toHaveLength(2)
+    for (const record of records) expect(JSON.parse(execFileSync('git', ['--git-dir', bare, 'show', `main:${record}`]).toString()).name).toMatch(/^Device [0-9a-f]{8}$/)
     const configs = [join(bare, 'config')]
     for (const data of [aData, bData]) {
       const dir = join(data, 'git-sync')
@@ -156,6 +162,7 @@ test.describe.serial('git sync between two devices', () => {
     test.setTimeout(60_000)
     const c = (await launch(join(root, 'c'))).page
     await expect(c.getByTestId('canvas')).not.toContainText('hello over git')
+    await c.evaluate(() => Promise.all([window.slate.privacy.grant('gitSync'), window.slate.privacy.grant('plaintextSync')]))
     await openSettings(c)
     await c.getByTestId('sync-provider-git').check()
     await c.getByTestId('git-remote-url').fill(remoteUrl)

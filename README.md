@@ -123,6 +123,12 @@ claude mcp add slate -- $PWD/bin/slate-mcp
 Nothing is shared until you grant access in the sidebar (right-click → AI access). Private boxes are
 never sent to an agent, and every agent read and write is listed in View → AI Activity.
 
+## Privacy
+
+Slate keeps your notes on your computer and sends nothing off it unless you allow a feature, one at a time
+(strict mode, on for new installs). See [PRIVACY.md](PRIVACY.md) for what each feature sends and to whom,
+how long each kind of data is kept, and how to export or erase your data.
+
 ## Security and encryption
 
 Encryption is off until you turn it on in Settings → Security → *Encrypt my notes…*. Design details:

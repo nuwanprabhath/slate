@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { writeFakeConverter } from '../../importer/test/fakeOne2html'
 import { createBoxAt, expect, launchApp, MOD, test, clickMenu } from './fixtures'
+import { launchGranted } from './consent'
 
 async function openAppearance(page: Page) {
   await expect(page.getByTestId('canvas')).toBeVisible()
@@ -124,8 +125,9 @@ test('Animations Off sets reduced motion and the effects canvas stops drawing', 
 })
 
 test('a theme generated with (fake) Claude is previewed, then saved to the grid', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_CLAUDE_THEME: '1' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['claudeTheme'], { SLATE_FAKE_CLAUDE_THEME: '1' })
   try {
+    await expect(page.getByTestId('canvas')).toBeVisible()
     await openAppearance(page)
     // What is typed here is a request, not a note: never underlined (spellcheck.ts).
     await expect(page.getByTestId('theme-describe')).toHaveAttribute('spellcheck', 'false')
@@ -152,7 +154,7 @@ test('imported black text is readable in Dark and stays black in Paper', async (
   mkdirSync(backupDir)
   copyFileSync(join(__dirname, '../../importer/test/fixtures/one/New Section 1.one'), join(backupDir, 'New Section 1 (On 27-10-2020).one'))
   const converter = writeFakeConverter(scratch, join(__dirname, '../../importer/test/fixtures/one2html-colors'))
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['claudeTheme'], { SLATE_ONE2HTML: converter, SLATE_E2E_BACKUP_PATH: backupDir })
   try {
     // The menu's handler is registered once the app has mounted; a click before that is lost.
     await expect(page.getByTestId('canvas')).toBeVisible({ timeout: 15_000 })

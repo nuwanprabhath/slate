@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url'
 import { nodeGitRunner, tokenEnv, type GitResult, type GitRunner, type GitRunOptions } from '@slate/sync'
 import { Logger } from '../../log/logger'
 import { createSecretStorage, secretFile } from '../../secretStorage'
+import { DEFAULT_SETTINGS } from '../../../shared/settings/schema'
+import { DISCLOSURES } from '../../../shared/privacy/consent'
+import { setPrivacySource } from '../../privacy/gate'
 import { createPrivateRepo, githubDeviceFlow, testConnection } from './auth'
 
 const dirs: string[] = []
@@ -38,6 +41,9 @@ function scripted(responses: { status?: number; body: unknown }[]) {
 const CODE = { device_code: 'dc', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device', interval: 5, expires_in: 900 }
 
 describe('githubDeviceFlow', () => {
+  // The flow is gated on githubSignIn (GDPR-11, authPrivacy.test.ts); these cases cover it once allowed.
+  beforeEach(() => setPrivacySource(() => ({ ...DEFAULT_SETTINGS, consents: { githubSignIn: { grantedAt: 1, textVersion: DISCLOSURES.githubSignIn.textVersion, source: 'user' } } })))
+  afterEach(() => setPrivacySource(() => null))
   it('shows the code, waits while pending, slows down when told, and returns the token', async () => {
     const { fetch, calls } = scripted([
       { body: CODE },

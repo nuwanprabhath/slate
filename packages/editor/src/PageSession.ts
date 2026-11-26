@@ -1,5 +1,5 @@
 import { UndoManager, type LoroDoc } from 'loro-crdt'
-import { PageDoc, arrangeBoxes, computePush, hasOverlaps, contentToJSON, settleOverlaps, type BoxCopy, type BoxPatch, type BoxRect, type BoxState, type PMJSON } from '@slate/core'
+import { PageDoc, arrangeBoxes, importParts, computePush, hasOverlaps, contentToJSON, settleOverlaps, type BoxCopy, type BoxPatch, type BoxRect, type BoxState, type PMJSON } from '@slate/core'
 import { isEmptyContent } from './emptyBox'
 import { schema } from './extensions'
 import { findInPage, replaceInPageDoc, type FindMatch, type FindOptions, type ReplaceChoice } from './find'
@@ -313,7 +313,7 @@ export class PageSession {
 
   /** Updates another process wrote; they arrive as `import` events like any remote change. */
   importExternal(updates: Uint8Array[]): void {
-    if (updates.length > 0) this.doc.importBatch(updates)
+    importParts(this.doc, updates)
   }
 
   undo(): boolean {

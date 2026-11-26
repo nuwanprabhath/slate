@@ -68,4 +68,18 @@ describe('settings schema', () => {
     expect(sanitizePatch({ fontOverrides: ['Georgia'] }).fontOverrides).toBeUndefined()
     expect(sanitizePatch({ fontOverrides: null }).fontOverrides).toBeUndefined()
   })
+
+  it('GDPR strict mode starts on with no consents, and a stored non-boolean falls back to on', () => {
+    expect(DEFAULT_SETTINGS.gdprStrictMode).toBe(true)
+    expect(DEFAULT_SETTINGS.consents).toEqual({})
+    expect(mergeSettings({ gdprStrictMode: 'off' }).gdprStrictMode).toBe(true)
+    expect(sanitizePatch({ gdprStrictMode: false })).toEqual({ gdprStrictMode: false })
+  })
+
+  it('keeps well-formed consents from main, and drops the consents key from a renderer patch', () => {
+    const consents = { updates: { grantedAt: 1, textVersion: 1, source: 'user' } }
+    expect(sanitizePatch({ consents })).toEqual({ consents })
+    expect(sanitizePatch({ consents, autoBullets: false }, { allowLocal: false, fromRenderer: true })).toEqual({ autoBullets: false })
+    expect(sanitizePatch({ consents: 'all' })).toEqual({})
+  })
 })

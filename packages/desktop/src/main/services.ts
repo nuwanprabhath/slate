@@ -8,7 +8,8 @@ import { createExternalWatch } from './externalWatch'
 import type { ScopedLog } from './log/logger'
 import { ImportService } from './onenote/importService'
 import { SearchIndex } from './search/searchIndex'
-import { DocStore } from './store'
+import { readSettings } from './settings'
+import { DocStore, type StoreRetention } from './store'
 import { SyncService, type SyncServiceDeps } from './sync/syncService'
 import { ThemeStore } from './theme/themeStore'
 import { Locked, type KeyRing } from './vault/keyring'
@@ -48,6 +49,11 @@ export interface Services {
 
 let current: Services | null = null
 
+/** GDPR-07, GDPR-15: strict mode keeps agents' audit rows 30 days and sync conflicts 90; otherwise 90 days and until resolved. */
+function retentionFor(strict: boolean): StoreRetention {
+  return strict ? { auditDays: 30, conflictDays: 90 } : { auditDays: 90, conflictDays: null }
+}
+
 /** §6.2: the one owner of everything that touches notes. Code reaches it at the moment of use, never keeps it. */
 export function services(): Services {
   if (!current) throw new Locked()
@@ -78,6 +84,8 @@ export function openServices(keyRing: KeyRing | null, dbFile: string, ctx: Servi
     const key = () => handle
     // B2: another connection's rows are delivered before a compaction can delete them.
     const store = new DocStore(dbFile, { key: key(), beforeCompact: () => { watch?.check() } })
+    // The settings live in the store, so the limits arrive once it is open; read once per opening.
+    store.applyRetention(retentionFor(readSettings(store).gdprStrictMode))
     let blobDb: Database.Database | null = null
     let blobs: BlobStore
     if (keyRing) {

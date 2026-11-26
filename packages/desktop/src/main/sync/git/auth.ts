@@ -1,6 +1,10 @@
 import { execFile } from 'node:child_process'
 import { classifyKex, NETWORK_TIMEOUT_MS, parseCurlTls, parseSshKex, PROMPT_FREE_ENV, protocolEnv, remoteTransport, verboseSshCommand, type GitRunner, type PqLevel } from '@slate/sync'
 import type { DeviceCode, GitCheck } from '../../../shared/api'
+import { DEVICE_FLOW_SCOPE } from '../../../shared/sync/githubScope'
+import { requireConsent } from '../../privacy/gate'
+
+export { DEVICE_FLOW_SCOPE, DEVICE_FLOW_SCOPE_HELP } from '../../../shared/sync/githubScope'
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code'
 const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token'
@@ -43,7 +47,9 @@ export async function githubDeviceFlow(clientId: string, onCode: (code: DeviceCo
   const doFetch = deps.fetch ?? fetch
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   const now = deps.now ?? Date.now
-  const code = await postForm(doFetch, DEVICE_CODE_URL, { client_id: clientId, scope: 'repo' })
+  // GDPR-11: GitHub is contacted only once the person allowed the sign-in (the scope is shown at the code step).
+  requireConsent('githubSignIn')
+  const code = await postForm(doFetch, DEVICE_CODE_URL, { client_id: clientId, scope: DEVICE_FLOW_SCOPE })
   if (typeof code.device_code !== 'string') throw new Error(`GitHub did not start the sign-in: ${String(code.error_description ?? code.error ?? 'no code')}`)
   onCode({ userCode: String(code.user_code), verificationUri: String(code.verification_uri) })
   let interval = Number(code.interval ?? 5)

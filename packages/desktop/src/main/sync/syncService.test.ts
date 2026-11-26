@@ -18,6 +18,12 @@ import { DocStore } from '../store'
 import { importKey } from '../../../test/vaultKeys'
 import { KeyRing } from '../vault/keyring'
 import { SyncService } from './syncService'
+import { DEFAULT_SETTINGS as PRIVACY_DEFAULTS } from '../../shared/settings/schema'
+import { setPrivacySource } from '../privacy/gate'
+
+// These tests are about sign-in and sync, not consent: strict mode is off here (the consent gate has its own tests).
+beforeEach(() => setPrivacySource(() => ({ ...PRIVACY_DEFAULTS, gdprStrictMode: false })))
+afterEach(() => setPrivacySource(() => null))
 
 const PAGE = 'page:11111111-1111-4111-8111-111111111111'
 
@@ -53,6 +59,8 @@ interface DeviceOptions {
 async function device(name: string, opts: DeviceOptions = {}): Promise<Device> {
   const dbFile = join(dir, `${name}.db`)
   const store = new DocStore(dbFile)
+  // These cases cover sync itself, named as before GDPR strict mode; its consents and pseudonymous identity are syncPrivacy.test.ts's.
+  writeSettings(store, { gdprStrictMode: false })
   const blobs = new FileBlobStore(join(dir, `${name}-blobs`))
   const auth = createAuthService({ clientId: null, cacheFile: join(dir, `${name}.bin`), openBrowser: async () => {}, fake: true })
   if (opts.signedIn !== false) await auth.signIn()

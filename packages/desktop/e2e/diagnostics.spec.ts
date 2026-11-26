@@ -23,7 +23,8 @@ test('switching it on writes a version line with no home directory in it', async
 })
 
 test('it logs again at the next start while on, and stops when switched off', async ({ userData, app, page }) => {
-  await page.evaluate(() => window.slate.settings.set({ debugLog: true }))
+  // With strict mode off, switching the log off keeps what it wrote (strict mode deletes it: the next test).
+  await page.evaluate(() => window.slate.settings.set({ gdprStrictMode: false, debugLog: true }))
   await app.close()
   const second = await launchApp(userData)
   const text = await second.page.evaluate(() => window.slate.diagnostics.read())
@@ -35,6 +36,15 @@ test('it logs again at the next start while on, and stops when switched off', as
   await second.page.evaluate(() => window.slate.settings.set({ markdownShortcuts: true }))
   expect(await second.page.evaluate(() => window.slate.diagnostics.read())).toBe(atOff)
   await second.app.close()
+})
+
+test('GDPR-13: in strict mode, switching the log off deletes it, and nothing is written after', async ({ page }) => {
+  await page.evaluate(() => window.slate.settings.set({ debugLog: true }))
+  expect(await page.evaluate(() => window.slate.diagnostics.read())).toMatch(/diagnostic log on/)
+  await page.evaluate(() => window.slate.settings.set({ debugLog: false }))
+  expect(await page.evaluate(() => window.slate.diagnostics.read())).toBe('')
+  await page.evaluate(() => window.slate.settings.set({ markdownShortcuts: true }))
+  expect(await page.evaluate(() => window.slate.diagnostics.read())).toBe('')
 })
 
 test('T-PQ-D3-02: the exported log carries the vault header version and host-only transports', async ({ userData, page }) => {

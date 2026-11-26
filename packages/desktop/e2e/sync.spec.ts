@@ -19,6 +19,8 @@ async function launch(userData = mkdtempSync(join(tmpdir(), 'slate-e2e-sync-')))
     SLATE_SYNC_INTERVAL_MS: '500',
   })
   apps.push(app)
+  // Strict mode (GDPR-03): OneDrive sync, unencrypted, and the Microsoft sign-in each need the person's consent.
+  await page.evaluate(() => Promise.all((['oneDriveSync', 'plaintextSync', 'microsoftSignIn'] as const).map((f) => window.slate.privacy.grant(f))))
   return page
 }
 

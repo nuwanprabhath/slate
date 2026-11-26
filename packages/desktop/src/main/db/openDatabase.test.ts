@@ -52,6 +52,32 @@ describe('openDatabase', () => {
     expect(scan()).toBe(false)
   })
 
+  it('GDPR-04: every writable connection runs with secure_delete on', () => {
+    const file = tempFile()
+    const db = openDatabase(file, null)
+    expect(db.pragma('secure_delete', { simple: true })).toBe(1)
+    db.close()
+    const keyed = openDatabase(tempFile(), testKey())
+    expect(keyed.pragma('secure_delete', { simple: true })).toBe(1)
+    keyed.close()
+  })
+
+  it('GDPR-04: a removed page leaves no marker in a plaintext file or its WAL after a checkpoint', () => {
+    const file = tempFile()
+    const db = openDatabase(file, null)
+    const store = new DocStore(db, { compact: false })
+    store.append('page:x', new TextEncoder().encode(MARKER))
+    store.append('page:y', new TextEncoder().encode('kept'))
+    db.pragma('wal_checkpoint(TRUNCATE)')
+    expect(readFileSync(file).includes(MARKER)).toBe(true)
+    store.remove('page:x')
+    db.pragma('wal_checkpoint(TRUNCATE)')
+    const scan = (): boolean => [file, `${file}-wal`].some((f) => existsSync(f) && readFileSync(f).includes(MARKER))
+    expect(scan()).toBe(false)
+    store.close()
+    expect(scan()).toBe(false)
+  })
+
   it('a plaintext database does contain the marker (the scan works)', () => {
     const file = tempFile()
     const store = new DocStore(openDatabase(file, null))

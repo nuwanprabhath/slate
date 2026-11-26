@@ -34,7 +34,10 @@
 .sync-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sync-check { padding: 6px 8px; border-radius: 5px; background: var(--hover); overflow-wrap: anywhere; }
 .sync-check.failed { color: var(--danger); }
-.sync-settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sync-settings-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.sync-settings .sync-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.sync-field-group { display: flex; flex-direction: column; gap: 4px; }
+.sync-forget { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .sync-settings button { padding: 4px 10px; }
 
 .overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: var(--overlay); }

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { allowed, requireConsent } from '../privacy/gate'
 import type { ThemeRunner, ThemeRunRequest } from './themeGenerator'
 
 /**
@@ -17,6 +18,9 @@ import type { ThemeRunner, ThemeRunRequest } from './themeGenerator'
  * every argument as its own positional parameter: nothing the user typed is ever parsed by a shell.
  */
 
+/** The prefix of the empty folder each run uses; a crash can leave one behind, and the retention sweep removes them by it. */
+export const THEME_TMP_PREFIX = 'slate-theme-'
+
 const loginShell = (): string => env('SHELL') || '/bin/zsh'
 
 function shellArgs(argv: string[]): { cmd: string; args: string[] } {
@@ -27,6 +31,8 @@ function shellArgs(argv: string[]): { cmd: string; args: string[] } {
 /** Where `claude` is on the login shell's PATH, or null. Asked once; the answer is cached. */
 let found: Promise<string | null> | null = null
 export function findClaude(): Promise<string | null> {
+  // Looking for `claude` starts the login shell, which is the first step of using it (GDPR-16).
+  if (!allowed('claudeTheme')) return Promise.resolve(null)
   found ??= new Promise((resolve) => {
     if (process.platform === 'win32') return resolve(null)
     const child = spawn(loginShell(), ['-l', '-c', 'command -v claude'], { stdio: ['ignore', 'pipe', 'ignore'] })
@@ -54,10 +60,11 @@ export class ClaudeOneShot implements ThemeRunner {
   }
 
   async run(req: ThemeRunRequest): Promise<string> {
+    requireConsent('claudeTheme')
     if (this.proc !== null) throw new Error('Already working on a theme.')
     const bin = (await findClaude()) ?? 'claude'
     const flags = ['-p', '--output-format', 'json', '--tools', '', '--safe-mode', '--strict-mcp-config', '--no-session-persistence', '--json-schema', JSON.stringify(req.jsonSchema)]
-    const cwd = mkdtempSync(join(tmpdir(), 'slate-theme-'))
+    const cwd = mkdtempSync(join(tmpdir(), THEME_TMP_PREFIX))
     const { cmd, args } = shellArgs([bin, ...flags, req.prompt])
     try {
       return await new Promise<string>((resolve, reject) => {

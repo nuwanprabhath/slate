@@ -185,6 +185,17 @@ export const CHANNEL_POLICY: Readonly<Record<keyof typeof CH, ChannelPolicy>> = 
   syncCheckTransport: 'unlocked',
   pagePrint: 'unlocked',
   editCommand: 'unlocked',
+  privacyStatus: 'unlocked',
+  privacyGrant: 'unlocked',
+  privacyRevoke: 'unlocked',
+  privacyExport: 'unlocked',
+  privacyPurge: 'unlocked',
+  privacyEraseHistory: 'unlocked',
+  privacyEraseAll: 'unlocked',
+  privacySecurityLogRead: 'unlocked',
+  privacySecurityLogClear: 'unlocked',
+  auditClear: 'unlocked',
+  syncForget: 'unlocked',
 }
 
 
@@ -312,6 +323,17 @@ export const SELF_TEST_POLICY: Readonly<Record<keyof typeof CH, SelfTestPolicy>>
   syncCheckTransport: 'refused',
   pagePrint: 'refused',
   editCommand: 'refused',
+  privacyStatus: 'refused',
+  privacyGrant: 'refused',
+  privacyRevoke: 'refused',
+  privacyExport: 'refused',
+  privacyPurge: 'refused',
+  privacyEraseHistory: 'refused',
+  privacyEraseAll: 'refused',
+  privacySecurityLogRead: 'refused',
+  privacySecurityLogClear: 'refused',
+  auditClear: 'refused',
+  syncForget: 'refused',
 }
 
 const channelsWith = (policy: ChannelPolicy): ReadonlySet<string> =>

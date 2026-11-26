@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, launchApp, test } from './fixtures'
+import { launchGranted } from './consent'
 
 const readSecurityLog = (userData: string): string => {
   try {
@@ -12,7 +13,7 @@ const readSecurityLog = (userData: string): string => {
 }
 
 test('the update banner offers the fake release, copies the install command and dismisses', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb' })
   try {
     const banner = page.getByTestId('update-banner')
     await expect(banner).toContainText('Slate 9.9.9 is available')
@@ -33,7 +34,7 @@ test('the update banner offers the fake release, copies the install command and 
 })
 
 test('skipping hides the banner; the updates section says so and Stop skipping brings it back', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb' })
   try {
     const banner = page.getByTestId('update-banner')
     await expect(banner).toContainText('Slate 9.9.9 is available')
@@ -58,7 +59,7 @@ test('skipping hides the banner; the updates section says so and Stop skipping b
 })
 
 test('the section switches automatic checks and the interval through the settings', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb' })
   try {
     await page.getByTestId('update-settings').click()
     const section = page.getByTestId('updates-section')
@@ -73,7 +74,7 @@ test('the section switches automatic checks and the interval through the setting
 })
 
 test('Install and restart installs without a password when none is needed and says it is restarting', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb' })
   try {
     const banner = page.getByTestId('update-banner')
     await expect(banner).toContainText('Slate 9.9.9 is available')
@@ -88,7 +89,7 @@ test('Install and restart installs without a password when none is needed and sa
 })
 
 test('Install and restart asks for the password, refuses a wrong one, then installs with the right one', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-sudo' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb-sudo' })
   try {
     const banner = page.getByTestId('update-banner')
     await expect(banner).toContainText('Slate 9.9.9 is available')
@@ -117,7 +118,7 @@ test('Install and restart asks for the password, refuses a wrong one, then insta
 })
 
 test('Cancel on the password form keeps the download and offers Install and restart again', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-sudo' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb-sudo' })
   try {
     const banner = page.getByTestId('update-banner')
     await page.getByTestId('update-install-restart').click()
@@ -132,7 +133,7 @@ test('Cancel on the password form keeps the download and offers Install and rest
 })
 
 test('a failed install says why and offers Try again, keeping the download for the install command', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-installfail' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb-installfail' })
   try {
     const banner = page.getByTestId('update-banner')
     await page.getByTestId('update-install-restart').click()
@@ -145,7 +146,7 @@ test('a failed install says why and offers Try again, keeping the download for t
 })
 
 test('a mac build offers Install and restart beside Download', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'dmg' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'dmg' })
   try {
     await expect(page.getByTestId('update-banner')).toContainText('Slate 9.9.9 is available')
     await expect(page.getByTestId('update-install-restart')).toBeVisible()
@@ -158,7 +159,7 @@ test('a mac build offers Install and restart beside Download', async () => {
 })
 
 test('an AppImage offers the same Install and restart, which downloads and restarts with no password', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'auto' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'auto' })
   try {
     const banner = page.getByTestId('update-banner')
     await expect(banner).toContainText('Slate 9.9.9 is available')
@@ -179,7 +180,7 @@ test('without SLATE_FAKE_UPDATE an e2e run never shows the banner', async ({ pag
 })
 
 test('T-UPD-01: a feed signed by a key that is not pinned is never offered', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb-badsig' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb-badsig' })
   try {
     await expect(page.getByTestId('canvas')).toBeVisible()
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send('menu:command', { cmd: 'show-settings', section: 'updates' }))
@@ -193,7 +194,7 @@ test('T-UPD-01: a feed signed by a key that is not pinned is never offered', asy
 })
 
 test('T-PQ-A2-06: the fake feed with a hybrid signature is offered; with the ML-DSA half stripped it is not, and the log says so', async () => {
-  const good = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  const good = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb' })
   try {
     await expect(good.page.getByTestId('update-banner')).toContainText('Slate 9.9.9 is available')
   } finally {

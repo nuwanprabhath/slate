@@ -2,6 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, launchApp, test } from '../fixtures'
+import { launchGranted } from '../consent'
 import { reviewUi } from './review'
 import { reloadTo, stubEvent, stubInvoke } from './states'
 
@@ -12,7 +13,7 @@ test('UI: title bar', async ({ app, page }) => {
 })
 
 test('UI: title bar with an update available', async () => {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: 'deb' })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: 'deb' })
   try {
     await expect(page.getByTestId('update-banner')).toBeVisible({ timeout: 30_000 })
     await reviewUi(app, page, 'banner update')

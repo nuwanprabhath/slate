@@ -32,6 +32,9 @@ packages/desktop/src/shared/csp.ts
 packages/desktop/src/shared/redact.ts
 packages/desktop/src/main/log/**
 packages/desktop/src/renderer/index.html
+# What leaves the machine and with whose consent (GDPR review §3.1): the consent model and the gate.
+packages/desktop/src/main/privacy/**
+packages/desktop/src/shared/privacy/**
 
 # Updates and packaging.
 packages/desktop/src/main/update/**

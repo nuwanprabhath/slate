@@ -1,4 +1,4 @@
-import { NotebookDoc, newId } from '@slate/core'
+import { NotebookDoc, importParts, newId } from '@slate/core'
 import { SaveQueue, pageDocId } from '@slate/editor'
 import { dropPageSessions } from './find/notesReplace'
 import type { SlateApi, SyncState } from '../../shared/api'
@@ -97,7 +97,7 @@ export class Library {
    */
   importExternal(notebookId: string, updates: Uint8Array[]): void {
     const entry = this.entries.find((e) => e.id === notebookId)
-    if (entry && updates.length > 0) entry.doc.doc.importBatch(updates)
+    if (entry) importParts(entry.doc.doc, updates)
     if (!entry)
       void this.api.docs.load(notebookDocId(notebookId)).then((parts) => {
         if (parts.length === 0 || this.entries.some((e) => e.id === notebookId)) return

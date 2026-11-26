@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { startFakeGraph, type FakeGraph } from '../../importer/test/fakeGraph'
 import { expect, launchApp, test, clickMenu } from './fixtures'
+import { launchGranted } from './consent'
 
 const RELEASES =
   '<html><head><title>Releases</title></head><body data-absolute-enabled="true" style="font-family:Calibri;font-size:11pt">' +
@@ -48,7 +49,7 @@ test.beforeAll(async () => {
       },
     ],
   })
-  ;({ app, page: win } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_GRAPH_URL: fake.url, SLATE_FAKE_AUTH: '1' }))
+  ;({ app, page: win } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['microsoftSignIn'], { SLATE_GRAPH_URL: fake.url, SLATE_FAKE_AUTH: '1' }))
 })
 
 test.afterAll(async () => {

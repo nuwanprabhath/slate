@@ -97,8 +97,14 @@ export interface SearchHit {
 const PAGES_PER_TURN = 64
 const nextTurn = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
+/**
+ * What the audit row keeps of a search (GDPR-07): its length only. A query is the person's own words
+ * (names, health terms), and the row outlives the agent's session by weeks.
+ */
+const searchTarget = (query: string): string => `[${query.length} chars]`
+
 export function search(src: DocSource, query: string): Promise<SearchHit[]> {
-  return audited(src, 'search', query, async () => {
+  return audited(src, 'search', searchTarget(query), async () => {
     const needle = query.toLowerCase()
     const hits: SearchHit[] = []
     let read = 0

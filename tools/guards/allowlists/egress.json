@@ -1,0 +1,49 @@
+{
+  "$comment": "Every shipped source file that can reach the network (tools/guards/egress.test.ts, scanner in egressScan.ts), with the consent that gates it. feature is a ConsentFeature (packages/desktop/src/shared/privacy/consent.ts), and then the file calls requireConsent('<f>'), allowed('<f>') or egressAllowed(<x>, '<f>'); or 'user-action' (one request per click, nothing in the background); or 'neutralised' (the call cannot reach a remote host). gatedIn is only for a file in a package that cannot import the gate (packages/sync, packages/importer): it names the desktop main file that gates the flow. Only the maintainer adds an entry or loosens a feature; see docs/architecture/golden-paths.md#privacy and PRIVACY.md.",
+  "packages/desktop/src/main/update/electronBackend.ts": {
+    "feature": "updates",
+    "reason": "N-1 to N-3: electron-updater's checkForUpdates/downloadUpdate and net.fetch of the signature, against github.com release assets; sends the IP address, User-Agent and version to GitHub, Inc. (USA)."
+  },
+  "packages/desktop/src/main/onenote/auth.ts": {
+    "feature": "microsoftSignIn",
+    "reason": "N-7: MSAL PublicClientApplication against login.microsoftonline.com; the Microsoft account identifier and refresh token, Microsoft Corporation (USA)."
+  },
+  "packages/importer/src/graph.ts": {
+    "feature": "microsoftSignIn",
+    "gatedIn": "packages/desktop/src/main/onenote/auth.ts",
+    "reason": "N-8: fetch of graph.microsoft.com/v1.0/me/onenote with the bearer token auth.ts obtains under microsoftSignIn; packages/importer cannot import the desktop gate, and without the token every request fails."
+  },
+  "packages/sync/src/oneDrive.ts": {
+    "feature": "oneDriveSync",
+    "gatedIn": "packages/desktop/src/main/sync/syncService.ts",
+    "reason": "N-6: fetch of graph.microsoft.com/v1.0 with note sync files and the device record; packages/sync cannot import the desktop gate, so syncService.configure and its timer gate the OneDrive drive they build."
+  },
+  "packages/desktop/src/main/sync/syncService.ts": {
+    "feature": "gitSync",
+    "reason": "N-5, N-12: the git transport (nodeGitRunner) runs git fetch/push/ls-remote against the user's remote with every note sync file, the commit author and the credentials, every 30 seconds once on."
+  },
+  "packages/desktop/src/main/sync/transportProbe.ts": {
+    "feature": "oneDriveSync",
+    "reason": "N-11: a TLS handshake (tls.connect, no HTTP bytes) with graph.microsoft.com and login.microsoftonline.com to record the transport's key exchange, run automatically once OneDrive sync is on."
+  },
+  "packages/desktop/src/main/sync/git/auth.ts": {
+    "feature": "githubSignIn",
+    "reason": "N-9, N-10: fetch of github.com/login/device/code, /login/oauth/access_token and api.github.com/user/repos for the GitHub device sign-in and Create repo."
+  },
+  "packages/desktop/src/main/theme/claudeOneShot.ts": {
+    "feature": "claudeTheme",
+    "reason": "P-2 (and P-1's probe): spawns the claude CLI, which sends the free-text theme description and the current theme to the Anthropic API under the user's Claude account (USA)."
+  },
+  "packages/desktop/src/main/openExternal.ts": {
+    "feature": "user-action",
+    "reason": "N-4, N-13: shell.openExternal hands an https or mailto link the person clicked to the system browser; one request per click, made by the browser, never in the background."
+  },
+  "packages/desktop/src/main/spellcheck.ts": {
+    "feature": "neutralised",
+    "reason": "N-14: Chromium's Hunspell dictionary download URL is pointed at 127.0.0.1:9 (discard), so the spellchecker never downloads anything."
+  },
+  "packages/desktop/src/mcp/cli.ts": {
+    "feature": "neutralised",
+    "reason": "P-9: net.connect to the app's MCP Unix socket (named pipe on Windows) in the user's data folder; a local socket that never leaves the machine."
+  }
+}

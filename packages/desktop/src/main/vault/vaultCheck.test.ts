@@ -9,8 +9,11 @@ import { LoroDoc } from 'loro-crdt'
 import { nodeGitRunner } from '@slate/sync'
 import { startFakeDrive } from '../../../../sync/test/fakeDrive'
 import type { SyncState } from '../../shared/api'
+import { DISCLOSURES, type ConsentFeature, type Consents } from '../../shared/privacy/consent'
 import { FileBlobStore } from '../blobs'
 import { createAuthService } from '../onenote/auth'
+import { DEFAULT_SETTINGS as PRIVACY_DEFAULTS } from '../../shared/settings/schema'
+import { setPrivacySource } from '../privacy/gate'
 import { writeSettings } from '../settings'
 import { DocStore } from '../store'
 import { SyncService } from '../sync/syncService'
@@ -42,6 +45,10 @@ async function encryptedDevice(header: VaultHeader, mk: KeyHandle): Promise<KeyR
 }
 
 const problem = (p: Promise<unknown>) => p.then(() => null, (e: unknown) => (e instanceof VaultSyncProblem ? e.problem : `other: ${String(e)}`))
+
+// About the vault check, not consent: strict mode is off here (the consent gate has its own tests).
+beforeEach(() => setPrivacySource(() => ({ ...PRIVACY_DEFAULTS, gdprStrictMode: false })))
+afterEach(() => setPrivacySource(() => null))
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'slate-vault-check-'))
@@ -111,6 +118,9 @@ describe('checkRemoteVault', () => {
   })
 })
 
+const consents = (...features: ConsentFeature[]): Consents =>
+  Object.fromEntries(features.map((f) => [f, { grantedAt: 1, textVersion: DISCLOSURES[f].textVersion, source: 'user' }]))
+
 describe('SyncService with a vault check on OneDrive', () => {
   it('syncs while the drive has no vault, and stops at join-needed once it has one', async () => {
     const drive = await startFakeDrive()
@@ -119,6 +129,8 @@ describe('SyncService with a vault check on OneDrive', () => {
     const doc = new LoroDoc()
     doc.getText('t').insert(0, 'x')
     store.append(`page:${randomUUID()}`, doc.export({ mode: 'update' }))
+    // Strict mode (GDPR-03): a plaintext device syncs only with the provider and unencrypted-sync consents.
+    writeSettings(store, { consents: consents('oneDriveSync', 'plaintextSync') })
     const auth = createAuthService({ clientId: null, cacheFile: join(dir, 'o.bin'), openBrowser: async () => {}, fake: true })
     const states: SyncState[] = []
     const service = new SyncService({
@@ -160,6 +172,8 @@ describe('SyncService with a vault check', () => {
     const dbFile = join(dataDir, 'slate.db')
     const store = new DocStore(dbFile)
     writeSettings(store, { syncProvider: 'git', git: { remoteUrl: `file://${bare}`, branch: 'main', auth: 'system' } })
+    // Strict mode (GDPR-03): a plaintext device syncs only with the provider and unencrypted-sync consents.
+    writeSettings(store, { consents: consents('gitSync', 'plaintextSync') })
     store.append(`page:${randomUUID()}`, new Uint8Array([1]))
     const states: SyncState[] = []
     const service = new SyncService({

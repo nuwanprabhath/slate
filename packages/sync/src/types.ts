@@ -124,6 +124,14 @@ export interface LocalStore {
    * pushed is decided by version, so remote ops are never pushed back and restores are.
    */
   appendRemote(docId: string, update: Uint8Array): Promise<void>
+  /**
+   * Optional: replaces a doc's stored history with `snapshot` (a history erased on another device, GDPR-04),
+   * but only if the stored doc holds no op beyond the version `covers` (an encoded VersionVector), checked
+   * in the same step as the write; false, with nothing written, when it does. A store whose readers keep
+   * the doc open (the desktop's windows) must not offer this until they reload on a replace: their next
+   * edit would build on history the stored doc no longer has, and could never be loaded again.
+   */
+  replaceDoc?(docId: string, snapshot: Uint8Array, covers: Uint8Array): Promise<boolean>
   getMeta(key: string): Promise<string | undefined>
   setMeta(key: string, value: string): Promise<void>
   getBytesMeta(key: string): Promise<Uint8Array | undefined>

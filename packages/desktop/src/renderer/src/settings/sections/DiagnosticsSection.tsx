@@ -51,7 +51,10 @@ export function DiagnosticsSection(): JSX.Element {
       <p className="settings-help settings-indent" data-testid="diagnostics-privacy">
         <strong>What goes in it:</strong> what Slate did &mdash; sync runs and their counts, git failures, update checks,
         imports, errors. <strong>Not</strong> your notes: no page or box text, no page or section titles, no search
-        queries. Your home folder is shown as <code>~</code>, and anything shaped like a token or a password is stripped.
+        queries (AI agents&rsquo; searches are recorded only as their length). Your home folder is shown as <code>~</code>, and anything shaped like a token or a password is stripped.
+      </p>
+      <p className="settings-help settings-indent" data-testid="diagnostics-security-record">
+        Slate also keeps a short security record (unlocks and locks, no notes) for 30 days in strict mode, or 90 days with strict mode off or under FIPS; see Settings → Privacy.
       </p>
       <div className="settings-field">
         <strong>Log file</strong>

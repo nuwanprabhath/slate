@@ -38,13 +38,14 @@ afterEach(async () => {
   for (const s of servers.splice(0)) await s.close()
 })
 
+// These cases cover the probe itself; its consent gate is transportProbePrivacy.test.ts's.
 const noHybridSsh: SshKexProbe = { hybrid: [], ssh: null, prepend: false }
 
 function input(overrides: Partial<ProbeInput>): ProbeInput & { recorded: TransportObservation[] } {
   const recorded: TransportObservation[] = []
   return {
     state: 'unlocked',
-    settings: { syncProvider: null, syncRequirePq: false },
+    settings: { syncProvider: null, syncRequirePq: false, gdprStrictMode: false, consents: {} },
     graphUrl: 'https://graph.microsoft.com/v1.0',
     git: async () => ({ ok: true, message: 'Connected.' }),
     ssh: async () => noHybridSsh,
@@ -64,7 +65,7 @@ describe('transport probe (PQ-C4)', () => {
     const [graph, login] = ONEDRIVE_HOSTS
     const portFor: Record<string, number> = { [graph]: hybrid.port, [login]: classical.port }
     const probe = input({
-      settings: { syncProvider: 'onedrive', syncRequirePq: false },
+      settings: { syncProvider: 'onedrive', syncRequirePq: false, gdprStrictMode: false, consents: {} },
       tls: (host) => tlsGroup('127.0.0.1', portFor[host]!, { ca: cert, servername: 'localhost' }),
     })
     const seen = await probeTransports(probe)
@@ -81,7 +82,7 @@ describe('transport probe (PQ-C4)', () => {
   it('T-PQ-C4-04: a git ssh remote records what testConnection saw, with the prefer command', async () => {
     const commands: Array<string | undefined> = []
     const probe = input({
-      settings: { syncProvider: 'git', git: { remoteUrl: 'git@github.com:me/notes.git', branch: 'main', auth: 'system' }, syncRequirePq: false },
+      settings: { syncProvider: 'git', git: { remoteUrl: 'git@github.com:me/notes.git', branch: 'main', auth: 'system' }, syncRequirePq: false, gdprStrictMode: false, consents: {} },
       ssh: async () => ({ hybrid: ['mlkem768x25519-sha256'], ssh: 'OpenSSH_10.0', prepend: true }),
       git: async (_url, sshCommand) => {
         commands.push(sshCommand)
@@ -98,19 +99,19 @@ describe('transport probe (PQ-C4)', () => {
       calls++
       return null
     }
-    expect(await probeTransports(input({ settings: { syncProvider: 'onedrive', syncRequirePq: false }, graphUrl: 'http://127.0.0.1:9/v1.0', tls: count }))).toEqual([])
+    expect(await probeTransports(input({ settings: { syncProvider: 'onedrive', syncRequirePq: false, gdprStrictMode: false, consents: {} }, graphUrl: 'http://127.0.0.1:9/v1.0', tls: count }))).toEqual([])
     const git = async () => {
       calls++
       return { ok: true, message: '' }
     }
-    expect(await probeTransports(input({ settings: { syncProvider: 'git', git: { remoteUrl: 'file:///tmp/r.git', branch: 'main', auth: 'system' }, syncRequirePq: false }, git }))).toEqual([])
+    expect(await probeTransports(input({ settings: { syncProvider: 'git', git: { remoteUrl: 'file:///tmp/r.git', branch: 'main', auth: 'system' }, syncRequirePq: false, gdprStrictMode: false, consents: {} }, git }))).toEqual([])
     expect(calls).toBe(0)
   })
 
   it('T-PQ-C4-04: with syncRequirePq an https git remote is not contacted', async () => {
     let calls = 0
     const probe = input({
-      settings: { syncProvider: 'git', git: { remoteUrl: 'https://github.com/me/notes.git', branch: 'main', auth: 'system' }, syncRequirePq: true },
+      settings: { syncProvider: 'git', git: { remoteUrl: 'https://github.com/me/notes.git', branch: 'main', auth: 'system' }, syncRequirePq: true, gdprStrictMode: false, consents: {} },
       git: async () => {
         calls++
         return { ok: true, message: '' }
@@ -128,7 +129,7 @@ describe('transport probe (PQ-C4)', () => {
         calls++
         return null
       }
-      const probe = input({ state, settings: { syncProvider: 'onedrive', syncRequirePq: false }, tls: counted, ssh: async () => (calls++, noHybridSsh) })
+      const probe = input({ state, settings: { syncProvider: 'onedrive', syncRequirePq: false, gdprStrictMode: false, consents: {} }, tls: counted, ssh: async () => (calls++, noHybridSsh) })
       await expect(probeTransports(probe)).rejects.toThrow(/notes are open/)
       expect(calls).toBe(0)
       expect(probe.recorded).toEqual([])
@@ -139,7 +140,7 @@ describe('transport probe (PQ-C4)', () => {
     let calls = 0
     const probe = input({
       state,
-      settings: { syncProvider: 'onedrive', syncRequirePq: false },
+      settings: { syncProvider: 'onedrive', syncRequirePq: false, gdprStrictMode: false, consents: {} },
       tls: async () => {
         calls++
         return 'X25519'

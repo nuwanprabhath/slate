@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ThemeSpec } from '../../../shared/theme/spec'
+import { withConsent } from '../privacy/withConsent'
 import { themeState } from './themeState'
 
 /** Electron prefixes a rejected invoke with "Error invoking remote method '…': Error: "; the rest is ours. */
@@ -26,7 +27,10 @@ export function ThemeDescribe({ onSaved }: { onSaved: (id: string) => void }) {
     setBusy(true)
     setError(null)
     try {
-      const r = await window.slate.themes.generate(text, result?.spec ?? null)
+      // claudeTheme consent, asked before anything is sent (and again if main still answers ConsentRequired).
+      const answer = await withConsent('claudeTheme', () => window.slate.themes.generate(text, result?.spec ?? null))
+      if (answer === null) return setError('Not sent: you have not allowed Slate to send this to Anthropic.')
+      const r = answer.value
       const prompt = result === null ? text : `${result.prompt}\n${text}`
       setResult({ ...r, prompt })
       setRequest('')
@@ -59,7 +63,7 @@ export function ThemeDescribe({ onSaved }: { onSaved: (id: string) => void }) {
         <strong>{result === null ? 'Describe a theme' : 'Refine it'}</strong>
         <span className="settings-help">
           {' '}
-          In your own words, like &ldquo;calm forest green, low contrast borders&rdquo;. Claude designs it and you see it at once; nothing is kept until you save it.
+          In your own words, like &ldquo;calm forest green, low contrast borders&rdquo;. Your description and the current theme&rsquo;s colours go to Anthropic, through your own claude sign-in. You see the result at once; nothing is kept until you save it.
         </span>
       </label>
       <textarea

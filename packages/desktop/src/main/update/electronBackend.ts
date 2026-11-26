@@ -6,6 +6,7 @@ import { basename, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { clipboard, net } from 'electron'
+import { requireConsent } from '../privacy/gate'
 import { openExternalSafe, openLocalPath, revealInFolder } from '../openExternal'
 import { autoUpdater, type AppUpdater } from 'electron-updater'
 import { UpdateSignatureError } from './signature'
@@ -61,7 +62,8 @@ export function electronBackend(opts: { downloadsDir: string; log: (message: unk
       }
       return hash.digest('base64') === sha512
     },
-    async check() {
+    async check(opts) {
+      if (opts?.manual !== true) requireConsent('updates')
       const result = await updater().checkForUpdates()
       if (!result) return null
       const info = result.updateInfo

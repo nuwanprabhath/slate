@@ -1,4 +1,4 @@
-import { compileQuery,hasNestedUnboundedQuantifier, matchAll, NotebookDoc, PageDoc, type PMJSON, type TreeItem } from '@slate/core'
+import { compileQuery,hasNestedUnboundedQuantifier, importParts, matchAll, NotebookDoc, PageDoc, type PMJSON, type TreeItem } from '@slate/core'
 import type { SearchMatch, SearchPageResult, SearchQuery, SearchResults } from '../../shared/api'
 import type { DocCursor, DocStore, SearchRow } from '../store'
 import { snippetAround } from './snippet'
@@ -232,7 +232,7 @@ export class SearchIndex {
       return
     }
     const page = full || !known ? PageDoc.fromUpdates(parts) : known.page
-    if (!full && known) page.doc.importBatch(parts)
+    if (!full && known) importParts(page.doc, parts)
     this.live.set(docId, { page, cursor })
     if (this.live.size > LIVE_PAGES) this.live.delete(this.live.keys().next().value!)
     const m = this.pageMeta().get(pageId)

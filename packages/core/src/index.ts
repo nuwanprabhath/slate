@@ -1,6 +1,7 @@
 export * from './ids'
 export * from './docId'
 export * from './handles'
+export * from './importParts'
 export * from './layout'
 export * from './plaintext'
 export * from './page'

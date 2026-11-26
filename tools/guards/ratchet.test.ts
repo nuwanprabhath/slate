@@ -64,6 +64,13 @@ describe('ratchet: exception lists only shrink', () => {
     expect(grown.map((g) => `${g}: fix the new violation (the message names the accepted path); never --suppress-all or --suppress-rule`)).toEqual([])
   })
 
+  // A list deleted outright would take its rule's exceptions with it unnoticed; these must stay.
+  it('the GDPR allowlists are under the ratchet', () => {
+    const lists = readdirSync(join(ROOT, 'tools/guards/allowlists'))
+    expect(['personal-identifiers.json', 'egress.json'].filter((f) => !lists.includes(f))).toEqual([])
+    expect(APPROVAL_LISTS.has('personal-identifiers') || APPROVAL_LISTS.has('egress')).toBe(false)
+  })
+
   it('the comparisons catch growth (self-test)', () => {
     const e = (...names: string[]) => ({ names })
     expect(addedKeys({ a: e() }, { a: e(), b: e() })).toEqual(['b'])

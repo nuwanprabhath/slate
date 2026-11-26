@@ -3,13 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, launchApp, test } from '../fixtures'
+import { launchGranted } from '../consent'
 import type { UpdateState } from '../../src/shared/api'
 import { reviewUi } from './review'
 import { stubEvent } from './states'
 
 /** The update banner in each state Install and restart reaches, from a fake feed so the real banner and service run. */
 async function fakeRun(mode: string, body: (app: ElectronApplication, page: Page) => Promise<void>): Promise<void> {
-  const { app, page } = await launchApp(mkdtempSync(join(tmpdir(), 'slate-e2e-')), { SLATE_FAKE_UPDATE: mode })
+  const { app, page } = await launchGranted(mkdtempSync(join(tmpdir(), 'slate-e2e-')), ['updates'], { SLATE_FAKE_UPDATE: mode })
   try {
     await expect(page.getByTestId('update-banner')).toBeVisible({ timeout: 30_000 })
     await body(app, page)

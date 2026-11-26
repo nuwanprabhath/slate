@@ -37,7 +37,7 @@ import { clearBackupPick, registerIpc, registerOneNoteIpc, registerSearchIpc, re
 import { registerCopyIpc } from './copyHtml'
 import { electronPrintHost, registerPrintIpc } from './print'
 import { registerEditIpc, UserInputClock } from './editCommands'
-import { configureLogging, configureSecurityLog, registerDiagnosticsIpc } from './log/configure'
+import { applySecurityLogRetention, configureLogging, configureSecurityLog, registerDiagnosticsIpc } from './log/configure'
 import { log } from './log/logger'
 import { buildMenu, syncMenuChecks } from './menu'
 import { launcherInfo } from './mcpLauncher'
@@ -48,7 +48,11 @@ import { createUpdates } from './update'
 import { createAuthService, type AuthService } from './onenote/auth'
 import { converterPath, defaultConverterDirs } from './onenote/backup'
 import { acquireLock } from './lock'
-import { onSettingsWritten, readSettings, writeSettings } from './settings'
+import { onSettingsWritten, readSettings, setLegacyPrivacyContext, writeSettings } from './settings'
+import { setPrivacySource } from './privacy/gate'
+import { createConsents, registerPrivacyIpc } from './privacy/ipc'
+import { createRetention, type RetentionDeps } from './privacy/retention'
+import { createDataRights, type DataRightsDeps } from './privacy/dataRights'
 import { applySpellcheck } from './spellcheck'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
 import { closeServices, openServices, services, servicesOpen } from './services'
@@ -227,6 +231,13 @@ void app.whenReady().then(async () => {
   }
   const notes = () => notesOpen(vault.state) && servicesOpen()
   const openStore = () => (notes() ? services().store : null)
+  // GDPR strict mode (§3.1): consents are read from the open notes' settings, so while they are closed nothing is allowed.
+  setPrivacySource(() => {
+    const store = openStore()
+    return store ? readSettings(store) : null
+  })
+  // An install from before strict mode gets a plaintext-sync grant only if its notes are not encrypted.
+  setLegacyPrivacyContext({ encrypted })
   // Deny by default (§6.3): every handler registered from here on checks the vault state.
   // The lock's flush step, when the state is already `locking` but the renderer's last edits must land.
   let flushing = false
@@ -345,6 +356,24 @@ void app.whenReady().then(async () => {
   const intervalMs = Number(env('SLATE_SYNC_INTERVAL_MS'))
   const graphUrl = env('SLATE_GRAPH_URL') ?? 'https://graph.microsoft.com/v1.0'
   let currentDbFile = join(dataDir, 'slate.db')
+  // Declared before startServices, which re-arms it: the first notes open before the update service exists.
+  let updates: ReturnType<typeof createUpdates> | undefined
+  const openProfile = (): ProfileId | null => (servicesOpen() ? (services().keyRing?.schedule.profile ?? null) : null)
+  const retentionDeps: RetentionDeps = {
+    store: () => services().store,
+    blobs: () => services().blobs,
+    search: () => services().search,
+    sync: () => services().sync,
+    dataDir,
+    profile: openProfile,
+    strict: () => {
+      const store = openStore()
+      return store ? readSettings(store).gdprStrictMode : true
+    },
+    tmpDir: tmpdir(),
+  }
+  const retention = createRetention(retentionDeps)
+  let tempSwept = false
   const startServices = (keyRing: Parameters<typeof openServices>[0], dbFile: string, sync = true) => {
     currentDbFile = dbFile
     const svc = openServices(keyRing, dbFile, {
@@ -366,9 +395,18 @@ void app.whenReady().then(async () => {
       importer: { auth: currentAuth, graphUrl, converter: converterPath(defaultConverterDirs()), log: log.scoped('import') },
       watchLog: log.scoped('watch'),
     })
-    configureLogging(readSettings(svc.store))
-    applySpellcheck(session.defaultSession, readSettings(svc.store))
+    const settings = readSettings(svc.store)
+    configureLogging(settings)
+    applySecurityLogRetention(svc.keyRing?.schedule.profile ?? null, settings.gdprStrictMode)
+    applySpellcheck(session.defaultSession, settings)
     if (sync) svc.sync.start()
+    // The settings may have changed under a closed store (strict mode, a legacy grant): the schedule reads them again.
+    updates?.settingsChanged()
+    if (!tempSwept) {
+      tempSwept = true
+      // GDPR-14: once per run. Never fatal: a sweep that fails (or is not built yet) leaves only a debug line.
+      retention.sweepTemp().catch((e: unknown) => log.debug('app', 'temp sweep skipped', { error: e instanceof Error ? e.message : String(e) }))
+    }
     // After the window is asked for, not before; a query arriving first waits behind it.
     setTimeout(() => notes() && svc.search.ensureBuilt(), 0)
     return svc
@@ -380,7 +418,6 @@ void app.whenReady().then(async () => {
     preunlock: () => prefs,
   }
   // Updates are optional: whatever goes wrong setting them up must not stop the window opening.
-  let updates: ReturnType<typeof createUpdates> | undefined
   try {
     // After a failed self-test nothing runs but the error screen: no update checks either.
     if (!failedAtStart) updates = createUpdates(openStore, isE2E, ipc)
@@ -388,6 +425,41 @@ void app.whenReady().then(async () => {
     log.error('app', 'update checks are off', { error: e instanceof Error ? e.message : String(e) })
   }
   registerThemeIpc(ipc, themeSource, isE2E)
+  // GDPR-02: a lock closes the settings the schedule reads, and an unlock opens them again.
+  vault.onChange(() => updates?.settingsChanged())
+  const dataRightsDeps: DataRightsDeps = {
+    store: () => services().store,
+    blobs: () => services().blobs,
+    search: () => services().search,
+    sync: () => services().sync,
+    settings: () => readSettings(services().store),
+    dataDir,
+    profile: openProfile,
+    appVersion: app.getVersion(),
+    retention,
+    auth: currentAuth,
+    secrets,
+    closeNotes: async () => {
+      await stopMcp()
+      if (!servicesOpen()) return
+      const svc = services()
+      svc.muteEvents()
+      await svc.stopSync()
+      svc.closeWatch()
+      svc.closeDatabases()
+    },
+    forgetQuickUnlock: () => forgetQuickUnlock(dataDir),
+    relaunch: () => {
+      app.relaunch()
+      app.exit(0)
+    },
+  }
+  registerPrivacyIpc(ipc, {
+    ...createConsents({ store: () => services().store, profile: openProfile }),
+    retention,
+    dataRights: createDataRights(dataRightsDeps),
+    sync: () => services().sync,
+  })
   // Read once: a window keeps the chrome it opened with, so changing the setting needs a restart.
   const chrome = windowChromeFor(process.platform, prefs ? prefs.systemTitleBar : servicesOpen() ? readSettings(services().store).systemTitleBar : DEFAULT_SETTINGS.systemTitleBar)
   registerChromeIpc(ipc, chrome)

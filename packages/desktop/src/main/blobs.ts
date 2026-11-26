@@ -1,9 +1,15 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Database } from './db/openDatabase'
 
 export const BLOB_SCHEME = 'slate-blob'
+
+/**
+ * A sweep keeps an image put this recently whatever the pages say: a paste stores the image first and
+ * the page edit that refers to it is saved a moment later, so a purge in between would break it.
+ */
+export const BLOB_PUT_GRACE_MS = 60 * 60 * 1000
 
 /** Larger images are refused when added; the same cap bounds what sync will download (§5.5). */
 export const MAX_IMAGE_BYTES = 64 * 1024 * 1024
@@ -35,6 +41,39 @@ export interface BlobStore {
   /** Stores bytes fetched under a known name, e.g. from another device. */
   write(name: string, bytes: Uint8Array): void
   readForUrl(url: string): { bytes: Uint8Array; mime: string } | null
+  /** Deletes one image; a name that is not there is already gone. */
+  remove(name: string): void
+  /**
+   * Removes every image in neither set, except one put within `BLOB_PUT_GRACE_MS` (GDPR-04: an image
+   * removed from every page is otherwise kept forever). Returns how many it removed.
+   */
+  sweep(referenced: ReadonlySet<string>, pending: ReadonlySet<string>): number
+}
+
+/** When each image was put through this store, for the sweep's grace. */
+class PutTimes {
+  private readonly at = new Map<string, number>()
+  mark(name: string): void {
+    this.at.set(name, Date.now())
+  }
+  fresh(name: string): boolean {
+    const at = this.at.get(name)
+    return at !== undefined && Date.now() - at < BLOB_PUT_GRACE_MS
+  }
+}
+
+function sweepWith(store: BlobStore, putTimes: PutTimes, referenced: ReadonlySet<string>, pending: ReadonlySet<string>): number {
+  let removed = 0
+  for (const name of store.list()) {
+    if (referenced.has(name) || pending.has(name) || putTimes.fresh(name)) continue
+    try {
+      store.remove(name)
+      removed++
+    } catch {
+      // Not a file it can unlink (a directory under a blob's name): left for the person to look at.
+    }
+  }
+  return removed
 }
 
 /** The stored name a slate-blob:// URL points at, or null for anything else. */
@@ -65,6 +104,8 @@ function mimeOf(name: string): string {
 
 /** Image files in a folder: plaintext users. */
 export class FileBlobStore implements BlobStore {
+  private readonly putTimes = new PutTimes()
+
   constructor(private readonly dir: string) {
     mkdirSync(dir, { recursive: true })
   }
@@ -72,7 +113,22 @@ export class FileBlobStore implements BlobStore {
   put(bytes: Uint8Array, mime: string): string {
     const name = nameFor(bytes, mime)
     if (!existsSync(join(this.dir, name))) this.write(name, bytes)
+    this.putTimes.mark(name)
     return `${BLOB_SCHEME}://blob/${name}`
+  }
+
+  /** `unlink` removes a symlink itself, never what it points at. */
+  remove(name: string): void {
+    checkName(name)
+    try {
+      unlinkSync(join(this.dir, name))
+    } catch (e) {
+      if ((e as { code?: unknown }).code !== 'ENOENT') throw e
+    }
+  }
+
+  sweep(referenced: ReadonlySet<string>, pending: ReadonlySet<string>): number {
+    return sweepWith(this, this.putTimes, referenced, pending)
   }
 
   list(): string[] {
@@ -105,6 +161,8 @@ export const BLOB_DATA_TABLE = 'CREATE TABLE IF NOT EXISTS blob_data (name TEXT 
 
 /** Images inside the (encrypted) notes database, so no image ever sits on disk in the clear. */
 export class DbBlobStore implements BlobStore {
+  private readonly putTimes = new PutTimes()
+
   constructor(private readonly db: Database.Database) {
     db.exec(BLOB_DATA_TABLE)
   }
@@ -112,7 +170,17 @@ export class DbBlobStore implements BlobStore {
   put(bytes: Uint8Array, mime: string): string {
     const name = nameFor(bytes, mime)
     this.db.prepare('INSERT OR IGNORE INTO blob_data (name, mime, data) VALUES (?, ?, ?)').run(name, mimeOf(name), Buffer.from(bytes))
+    this.putTimes.mark(name)
     return `${BLOB_SCHEME}://blob/${name}`
+  }
+
+  remove(name: string): void {
+    checkName(name)
+    this.db.prepare('DELETE FROM blob_data WHERE name = ?').run(name)
+  }
+
+  sweep(referenced: ReadonlySet<string>, pending: ReadonlySet<string>): number {
+    return sweepWith(this, this.putTimes, referenced, pending)
   }
 
   list(): string[] {

@@ -12,7 +12,7 @@ import {
 import type { PreviousInstall, UpdateBackend } from './updateService'
 
 /** The install half of a backend, shared by the real one and the test-only fake. */
-export type PlatformInstaller = Pick<UpdateBackend, 'needsPassword' | 'installDownloaded' | 'restart' | 'takePreviousInstall'>
+export type PlatformInstaller = Pick<UpdateBackend, 'needsPassword' | 'installDownloaded' | 'restart' | 'takePreviousInstall' | 'removeDownload'>
 
 export interface PlatformInstallerOptions {
   platform: NodeJS.Platform
@@ -263,6 +263,20 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
       : { ok: false, reason: 'install', message: lastLine(result.stderr) || 'sudo could not be run.' }
   }
 
+  const pendingFile = `${opts.resultFile}.download`
+  /** Reads and removes what installDmg noted; its hash counts only for the file the helper's result names. */
+  const takePendingDownload = async (named: string | null): Promise<string | undefined> => {
+    const text = await readResultFile(pendingFile)
+    await rm(pendingFile, { force: true })
+    if (typeof text !== 'string' || named === null) return undefined
+    try {
+      const v = JSON.parse(text) as Record<string, unknown> | null
+      return v !== null && typeof v === 'object' && v.path === named && typeof v.sha512 === 'string' ? v.sha512 : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   const installDeb = async (path: string, sha512: string, password: SecretBytes | null): Promise<InstallOutcome> => {
     const script = join(opts.scriptsDir, 'install-deb.sh')
     if (!await rootOnly(script)) return { ok: false, reason: 'install', message: SCRIPT_NOT_ROOTS }
@@ -293,6 +307,8 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
     const plan = await macPlan(bundle)
     const script = join(opts.scriptsDir, 'install-dmg.sh')
     const args = [script, String(pid), path, sha512Hex(sha512), bundle, opts.resultFile, version, String(process.getuid?.() ?? 501)]
+    // The helper's result names the file but not its hash; the next start needs the hash to delete only the verified file.
+    await writeFile(pendingFile, JSON.stringify({ path, sha512 }), { mode: 0o600 }).catch((e: unknown) => log.warn('could not note the download', { error: e instanceof Error ? e.message : String(e) }))
     if (plan === 'user') {
       await launchDetached('/bin/sh', args, null)
     } else {
@@ -360,6 +376,12 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
       relaunchLinux().catch((e: unknown) => log.warn('relaunch failed', { error: e instanceof Error ? e.message : String(e) })).finally(opts.quit)
     },
 
+    async removeDownload(path) {
+      // Only what parsePrevious accepts: a regular .dmg directly in the downloads folder.
+      if (dirname(path) !== opts.downloadsDir || !/\.dmg$/i.test(path)) return
+      if (await lstat(path).then((s) => s.isFile(), () => false)) await rm(path, { force: true })
+    },
+
     async takePreviousInstall() {
       const text = await readResultFile(opts.resultFile)
       if (text === null) return null
@@ -373,10 +395,11 @@ export function createPlatformInstaller(opts: PlatformInstallerOptions): Platfor
       }
       if (previous === null) return null
       const named = previous.path
+      const sha512 = await takePendingDownload(named)
       // lstat: a link named x.dmg in Downloads is not the installer the helper kept.
       const kept = named !== null && await lstat(named).then((s) => s.isFile(), () => false)
       log.info('read the last install result', { ok: previous.ok, version: previous.version })
-      return { ...previous, path: kept ? named : null }
+      return { ...previous, path: kept ? named : null, ...(kept && sha512 !== undefined ? { sha512 } : {}) }
     },
   }
 }

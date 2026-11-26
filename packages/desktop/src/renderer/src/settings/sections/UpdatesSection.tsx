@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { DEFAULT_SETTINGS, type Settings, type UpdateState } from '../../../../shared/api'
+import { askConsent } from '../../privacy/askConsent'
+import { withConsent } from '../../privacy/withConsent'
 import { describeCheck, formatChecked } from '../../update/describeCheck'
 import '../../update/update.css'
 
@@ -20,12 +22,23 @@ export function UpdatesSection() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<string | null>(null)
+  // `egressAllowed(settings, 'updates')` as main computes it: strict mode off, or a current grant.
+  const [allowed, setAllowed] = useState(true)
 
   useEffect(() => {
+    const refreshAllowed = () => void window.slate.privacy.status().then((p) => setAllowed(p.allowed.updates), () => {})
     const off = window.slate.update.onState(setUpdate)
+    const offSettings = window.slate.settings.onChange((s) => {
+      setSettings(s)
+      refreshAllowed()
+    })
     void window.slate.update.state().then((s) => setUpdate((current) => current ?? s))
     void window.slate.settings.get().then(setSettings)
-    return off
+    refreshAllowed()
+    return () => {
+      off()
+      offSettings()
+    }
   }, [])
 
   const save = (patch: Partial<Settings>) => {
@@ -36,9 +49,11 @@ export function UpdatesSection() {
     setChecking(true)
     setResult(null)
     // The answer is what the call resolves with, not the pushed state: that may have arrived already.
-    void window.slate.update
-      .check()
-      .then((state) => setResult(describeCheck(state)))
+    void withConsent('updates', () => window.slate.update.check(), { askFirst: false })
+      .then((answer) => {
+        if (answer === null) return setResult('Not checked: you have not allowed Slate to contact GitHub.')
+        setResult(describeCheck(answer.value))
+      })
       .catch((e: unknown) => setResult(`Could not check: ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => setChecking(false))
   }
@@ -79,13 +94,21 @@ export function UpdatesSection() {
         <input
           type="checkbox"
           data-testid="setting-update-automatic"
-          checked={settings.updateAutomaticChecks}
-          onChange={(e) => save({ updateAutomaticChecks: e.target.checked })}
+          checked={settings.updateAutomaticChecks && allowed}
+          onChange={(e) => {
+            if (!e.target.checked) return save({ updateAutomaticChecks: false })
+            if (allowed) return save({ updateAutomaticChecks: true })
+            void askConsent('updates').then((answer) => {
+              if (answer !== 'granted') return
+              setAllowed(true)
+              save({ updateAutomaticChecks: true })
+            })
+          }}
         />
         Check for updates automatically
       </label>
-      <p className="updates-help settings-indent">Slate asks GitHub whether there is a newer release. Nothing is downloaded or installed without you saying so.</p>
-      {settings.updateAutomaticChecks && (
+      <p className="updates-help settings-indent">Slate asks github.com whether there is a newer release (a download comes from objects.githubusercontent.com). That tells GitHub, Inc. (USA) your IP address, Slate&rsquo;s version and your operating system. Nothing is downloaded or installed without you saying so.</p>
+      {settings.updateAutomaticChecks && allowed && (
         <label className="updates-field settings-indent">
           Every
           <select data-testid="setting-update-interval" value={hours} onChange={(e) => save({ updateCheckIntervalHours: Number(e.target.value) })}>

@@ -174,6 +174,44 @@ Add `packages/desktop/e2e/<name>.spec.ts` using `test` and `expect` from `./fixt
 throwaway data folder. Run it with `npm run e2e -- <name>.spec.ts`; afterwards no Electron process
 from the checkout may be left running.
 
+## Privacy
+
+Slate sends nothing anywhere unless the person turned it on (GDPR Art. 25, privacy by default). The
+consent model is `src/shared/privacy/consent.ts` (`CONSENT_FEATURES`, `DISCLOSURES`, `egressAllowed`);
+main asks `src/main/privacy/gate.ts` (`allowed`, `requireConsent`, which throws `ConsentRequired`).
+`PRIVACY.md` is the notice; `docs/reviews/gdpr-compliance-review.md` §1 is the inventory.
+
+**A network flow** (a fetch, a socket, an updater call, MSAL, the git transport, a CLI that phones
+home):
+
+1. Add a feature to `CONSENT_FEATURES` and its `DISCLOSURES` entry: title, the host names it contacts,
+   the data in plain words, the recipient and its country. Changing an existing entry bumps its
+   `textVersion`, so older grants stop counting and the person is asked again.
+2. Gate it at the call, in the file that makes the request: `requireConsent('<feature>')` before a
+   user-started call, `allowed('<feature>')` (or `egressAllowed(settings, '<feature>')`) before a
+   background one. Copy `src/main/onenote/auth.ts`. In the renderer, an error named `ConsentRequired`
+   opens `ConsentDialog`. A one-off request per click (a link opened in the browser) needs no feature,
+   and something that cannot reach a remote host is neither.
+3. The maintainer lists the file in `tools/guards/allowlists/egress.json` with its feature
+   (`tools/guards/egress.test.ts` finds every sink file and checks the gate is in its source; a file
+   in `packages/sync` or `packages/importer`, which cannot import the gate, names the desktop file
+   that gates it as `gatedIn`). The list only shrinks on an agent branch, and a feature never loosens.
+4. Add the flow's row to `PRIVACY.md`: the feature name as code, the hosts, the data, the recipient
+   and country, and how to turn it off (`tools/guards/privacyNotice.test.ts`).
+
+**A stored table or file:** add its row to `PRIVACY.md`'s retention section with the name as code
+(what it holds, how long it is kept, what prunes it), and cover it in Settings → Privacy's export
+(`main/privacy/export.ts`) and erase (`main/privacy/erase.ts`); prune by age in
+`main/privacy/retention.ts` if it grows. `privacyNotice.test.ts` checks every `CREATE TABLE` under
+`src/main` against the retention section.
+
+**Device names:** never read the machine's or the person's identity from the OS: no `os.hostname()`,
+`os.userInfo()` or `os.networkInterfaces()` in the main process (`slate/no-personal-identifiers`;
+the residual uses are in `tools/guards/allowlists/personal-identifiers.json`). A device record is
+named `Device <first 8 characters of deviceId>`, and a sync commit is authored `Slate <slate@invalid>`
+with the message `slate: sync`. Logs go through `redact()`, which strips emails, git owners and
+repositories, and home folders (`test/spec/redact.test.ts`).
+
 ## Fuzzing
 
 A stateless property goes in `<subject>Fuzz.test.ts`, a state machine in `<subject>Model.test.ts`, with

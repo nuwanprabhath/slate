@@ -1,6 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { BUILTIN_THEMES } from '../../../../shared/theme/builtins'
 import type { MotionSetting } from '../../../../shared/theme/motion'
+import { askConsent } from '../../privacy/askConsent'
+import { consentRequiredFeature } from '../../../../shared/privacy/consent'
 import { ThemeDescribe } from '../../theme/ThemeDescribe'
 import { ThemeGrid, type ThemeEntry } from '../../theme/ThemeGrid'
 import { themeState } from '../../theme/themeState'
@@ -20,13 +22,40 @@ export function AppearanceSection({ settings, patch }: SectionProps) {
   useSyncExternalStore(themeState.subscribe, themeState.activeId)
   const saved = useSyncExternalStore(themeState.subscribe, themeState.saved)
   const [claude, setClaude] = useState(false)
+  // True while strict mode has no `claudeTheme` consent: the probe for the claude command (it runs the login
+  // shell) waits for the person to ask for the feature.
+  const [needsConsent, setNeedsConsent] = useState(false)
+  const [note, setNote] = useState('')
+  const probe = () =>
+    window.slate.themes.claudeAvailable().then(
+      (ok) => {
+        setNeedsConsent(false)
+        setClaude(ok)
+        return ok
+      },
+      (e: unknown) => {
+        if (consentRequiredFeature(e) === 'claudeTheme') setNeedsConsent(true)
+        return false
+      },
+    )
   useEffect(() => {
     let live = true
-    void window.slate.themes.claudeAvailable().then((ok) => live && setClaude(ok))
+    void window.slate.privacy.status().then((p) => {
+      if (!live) return
+      if (p.allowed.claudeTheme) void probe()
+      else setNeedsConsent(true)
+    })
     return () => {
       live = false
     }
   }, [])
+  const describeWithClaude = () => {
+    setNote('')
+    void askConsent('claudeTheme').then(async (answer) => {
+      if (answer !== 'granted') return
+      if (!(await probe())) setNote('Slate did not find the claude command on this computer, so this is not available.')
+    })
+  }
   const all: ThemeEntry[] = [...BUILTIN_THEMES.map((b) => ({ ...b, saved: false })), ...saved.map((t) => ({ id: t.id, spec: t.spec, saved: true }))]
   const choose = (themeId: string) => patch({ themeId, followSystem: false })
   const activeId = settings.followSystem ? themeState.activeId() : settings.themeId
@@ -72,6 +101,15 @@ export function AppearanceSection({ settings, patch }: SectionProps) {
         onChange={(followSystem) => patch({ followSystem })}
       />
       {claude && <ThemeDescribe onSaved={choose} />}
+      {!claude && needsConsent && (
+        <div className="settings-stack" data-testid="theme-describe-consent">
+          <button type="button" className="btn" data-testid="theme-describe-ask" onClick={describeWithClaude}>
+            Describe a theme with Claude…
+          </button>
+          <span className="settings-help">Sends your description and the current theme&rsquo;s colours to Anthropic, through your own claude sign-in. Slate asks first.</span>
+        </div>
+      )}
+      {note && <p className="settings-help" role="status" data-testid="theme-describe-note">{note}</p>}
       <CheckboxSetting
         testId="setting-system-title-bar"
         label="Use the system title bar (restart to apply)"

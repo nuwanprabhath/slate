@@ -12,6 +12,7 @@
  * - **Credentials**, in the shapes they take: API keys, GitHub tokens (`ghp_`, `github_pat_`),
  *   bearer headers, `password=`/`token=` pairs, JWTs and `https://user:pass@` remotes (a failed
  *   git command echoes the remote back).
+ * - **Accounts**: email addresses, git remotes' owner and repository, and Windows home folders.
  * - **Anything very long**, truncated.
  *
  * Pure and in `shared/` so both processes redact identically.
@@ -44,6 +45,22 @@ const SECRETS: { pattern: RegExp; as: string }[] = [
   { pattern: /\b(api[-_]?key|secret|password|passwd|token|auth)\s*[=:]\s*("?)[^\s"&,}]{4,}\2/gi, as: '$1=[redacted]' },
   // `scheme://user:password@host`: a git remote, or a git failure that echoes one back.
   { pattern: /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/:@]+:[^\s/@]+@/gi, as: '$1[redacted]@' },
+  // GDPR-09: a git remote names its owner's account and repository. After the userinfo rule, so a
+  // remote with a token loses both; the user part (`git@`, `[redacted]@`) goes too. Only shapes a remote
+  // takes: a known forge's https or scp path, any host's path ending in `.git`, or one naming a user.
+  // Source paths (`src/main/x.ts:4:2`) and other URLs are left alone. Each starts only where its run of
+  // name characters starts (the lookbehind), so a long run is scanned once, not from every position (M3).
+  { pattern: /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:\/\/)(?:[^\s/@]+@)?((?:github\.com|gitlab\.com|bitbucket\.org)(?::\d{1,5})?)\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?=$|[\s"'),;/?#])/gi, as: '$1$2:[owner]/[repo]' },
+  { pattern: /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:\/\/)(?:[^\s/@]+@)?([\w-]+(?:\.[\w-]+)+(?::\d{1,5})?)\/([\w.-]+)\/([\w.-]+)\.git(?=$|[\s"'),;/?#])/gi, as: '$1$2:[owner]/[repo]' },
+  { pattern: /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@([\w-]+(?:\.[\w-]+)+(?::\d{1,5})?)\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?=$|[\s"'),;/?#])/gi, as: '$1$2:[owner]/[repo]' },
+  { pattern: /(?<![\w.-])[\w.-]+@([\w-]+(?:\.[\w-]+)+):(?!\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?(?=$|[\s"'),;/?#])/g, as: '$1:[owner]/[repo]' },
+  { pattern: /(?<![\w.-])(github\.com|gitlab\.com|bitbucket\.org):(?!\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?(?=$|[\s"'),;/?#])/gi, as: '$1:[owner]/[repo]' },
+  { pattern: /(?<![\w.-])([\w-]+(?:\.[\w-]+)+):(?!\/)([\w.-]+)\/([\w.-]+)\.git(?=$|[\s"'),;/?#])/g, as: '$1:[owner]/[repo]' },
+  // GDPR-09: an account email (a Microsoft or GitHub error carries one). `slate@invalid`, the
+  // pseudonymous sync author, is not an address and stays readable.
+  { pattern: /(?<![A-Za-z0-9._%+-])(?!slate@invalid\b)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, as: '[redacted-email]' },
+  // GDPR-09: any Windows home folder, not only the running user's (a path from another device).
+  { pattern: /\b[A-Za-z]:\\Users\\[^\\\s"']+/g, as: '~' },
   { pattern: /\bAKIA[0-9A-Z]{16}\b/g, as: '[redacted-aws-key]' },
   { pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g, as: '[redacted-slack-token]' },
   { pattern: /\bnpm_[A-Za-z0-9]{30,}/g, as: '[redacted-npm-token]' },

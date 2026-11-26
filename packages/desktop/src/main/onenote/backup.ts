@@ -7,6 +7,12 @@ import { normalizeOne2HtmlPage, parseOne2HtmlSection, type GraphSource, type One
 
 /** Mapping keys of backup imports start with this, so they never collide with Graph ids. */
 export const BACKUP_PREFIX = 'backup:'
+/** The temp folders `one2html` converts into; a crash leaves them, and the startup sweep removes them (GDPR-14). */
+export const ONE2HTML_TMP_PREFIX = 'slate-one2html-'
+
+/** Every conversion folder a live `BackupSource` holds, which the temp sweep must not touch. */
+const liveDirs = new Set<string>()
+export const liveBackupDirs: ReadonlySet<string> = liveDirs
 const RECYCLE_BIN = 'OneNote_RecycleBin'
 const RESOURCE_PREFIX = 'backup-file:'
 const DATED = /^(.*?)\s*\(On (\d{1,2})-(\d{1,2})-(\d{4})\)\s*(.*)$/
@@ -162,7 +168,10 @@ export class BackupSource implements GraphSource {
   }
 
   close(): void {
-    for (const dir of this.dirs) rmSync(dir, { recursive: true, force: true })
+    for (const dir of this.dirs) {
+      rmSync(dir, { recursive: true, force: true })
+      liveDirs.delete(dir)
+    }
     this.dirs.clear()
     this.converted.clear()
     this.pageFiles.clear()
@@ -181,8 +190,9 @@ export class BackupSource implements GraphSource {
   }
 
   private async doConvert(section: BackupSection): Promise<Converted> {
-    const dir = mkdtempSync(join(tmpdir(), 'slate-one2html-'))
+    const dir = mkdtempSync(join(tmpdir(), ONE2HTML_TMP_PREFIX))
     this.dirs.add(dir)
+    liveDirs.add(dir)
     await run(this.options.converter, ['--input', section.path, '--output', dir])
     const index = readdirSync(dir).find((f) => f.endsWith('.html'))
     if (!index) throw new Error('The converter produced no pages')

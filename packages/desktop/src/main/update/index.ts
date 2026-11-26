@@ -5,7 +5,7 @@ import { app, BrowserWindow, clipboard } from 'electron'
 import type { IpcRegistrar } from '../ipcGuard'
 import { CH } from '../../shared/ipc'
 import { log as diagLog } from '../log/logger'
-import { onSettingsWritten, readSettings } from '../settings'
+import { onSettingsWritten } from '../settings'
 import type { DocStore } from '../store'
 import { detectInstallKind } from './capability'
 import { electronBackend } from './electronBackend'
@@ -14,8 +14,7 @@ import { registerUpdateIpc, updatePrefsIn } from './ipc'
 import { createPlatformInstaller } from './platformInstaller'
 import { PINNED_UPDATE_KEYS } from './signature'
 import { createUpdateVerifier } from './verifier'
-import { UpdateService, type UpdatePrefs } from './updateService'
-import { DEFAULT_SETTINGS } from '../../shared/settings/schema'
+import { scheduledUpdateSettings, UpdateService, type UpdatePrefs } from './updateService'
 
 /** Real updates run only in a packaged app; e2e runs get the fake backend with SLATE_FAKE_UPDATE, or none at all. */
 /** `store` is null while the vault is locked: checks then run with the default settings and no saved skips. */
@@ -57,11 +56,7 @@ export function createUpdates(store: () => DocStore | null, isE2E: boolean, ipc:
     log,
     diag,
     emit: (state) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.updateStateEvent, state)),
-    settings: () => {
-      const open = store()
-      const s = open ? readSettings(open) : DEFAULT_SETTINGS
-      return { automaticChecks: s.updateAutomaticChecks, intervalHours: s.updateCheckIntervalHours }
-    },
+    settings: () => scheduledUpdateSettings(store()),
     ...(fake ? { firstCheckMs: 500 } : {}),
   })
   registerUpdateIpc(ipc, service)

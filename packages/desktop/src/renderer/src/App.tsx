@@ -11,12 +11,13 @@ import { usePlugins } from './plugins/usePlugins'
 import { AiActivity } from './AiActivity'
 import { clampPane, clampWidth, loadLayout, loadLibraryBox, paneWidth, saveLayout, saveLibraryBox, scaleExpanded, type Layout } from './layout'
 import { Column, Rail, Splitter } from './Splitter'
-import { currentSession } from './currentSession'
+import { currentSession, usePageReloads } from './currentSession'
 import { ConnectAgents } from './ConnectAgents'
 import { findBar } from './find/FindBar'
 import { ImportDialog } from './import/ImportDialog'
 import { Library, syncSettled } from './library'
 import { PageView } from './PageView'
+import { FirstRunPrivacy } from './privacy/FirstRunPrivacy'
 import { printPage } from './print'
 import { loadSelection, saveSelection, type Selection } from './selection'
 import { NotebookPicker } from './sidebar/NotebookPicker'
@@ -249,6 +250,8 @@ function Workspace({ library, onShowImport, banners }: { library: Library; onSho
   const section = sectionCandidate?.kind === 'section' ? sectionCandidate : firstOfKind(items, 'section')
   const pages = section?.children.filter((c) => c.kind === 'page') ?? []
   const page = pages.find((p) => p.id === selection.pageId) ?? pages[0]
+  // A page whose history was erased mounts anew: the editor then holds neither the erased text nor its undo steps.
+  const reloads = usePageReloads(page?.pageId ?? null)
 
   useEffect(() => {
     saveSelection({ notebookId: entry.id, sectionId: section?.id ?? null, pageId: page?.id ?? null })
@@ -405,9 +408,10 @@ function Workspace({ library, onShowImport, banners }: { library: Library; onSho
         <main className="app-main">
           <UpdateBanner />
           <Toolbar />
-          {page?.pageId ? <PageView key={page.pageId} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}
+          {page?.pageId ? <PageView key={`${page.pageId}:${reloads}`} nb={entry.doc} item={page} /> : <div className="empty">No page selected</div>}
         </main>
       </div>
+      <FirstRunPrivacy />
     </div>
   )
 }

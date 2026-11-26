@@ -29,6 +29,8 @@ async function launch(userData: string, extra: Record<string, string> = {}): Pro
 }
 
 async function configureGit(page: Page) {
+  // Strict mode (GDPR-03): sync starts only with the provider's consent and, on a plaintext device, unencrypted sync's.
+  await page.evaluate(() => Promise.all([window.slate.privacy.grant('gitSync'), window.slate.privacy.grant('plaintextSync')]))
   await page.getByTestId('sync-menu').click()
   await page.getByTestId('sync-settings-open').click()
   await expect(page.getByTestId('sync-settings')).toBeVisible()

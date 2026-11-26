@@ -1,4 +1,4 @@
-import { agentBoxes, NotebookDoc, PageDoc, placeBelow, type AgentPage, type PMJSON } from '@slate/core'
+import { agentBoxes, importParts, NotebookDoc, PageDoc, placeBelow, type AgentPage, type PMJSON } from '@slate/core'
 import { notebookView, type DocSource } from '@slate/mcp'
 import type { DocCursor, DocStore } from '../store'
 
@@ -97,8 +97,8 @@ export function storeDocSource(
     return { doc, changed: !reuse || parts.length > 0 }
   }
 
-  const cachedPage = (docId: string) => cached(pages, CACHED_PAGES, freePage, docId, PageDoc.fromUpdates, (p, parts) => p.doc.importBatch(parts))
-  const cachedNotebook = (docId: string) => cached(notebooks, CACHED_NOTEBOOKS, retireNotebook, docId, NotebookDoc.fromUpdates, (n, parts) => n.doc.importBatch(parts))
+  const cachedPage = (docId: string) => cached(pages, CACHED_PAGES, freePage, docId, PageDoc.fromUpdates, (p, parts) => importParts(p.doc, parts))
+  const cachedNotebook = (docId: string) => cached(notebooks, CACHED_NOTEBOOKS, retireNotebook, docId, NotebookDoc.fromUpdates, (n, parts) => importParts(n.doc, parts))
 
   const save = (docId: string, update: Uint8Array) => {
     views.delete(docId)

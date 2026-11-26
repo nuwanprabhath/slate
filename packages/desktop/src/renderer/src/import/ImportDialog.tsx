@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ImportProgress, OneNoteNotebook, OneNoteSectionGroup } from '@slate/importer'
 import type { BackupPick, OneNoteStatus } from '../../../shared/api'
+import { withConsent } from '../privacy/withConsent'
 import './import.css'
 
 type Stage =
@@ -132,7 +133,7 @@ export function ImportDialog({ onClose, initial = 'graph' }: { onClose: () => vo
         {stage.kind === 'not-configured' && <NotConfigured onSaved={refresh} />}
         {stage.kind === 'signed-out' && (
           <div className="import-body">
-            <p>Slate reads your notebooks through Microsoft Graph. Nothing in OneNote is changed.</p>
+            <p>Slate reads your notebooks through Microsoft Graph (graph.microsoft.com), after you sign in at login.microsoftonline.com. Nothing in OneNote is changed.</p>
             {stage.sessionOnly && (
               <p className="muted" data-testid="import-session-only">
                 This computer has no system keyring Slate can use, so Slate keeps your Microsoft sign-in only until you quit. You sign in again each time you open Slate.
@@ -143,7 +144,8 @@ export function ImportDialog({ onClose, initial = 'graph' }: { onClose: () => vo
               className="btn primary"
               data-testid="import-sign-in"
               onClick={() =>
-                void window.slate.onenote.signIn().then(refresh, (e: unknown) => setError(ERROR_TEXT(e)))
+                // microsoftSignIn consent first; a backup file (local) never comes here.
+                void withConsent('microsoftSignIn', () => window.slate.onenote.signIn()).then((answer) => (answer === null ? undefined : refresh()), (e: unknown) => setError(ERROR_TEXT(e)))
               }
             >
               Sign in with Microsoft

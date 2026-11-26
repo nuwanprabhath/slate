@@ -62,9 +62,9 @@ export function registerIpc(ipc: IpcRegistrar, store: () => DocStore, blobs: () 
   })
   ipc.handle(CH.settingsGet, () => readSettings(store()))
   ipc.handle(CH.settingsSet, (_e, patch: unknown) => {
-    // `sanitizePatch` decides every field; the shape is all this channel checks.
+    // `sanitizePatch` decides every field; the shape is all this channel checks. A window never writes consents.
     if (!isSettingsPatch(patch)) refuse(CH.settingsSet)
-    return writeSettings(store(), patch)
+    return writeSettings(store(), patch, { fromRenderer: true })
   })
   onSettingsWritten((settings) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(CH.settingsChanged, settings)))
   onSettingsWritten((settings) => configureLogging(settings))

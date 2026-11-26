@@ -1,6 +1,6 @@
-import { LoroDoc, VersionVector, type Frontiers } from 'loro-crdt'
-import { isDocId, newId, PageDoc, withHandles, type BoxState, type PMJSON } from '@slate/core'
-import { boxesTouched, boxMarkdown } from './conflicts'
+import { decodeImportBlobMeta, LoroDoc, VersionVector, type Frontiers } from 'loro-crdt'
+import { importParts, isDocId, newId, PageDoc, withHandles, type BoxState, type PMJSON } from '@slate/core'
+import { boxesChangedSince, boxesTouched, boxMarkdown } from './conflicts'
 import { chunkPath, parseRemotePath, snapshotPath } from './paths'
 import type { LocalStore, RemoteDrive, SyncReport, SyncStatus } from './types'
 
@@ -8,6 +8,10 @@ export interface SyncEngineOptions {
   local: LocalStore
   remote: RemoteDrive
   deviceId: string
+  /**
+   * The name written into this device's record on the remote, as given: the caller decides what may leave the
+   * computer (GDPR-03: strict mode passes `Device <first 8 of deviceId>`, never the hostname).
+   */
   deviceName: string
   platform?: string
   /** This device's chunk count per doc above which it uploads a snapshot instead. */
@@ -39,6 +43,10 @@ type Counts = Pick<SyncReport, 'pushed' | 'pulled' | 'conflicts'>
 /** A doc being pulled into: `doc` holds what was stored at pull start plus every import since. */
 interface PullState {
   doc: LoroDoc
+  /** Nothing of the doc is stored yet, and nothing has been appended this pull: a snapshot can go in as its first row. */
+  empty: boolean
+  /** Some stored update is waiting on one that never arrived. */
+  pending: boolean
   /** Stored version at pull start. */
   before: VersionVector
   pushed: VersionVector
@@ -57,6 +65,23 @@ interface PullState {
 }
 
 export const RESTORED_MESSAGE = 'A box deleted on another device was restored because you edited it'
+export const ERASED_ELSEWHERE_MESSAGE =
+  'A page whose edit history was erased on another device could not be merged with the changes made here. Each device keeps its own version; on a page, the other version is listed as a conflict.'
+export const ERASED_HERE_MESSAGE =
+  'Changes another device made to a page whose edit history was erased here could not be merged. They are still on that device.'
+
+/** The version range of a shallow snapshot (an erased history, GDPR-04); null for any other file. */
+function shallowRange(bytes: Uint8Array): { since: VersionVector; end: VersionVector } | null {
+  try {
+    const meta = decodeImportBlobMeta(bytes, false)
+    if (meta.mode === 'shallow-snapshot') return { since: meta.partialStartVersionVector, end: meta.partialEndVersionVector }
+    meta.partialStartVersionVector.free()
+    meta.partialEndVersionVector.free()
+    return null
+  } catch {
+    return null
+  }
+}
 
 const META = {
   pushed: (docId: string) => `pushed:${docId}`,
@@ -86,6 +111,30 @@ const versionMap = (vv: VersionVector) => vv.toJSON() as Map<string, number>
 function ahead(vv: VersionVector, base: VersionVector): boolean {
   for (const [peer, counter] of versionMap(vv)) if (counter > (versionMap(base).get(peer) ?? 0)) return true
   return false
+}
+
+const isPage = (docId: string) => docId.startsWith('page:')
+
+/** True when `bytes` is a blob Loro recognises (an update or snapshot), whatever it holds. */
+function isLoroBlob(bytes: Uint8Array): boolean {
+  try {
+    const meta = decodeImportBlobMeta(bytes, false)
+    meta.partialStartVersionVector.free()
+    meta.partialEndVersionVector.free()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Imports into `doc` (a throwaway fork) and says whether everything attached. */
+function importsCleanly(doc: LoroDoc, bytes: Uint8Array): boolean {
+  try {
+    const status = doc.import(bytes)
+    return status.pending === null || status.pending.size === 0
+  } catch {
+    return false
+  }
 }
 
 function statusOf(err: unknown): SyncStatus {
@@ -185,10 +234,14 @@ export class SyncEngine {
   }
 
   private async load(docId: string): Promise<LoroDoc> {
+    return (await this.loadWithStatus(docId)).doc
+  }
+
+  private async loadWithStatus(docId: string): Promise<{ doc: LoroDoc; empty: boolean; pending: boolean }> {
     const doc = new LoroDoc()
     const updates = await this.local.loadDoc(docId)
-    if (updates.length > 0) doc.importBatch(updates)
-    return doc
+    const status = importParts(doc, updates)
+    return { doc, empty: updates.length === 0, pending: status.pending !== null && status.pending.size > 0 }
   }
 
   private async pushedVersion(docId: string): Promise<VersionVector> {
@@ -210,6 +263,14 @@ export class SyncEngine {
     if (!ahead(version, pushed)) return version
 
     const seq = Number((await this.local.getMeta(META.seq(docId))) ?? 0) + 1
+    if (doc.isShallow() && ahead(doc.shallowSinceVV(), pushed)) {
+      // The history was erased (GDPR-04) past what was pushed: no update from `pushed` can be made any more, so the
+      // doc goes up whole, as the snapshot that replaces this device's files for it.
+      await this.compact(docId, doc, seq, await this.jsonMeta<string[]>(META.chunks(docId), []))
+      await this.local.setBytesMeta(META.pushed(docId), version.encode())
+      counts.pushed++
+      return version
+    }
     const path = chunkPath(docId, this.deviceId, seq)
     await this.transfer(() => this.remote.upload(path, doc.export({ mode: 'update', from: pushed }), this.signal))
     const chunks = [...(await this.jsonMeta<string[]>(META.chunks(docId), [])), path]
@@ -279,9 +340,11 @@ export class SyncEngine {
   }
 
   private async pullState(docId: string): Promise<PullState> {
-    const doc = await this.load(docId)
+    const { doc, empty, pending } = await this.loadWithStatus(docId)
     const state: PullState = {
       doc,
+      empty,
+      pending,
       before: doc.oplogVersion(),
       pushed: await this.pushedVersion(docId),
       localEdited: new Set(),
@@ -291,7 +354,13 @@ export class SyncEngine {
       restores: new Map()
     }
     const baseBytes = await this.local.getBytesMeta(META.base(docId))
-    if (baseBytes) {
+    if (baseBytes && doc.isShallow()) {
+      // A base from before the history was erased reads as the shallow point: every edit since is "mine".
+      const base = VersionVector.decode(baseBytes)
+      const at = ahead(doc.shallowSinceVV(), base) ? doc.shallowSinceFrontiers() : doc.vvToFrontiers(base)
+      state.localEdited = boxesChangedSince(doc, at).contentEdited
+      state.base = at
+    } else if (baseBytes) {
       const base = VersionVector.decode(baseBytes)
       const at = doc.vvToFrontiers(base)
       const local = doc.export({ mode: 'update', from: base })
@@ -323,6 +392,19 @@ export class SyncEngine {
     const { base } = state
     if (!base || state.conflicts.size === 0) return new Map()
     return withHandles((h) => {
+      if (state.doc.isShallow()) {
+        // No fork at `base` to import into: the version holding `base` and this pull's remote ops is checked out instead.
+        const vv = new Map(versionMap(state.doc.frontiersToVV(base)))
+        for (const bytes of state.remote) {
+          const meta = decodeImportBlobMeta(bytes, false)
+          for (const [peer, counter] of versionMap(h.own(meta.partialEndVersionVector))) vv.set(peer, Math.max(counter, vv.get(peer) ?? 0))
+          h.own(meta.partialStartVersionVector)
+        }
+        const at = state.doc.vvToFrontiers(VersionVector.parseJSON(vv as Map<`${number}`, number>))
+        const remoteOnly = h.own(state.doc.fork())
+        remoteOnly.checkout(at)
+        return new Map([...state.conflicts.keys()].map((boxId) => [boxId, boxMarkdown(remoteOnly, boxId)]))
+      }
       const remoteOnly = h.own(state.doc.forkAt(base))
       for (const bytes of state.remote) remoteOnly.import(bytes)
       return new Map([...state.conflicts.keys()].map((boxId) => [boxId, boxMarkdown(remoteOnly, boxId)]))
@@ -366,7 +448,10 @@ export class SyncEngine {
     const ownDeleted = new Set<string>()
     const ownPresent = new Set<string>()
     let unverified = 0
-    for (const item of page.items) {
+    const erasedHere = new Set<string>()
+    // Snapshots first: an erased history's snapshot must be a doc's first row, before the chunks built on it.
+    const items = [...page.items].sort((x, y) => Number(!x.path.includes('/snapshot-')) - Number(!y.path.includes('/snapshot-')))
+    for (const item of items) {
       if (!item.isFile) continue
       const parsed = parseRemotePath(item.path)
       if (parsed.kind !== 'chunk' && parsed.kind !== 'snapshot') continue
@@ -400,15 +485,35 @@ export class SyncEngine {
         state = await this.pullState(parsed.docId)
         states.set(parsed.docId, state)
       }
+      const shallow = parsed.kind === 'snapshot' && !state.empty ? shallowRange(bytes) : null
+      if (shallow) {
+        let outcome: 'taken' | 'kept'
+        try {
+          outcome = await this.takeErased(parsed.docId, state, bytes, shallow, parsed.deviceId, counts)
+        } finally {
+          shallow.since.free()
+          shallow.end.free()
+        }
+        await this.local.markSeen(item.id, item.eTag)
+        if (outcome === 'taken') counts.pulled++
+        continue
+      }
       try {
         this.detect(state, bytes, parsed.deviceId)
         state.doc.import(bytes)
       } catch {
-        // Bytes that are not a Loro update (a hostile or damaged remote) are skipped like unverifiable ones.
         await this.local.markSeen(item.id, item.eTag)
+        if (state.doc.isShallow() && shallowRange(bytes) === null && isLoroBlob(bytes)) {
+          // Another device's edit that builds on history erased here: it stays on that device, and is reported.
+          if (!erasedHere.has(parsed.docId)) await this.local.notify(ERASED_HERE_MESSAGE)
+          erasedHere.add(parsed.docId)
+          continue
+        }
+        // Bytes that are not a Loro update (a hostile or damaged remote) are skipped like unverifiable ones.
         unverified++
         continue
       }
+      state.empty = false
       // Nothing edited here since the last sync: no conflict can arise, so nothing is kept for "theirs".
       if (state.localEdited.size > 0) state.remote.push(bytes)
       await this.local.appendRemote(parsed.docId, bytes)
@@ -435,6 +540,63 @@ export class SyncEngine {
     if (!this.forgotten) await this.local.setMeta(META.changed, String(changedSeq))
     await this.selfCheck(ownDeleted, cursor === null ? ownPresent : undefined)
     if (unverified > 0) await this.local.notify(unverifiedMessage(unverified))
+  }
+
+  /**
+   * Takes in another device's shallow snapshot (a history it erased, GDPR-04) when this device already holds
+   * part of the doc. It merges as any import does when this device holds every op before the shallow point. It
+   * replaces the stored doc when this device holds nothing the snapshot lacks. Otherwise it cannot go in
+   * without losing something: the doc stays as it is, and the person is told, with each differing box of a
+   * page listed as a conflict.
+   */
+  private async takeErased(
+    docId: string,
+    state: PullState,
+    bytes: Uint8Array,
+    range: { since: VersionVector; end: VersionVector },
+    device: string,
+    counts: Counts
+  ): Promise<'taken' | 'kept'> {
+    const before = state.doc.oplogVersion()
+    if (!ahead(range.since, before) && withHandles((h) => importsCleanly(h.own(state.doc.fork()), bytes))) {
+      this.detect(state, bytes, device)
+      state.doc.import(bytes)
+      if (state.localEdited.size > 0) state.remote.push(bytes)
+      // As an update, not the snapshot: a shallow snapshot after other rows is not one every loader reads.
+      if (ahead(state.doc.oplogVersion(), before)) await this.local.appendRemote(docId, state.doc.export({ mode: 'update', from: before }))
+      return 'taken'
+    }
+    const adoptable = !ahead(before, range.end) && !state.pending && state.conflicts.size === 0 && state.restores.size === 0
+    if (adoptable && this.local.replaceDoc && (await this.local.replaceDoc(docId, bytes, range.end.encode()))) {
+      state.doc.free()
+      state.doc = new LoroDoc()
+      state.doc.import(bytes)
+      // Every op this device had is in the snapshot, which is on the remote: nothing of it is left to push.
+      state.before = state.doc.oplogVersion()
+      state.pushed = state.doc.oplogVersion()
+      state.localEdited = new Set()
+      state.base = undefined
+      state.remote = []
+      return 'taken'
+    }
+    if (isPage(docId)) {
+      const theirs = new LoroDoc()
+      try {
+        theirs.import(bytes)
+        const ids = new Set([...new PageDoc(state.doc).listBoxes(), ...new PageDoc(theirs).listBoxes()].map((b) => b.id))
+        for (const boxId of ids) {
+          const mine = boxMarkdown(state.doc, boxId)
+          const other = boxMarkdown(theirs, boxId)
+          if (mine === other) continue
+          await this.local.addConflict({ id: newId(), pageId: docId, boxId, device, mine, theirs: other, merged: mine, at: Date.now() })
+          counts.conflicts++
+        }
+      } finally {
+        theirs.free()
+      }
+    }
+    await this.local.notify(ERASED_ELSEWHERE_MESSAGE)
+    return 'kept'
   }
 
   /**

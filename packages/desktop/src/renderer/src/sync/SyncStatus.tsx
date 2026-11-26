@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SyncState } from '../../../shared/api'
 import { openSettings } from '../settings/open'
 import { isGitHubRemote } from './remoteHost'
+import { withSyncConsent } from './syncConsent'
 import { syncAgeText } from './syncAge'
 import './sync.css'
 
@@ -157,7 +158,7 @@ export function SyncStatus() {
             <button type="button" data-testid="sync-now" disabled={!setUp || busy} onClick={syncNow}>
               Sync now
             </button>
-            <button type="button" data-testid="sync-toggle" onClick={() => void window.slate.sync.setEnabled(!state?.enabled)}>
+            <button type="button" data-testid="sync-toggle" onClick={() => void withSyncConsent(() => window.slate.sync.setEnabled(!state?.enabled), () => setOpen(false)).catch(() => {})}>
               {state?.enabled ? 'Turn off sync' : 'Turn on sync'}
             </button>
           </div>

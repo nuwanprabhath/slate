@@ -6,6 +6,10 @@ import type { DocStore } from '../store'
  * The sync engine's view of this device. `store` must be a connection of its own: rows it appends
  * are then "another connection's commit" to the app, and the external-update watcher delivers
  * them to the open window.
+ *
+ * It offers no `replaceDoc`, so a page whose history another device erased is kept and reported here when it
+ * cannot merge, never adopted: a window with the page open would go on writing edits built on the replaced
+ * history, which the store could never load again.
  */
 export function docStoreLocal(store: DocStore, blobs: BlobStore, notify: (message: string) => void): LocalStore {
   const text = new TextDecoder()

@@ -9,6 +9,12 @@ import { FileBlobStore } from '../blobs'
 import { DocStore } from '../store'
 import { createAuthService } from './auth'
 import { ImportService } from './importService'
+import { DEFAULT_SETTINGS as PRIVACY_DEFAULTS } from '../../shared/settings/schema'
+import { setPrivacySource } from '../privacy/gate'
+
+// These tests are about sign-in and sync, not consent: strict mode is off here (the consent gate has its own tests).
+beforeEach(() => setPrivacySource(() => ({ ...PRIVACY_DEFAULTS, gdprStrictMode: false })))
+afterEach(() => setPrivacySource(() => null))
 
 const html = (title: string, boxes: Array<{ x: number; y: number; text: string }>, img = false) =>
   `<html><head><title>${title}</title></head><body data-absolute-enabled="true">` +

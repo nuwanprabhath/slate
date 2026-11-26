@@ -17,7 +17,7 @@ describe('electronBackend', () => {
   it('does not touch electron-updater until a check runs', async () => {
     const { electronBackend } = await import('./electronBackend')
     const backend = electronBackend({ downloadsDir: '/tmp', log: () => {}, installer })
-    await expect(backend.check()).rejects.toThrow(/semver/)
+    await expect(backend.check({ manual: true })).rejects.toThrow(/semver/)
   })
 
   it('marks a downloaded installer as quarantined so Gatekeeper still checks it', async () => {

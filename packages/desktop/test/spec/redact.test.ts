@@ -52,3 +52,25 @@ describe('log fields never carry key bytes (red team final F-1)', () => {
     expect(JSON.stringify(redact(nested))).not.toMatch(/[0-9a-f]{32}|[A-Za-z0-9+/]{43}=/)
   })
 })
+
+describe('log redaction of personal data (GDPR-09)', () => {
+  it('strips an email address, and keeps the pseudonymous sync identity slate@invalid', () => {
+    expect(redactString('token refused for anna.k@example.com, retry')).toBe('token refused for [redacted-email], retry')
+    expect(redactString('signed in as A.Person+notes@mail.example.co.uk')).toBe('signed in as [redacted-email]')
+    expect(redactString('author Slate <slate@invalid>')).toBe('author Slate <slate@invalid>')
+  })
+
+  it('strips the owner and repository of an scp-style or https git remote', () => {
+    for (const remote of ['git@github.com:anna-k/private-notes.git', 'https://github.com/anna-k/private-notes.git', 'https://gitlab.com/anna-k/private-notes', 'ssh://git@bitbucket.org/anna-k/private-notes.git']) {
+      const out = redactString(`fatal: could not read from ${remote}`)
+      expect(out, remote).toContain('[owner]/[repo]')
+      expect(out, remote).not.toContain('anna-k')
+      expect(out, remote).not.toContain('private-notes')
+    }
+  })
+
+  it('writes a Windows home folder as ~, whoever it belongs to', () => {
+    expect(redactString('cannot open C:\\Users\\anna\\AppData\\Roaming\\Slate\\slate.db')).toBe('cannot open ~\\AppData\\Roaming\\Slate\\slate.db')
+    expect(redactString('d:\\Users\\Anna Person')).not.toContain('Anna')
+  })
+})

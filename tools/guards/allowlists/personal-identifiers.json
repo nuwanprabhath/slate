@@ -1,0 +1,4 @@
+{
+  "$comment": "Main-process files that read os.hostname(), os.userInfo() or os.networkInterfaces() (lint rule slate/no-personal-identifiers). Each reads the person's identity from the OS; the accepted path is a pseudonymous device name (docs/architecture/golden-paths.md#privacy). Only shrinks: move a file onto the pseudonymous name and delete its line.",
+  "packages/desktop/src/main/sync/syncService.ts": "hostname() is the default device name of the sync device record and of the git commit author when strict mode is off and no vault exists (GDPR-03); under strict mode or a vault the name is pseudonymous (`Device <deviceId>`, `Slate <slate@invalid>`, workstream C). Delete this line once the hostname default is gone."
+}

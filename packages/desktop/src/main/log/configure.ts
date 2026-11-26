@@ -12,11 +12,13 @@ import { logPqState, type PqDiagnostics } from './pqState'
 
 /**
  * Points the logger at this installation's log folder. Separate from `logger.ts` so that module
- * stays free of Electron and its tests run in plain Node.
+ * stays free of Electron and its tests run in plain Node. Switching the log off in strict mode
+ * deletes it (GDPR-13); otherwise its files are kept and still pruned by age.
  */
-export function configureLogging(settings: Pick<Settings, 'debugLog'>): void {
+export function configureLogging(settings: Pick<Settings, 'debugLog'> & Partial<Pick<Settings, 'gdprStrictMode'>>): void {
   const wasOn = log.enabled
   log.configure({ enabled: settings.debugLog, dir: join(app.getPath('userData'), 'logs'), maxSizeMb: 20, home: homedir() })
+  if (wasOn && !log.enabled && settings.gdprStrictMode === true) log.purgeAll()
   // Each start with the log on, and the moment it is switched on, says which build wrote it.
   if (log.enabled && !wasOn) {
     log.info('app', 'diagnostic log on', { version: app.getVersion(), platform: process.platform, arch: process.arch, electron: process.versions.electron })
@@ -25,10 +27,18 @@ export function configureLogging(settings: Pick<Settings, 'debugLog'>): void {
 
 /**
  * The security log (audit AU-2): on from the first line of main, whatever the diagnostic switch says. 2 MB across
- * a few archives, kept 90 days, in a folder of its own inside the data folder.
+ * a few archives, kept 90 days until the notes open and `applySecurityLogRetention` knows the profile.
  */
-export function configureSecurityLog(): void {
-  securityLog.configure({ enabled: true, dir: join(app.getPath('userData'), 'security-log'), maxSizeMb: 2, retentionDays: 90, home: homedir() })
+export function configureSecurityLog(retentionDays = 90): void {
+  securityLog.configure({ enabled: true, dir: join(app.getPath('userData'), 'security-log'), maxSizeMb: 2, retentionDays, home: homedir() })
+}
+
+/**
+ * GDPR-08: the security log's retention for the open notes. fips-140-3 keeps 90 days (the AU-2 record); otherwise
+ * strict mode keeps 30, which is long enough to look back over a month of unlocks, and the rest 90.
+ */
+export function applySecurityLogRetention(profile: 'standard' | 'fips-140-3' | null, strict: boolean): void {
+  configureSecurityLog(profile !== 'fips-140-3' && strict ? 30 : 90)
 }
 
 function status(): DiagnosticsStatus {

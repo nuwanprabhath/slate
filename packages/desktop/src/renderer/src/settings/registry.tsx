@@ -13,6 +13,7 @@ import { AutocorrectSection } from './sections/AutocorrectSection'
 import { DiagnosticsSection, diagnosticsSectionEntry } from './sections/DiagnosticsSection'
 import { UpdatesSection, updatesSectionEntry } from './sections/UpdatesSection'
 import { GeneralSection } from './sections/GeneralSection'
+import { PrivacySection, privacySectionEntry } from './sections/PrivacySection'
 import { SecuritySection, securitySectionEntry } from './sections/SecuritySection'
 
 export interface SectionProps {
@@ -63,6 +64,7 @@ export const SECTIONS: SettingsSection[] = [
     Component: GeneralSection,
   },
   { ...securitySectionEntry, Component: SecuritySection },
+  { ...privacySectionEntry, Component: PrivacySection },
   { ...updatesSectionEntry, Component: () => <UpdatesSection /> },
   { ...diagnosticsSectionEntry, Component: () => <DiagnosticsSection /> },
 ]

@@ -16,10 +16,12 @@ import { LoroCounter, LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText, Lor
 import { describe, expect, it } from 'vitest'
 import * as agentViewModule from '../src/agentView'
 import * as contentModule from '../src/content'
+import * as importPartsModule from '../src/importParts'
 import * as replaceModule from '../src/replace'
 import { agentBoxes, agentPageMarkdown, placeBelow } from '../src/agentView'
 import { contentToJSON, writeContent } from '../src/content'
 import { withHandles } from '../src/handles'
+import { importParts } from '../src/importParts'
 import { PageDoc } from '../src/page'
 import type { PMJSON } from '../src/plaintext'
 import { applyReplace, planReplace, rehearseReplace, replaceInPage, type PlannedEdit } from '../src/replace'
@@ -81,6 +83,16 @@ const NOTEBOOK_BYTES = ((): Uint8Array => {
   nb.setAccess(section, 'read')
   nb.markOpen('device', 1)
   return nb.doc.export({ mode: 'snapshot' })
+})()
+
+/** PAGE_BYTES with its history erased to a shallow snapshot (GDPR-04), and an edit made after it. */
+const SHALLOW_PAGE_PARTS = ((): Uint8Array[] => {
+  const page = PageDoc.fromUpdates([PAGE_BYTES])
+  page.deleteBox(page.stackOrder()[1]!)
+  const shallow = page.doc.export({ mode: 'shallow-snapshot', frontiers: page.doc.oplogFrontiers() })
+  const from = page.doc.oplogVersion()
+  page.addBox({ x: 0, y: 900, width: 300, content: BLOCKS })
+  return [shallow, page.doc.export({ mode: 'update', from })]
 })()
 
 interface PageFx {
@@ -175,7 +187,7 @@ const NOTEBOOK_PRIVATE = ['tree', 'accessMap', 'node', 'requireNode', 'kindOf', 
 
 const plan = (page: PageDoc): PlannedEdit[] => planReplace(page, 'needle', PLAIN, 'thread', { preserveCase: false })
 
-/** The functions of content.ts, replace.ts and agentView.ts that are handed a document or a container. */
+/** The functions of content.ts, replace.ts, agentView.ts and importParts.ts that are handed a document or a container. */
 const FUNCTION_CASES: Record<string, Case<PageFx>> = {
   writeContent: of(({ page }) => {
     const root = page.contentMap(page.addBox({ x: 0, y: 0, width: 1 }))!
@@ -199,6 +211,10 @@ const FUNCTION_CASES: Record<string, Case<PageFx>> = {
   agentBoxes: of(({ page }) => () => agentBoxes(page)),
   agentPageMarkdown: of(({ page }) => () => agentPageMarkdown(page)),
   placeBelow: of(({ page }) => () => placeBelow(page)),
+  importParts: of(() => {
+    const doc = new LoroDoc()
+    return () => importParts(doc, SHALLOW_PAGE_PARTS)
+  }),
 }
 /** Exported functions that are handed neither a document nor a container. */
 const FUNCTIONS_WITHOUT_A_DOCUMENT = ['agentMarkdown', 'expandReplacement', 'preserveCaseOf']
@@ -229,7 +245,7 @@ describe('every way core touches a document leaves no handle alive (FX-36)', () 
   it('has a case for every PageDoc and NotebookDoc method, and for every function of the files that read Loro', () => {
     expect([...Object.keys(PAGE_CASES), ...PAGE_PRIVATE].sort()).toEqual(methodsOf(PageDoc.prototype))
     expect([...Object.keys(NOTEBOOK_CASES), ...NOTEBOOK_PRIVATE].sort()).toEqual(methodsOf(NotebookDoc.prototype))
-    const functions = [contentModule, replaceModule, agentViewModule].flatMap(functionsOf)
+    const functions = [contentModule, replaceModule, agentViewModule, importPartsModule].flatMap(functionsOf)
     expect([...Object.keys(FUNCTION_CASES), ...FUNCTIONS_WITHOUT_A_DOCUMENT].sort()).toEqual(functions.sort())
   })
 
@@ -242,6 +258,7 @@ describe('every way core touches a document leaves no handle alive (FX-36)', () 
   it('opening a document reads none: the constructors and fromUpdates', () => {
     expect(leftAlive(() => PageDoc.fromUpdates([PAGE_BYTES])).alive).toBe(0)
     expect(leftAlive(() => NotebookDoc.fromUpdates([NOTEBOOK_BYTES])).alive).toBe(0)
+    expect(leftAlive(() => PageDoc.fromUpdates(SHALLOW_PAGE_PARTS)).alive).toBe(0)
     expect(leftAlive(() => NotebookDoc.create('New')).alive).toBe(0)
     expect(leftAlive(() => new NotebookDoc()).alive).toBe(0)
   })
@@ -420,7 +437,7 @@ function unownedReads(file: string, lines: string[]): string[] {
 }
 
 /** The files that import Loro or are handed a PageDoc or NotebookDoc. A new one needs balance cases above. */
-const FILES_THAT_REACH_LORO = ['agentView.ts', 'content.ts', 'page.ts', 'replace.ts', 'tree.ts']
+const FILES_THAT_REACH_LORO = ['agentView.ts', 'content.ts', 'importParts.ts', 'page.ts', 'replace.ts', 'tree.ts']
 
 describe("core's source reads Loro only through a handle scope (FX-36)", () => {
   const files = readdirSync(SRC).filter((name) => name.endsWith('.ts') && name !== 'handles.ts')

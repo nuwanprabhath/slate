@@ -11,6 +11,7 @@ import sqlTextIsLiteral from './sql-text-is-literal.mjs'
 import noKeyText from './no-key-text.mjs'
 import mcpPagesThroughDocSource from './mcp-pages-through-docsource.mjs'
 import loroHandlesThroughScope from './loro-handles-through-scope.mjs'
+import noPersonalIdentifiers from './no-personal-identifiers.mjs'
 
 /**
  * The `slate/*` ESLint rules: "there is one sanctioned way to do X here", one rule per X.
@@ -98,6 +99,16 @@ export const CUSTOM = [
     rule: loroHandlesThroughScope,
     files: ['packages/core/src/**/*.ts', ...MAIN_PROCESS],
     ignores: TESTS,
+  },
+  {
+    // GDPR-03: a hostname, account or MAC address read from the OS leaves the machine in commit
+    // authors, device records and logs. MAIN_PROCESS already holds packages/sync/src (the device
+    // record); it is named again so a narrower MAIN_PROCESS cannot drop it.
+    name: 'no-personal-identifiers',
+    rule: noPersonalIdentifiers,
+    files: [...MAIN_PROCESS, 'packages/sync/src/**/*.ts'],
+    ignores: TESTS,
+    allow: Object.keys(allowlist('personal-identifiers')),
   },
   {
     name: 'skip-needs-reason',

@@ -8,6 +8,10 @@ import { UpdateSignatureError } from './signature'
 import type { UpdateVerifier, VerifiedRelease } from './verifier'
 import { isNewer, releaseUrl } from './versions'
 import { securityEvent } from '../log/securityEvents'
+import { egressAllowed } from '../../shared/privacy/consent'
+import { DEFAULT_SETTINGS as APP_DEFAULTS } from '../../shared/settings/schema'
+import { readSettings } from '../settings'
+import type { DocStore } from '../store'
 
 export interface FoundUpdate {
   version: string
@@ -17,7 +21,8 @@ export interface FoundUpdate {
 /** What the service needs from the outside world; electron-updater in the app, a stub in tests. */
 export interface UpdateBackend {
   /** The latest release in the feed, whatever its version. */
-  check(): Promise<FoundUpdate | null>
+  /** A scheduled check (`manual` unset) needs the updates consent; a person pressing Check now never does. */
+  check(opts?: { manual?: boolean }): Promise<FoundUpdate | null>
   /** Must refuse unless electron-updater's cached update is exactly `expected` (a later check replaces it). */
   downloadAuto(expected: VerifiedRelease, onProgress: (percent: number) => void): Promise<void>
   /** Same rule, right before quitAndInstall; throws instead of installing. */
@@ -43,6 +48,8 @@ export interface UpdateBackend {
   restart(): void
   /** What the macOS helper left from the last install, read once and deleted. */
   takePreviousInstall(): Promise<PreviousInstall | null>
+  /** Deletes an installer this app downloaded (only a file directly in the downloads folder). */
+  removeDownload?(path: string): Promise<void>
 }
 
 /** What a helper that installed after quit (macOS) left for the next start to read. */
@@ -52,6 +59,8 @@ export interface PreviousInstall {
   message: string
   /** The installer it kept, when it failed and the file is still there. */
   path: string | null
+  /** The sha512 the signed feed named for `path`, kept by Slate before it quit. */
+  sha512?: string
 }
 
 /** Kept in the settings store under `update`. */
@@ -84,6 +93,16 @@ export interface UpdateServiceDeps {
 export interface UpdateSettings {
   automaticChecks: boolean
   intervalHours: number
+}
+
+/**
+ * What the schedule runs on. GDPR-02: with the notes closed there are no settings to read, so no scheduled
+ * check; with them open, automatic checks need the setting and the consent. A manual check never asks.
+ */
+export function scheduledUpdateSettings(open: DocStore | null): UpdateSettings {
+  if (!open) return { automaticChecks: false, intervalHours: APP_DEFAULTS.updateCheckIntervalHours }
+  const s = readSettings(open)
+  return { automaticChecks: s.updateAutomaticChecks && egressAllowed(s, 'updates'), intervalHours: s.updateCheckIntervalHours }
 }
 
 const FIRST_CHECK_MS = 10_000
@@ -193,7 +212,7 @@ export class UpdateService {
     // Whatever this check ends in, the previous verification no longer describes what electron-updater holds.
     this.found = null
     try {
-      const found = await this.deps.backend.check()
+      const found = await this.deps.backend.check({ manual: opts.manual === true })
       offered = found?.version
       // A download of another version is no longer what Install and restart would install.
       if (this.downloaded !== null && this.downloaded.version !== found?.version) this.downloaded = null
@@ -347,7 +366,11 @@ export class UpdateService {
    */
   async restorePreviousInstall(): Promise<void> {
     const previous = await this.deps.backend.takePreviousInstall()
-    if (previous === null || previous.ok) return
+    if (previous === null) return
+    if (previous.ok) {
+      await this.discardInstalled(previous)
+      return
+    }
     this.forced = true
     this.set({
       phase: 'downloaded',
@@ -359,6 +382,22 @@ export class UpdateService {
       installRequested: true,
       installError: previous.message,
     })
+  }
+
+  /** GDPR-19: an installer that did its job is not kept, but only a file that still is the verified one is deleted. */
+  private async discardInstalled({ path, sha512 }: PreviousInstall): Promise<void> {
+    const { backend, diag } = this.deps
+    if (path === null || sha512 === undefined || !backend.removeDownload) return
+    try {
+      if (!(await backend.stillVerified(path, sha512))) {
+        diag?.warn('kept unverified download', { path })
+        return
+      }
+      await backend.removeDownload(path)
+      diag?.info('deleted the installed update download', { path })
+    } catch (e) {
+      this.deps.log(e)
+    }
   }
 
   install(): void {

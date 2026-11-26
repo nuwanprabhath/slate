@@ -45,6 +45,8 @@ test.describe.serial(`typing while a ${String(PAGES)}-page vault syncs`, () => {
 
     // Git is configured on the empty vault first: its save waits for a first sync, which is cheap before
     // seeding and would otherwise push every seeded document inside a settings dialog's timeout.
+    // Strict mode (GDPR-03): this profile has no encryption, so sync needs the provider's and unencrypted sync's consent.
+    await page.evaluate(() => Promise.all([window.slate.privacy.grant('gitSync'), window.slate.privacy.grant('plaintextSync')]))
     await page.getByTestId('sync-menu').click()
     await page.getByTestId('sync-settings-open').click()
     await expect(page.getByTestId('sync-settings')).toBeVisible()

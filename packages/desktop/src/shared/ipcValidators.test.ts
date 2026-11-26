@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { relativeCost } from '../../test/fuzz'
 import { BASE_THEME } from './theme/spec'
 import {
+  isConsentFeature,
+  isEraseConfirmation,
+  isPurgeScope,
   isBool,
   isBytes,
   isCount,
@@ -211,5 +214,21 @@ describe('isRendererErrorReport', () => {
       { ...good, extra: 1 },
     ]
     for (const value of bad) expect(isRendererErrorReport(value), JSON.stringify(value) ?? 'undefined').toBe(false)
+  })
+})
+
+describe('privacy channel arguments (GDPR review §3.1)', () => {
+  it('isConsentFeature: a listed feature only', () => {
+    expect(isConsentFeature('updates')).toBe(true)
+    expect(isConsentFeature('plaintextSync')).toBe(true)
+    for (const v of ['', 'all', 'hasOwnProperty', 1, null, undefined, ['updates']]) expect(isConsentFeature(v)).toBe(false)
+  })
+  it('isPurgeScope: caches, logs, audit or all', () => {
+    for (const v of ['caches', 'logs', 'audit', 'all']) expect(isPurgeScope(v)).toBe(true)
+    for (const v of ['ALL', 'blobs', '', null, 0]) expect(isPurgeScope(v)).toBe(false)
+  })
+  it('isEraseConfirmation: exactly the string ERASE', () => {
+    expect(isEraseConfirmation('ERASE')).toBe(true)
+    for (const v of ['erase', 'ERASE ', ' ERASE', true, null, undefined, ['ERASE'], new String('ERASE')]) expect(isEraseConfirmation(v)).toBe(false)
   })
 })

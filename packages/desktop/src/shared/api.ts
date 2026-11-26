@@ -6,6 +6,7 @@ import type { SavedTheme, ThemeGenerateResult } from './theme/resolve'
 import type { ThemeSpec } from './theme/spec'
 import type { AppMenuNode, ChromeColors, WindowChrome } from './windowChrome/chrome'
 import type { SecretBytes } from './secret'
+import type { ConsentFeature, Consents } from './privacy/consent'
 
 /** Themes: the user's saved ones live in main, validated on load and save (main/theme/themeStore.ts). */
 export interface ThemesApi {
@@ -72,6 +73,71 @@ export interface Settings {
   lockOnSleep: boolean
   lockOnScreenLock: boolean
   quickUnlock: boolean
+  /**
+   * GDPR strict mode (privacy by default): nothing leaves this computer unless `consents` holds a current grant
+   * for it (`egressAllowed`). On by default; existing installs keep their features through `legacy` grants.
+   */
+  gdprStrictMode: boolean
+  /** Granted only through `privacy.grant`; `settings.set` from a window never changes it. */
+  consents: Consents
+}
+
+/** What Settings → Privacy's "Purge" clears (`Retention.purge`). */
+export type PurgeScope = 'caches' | 'logs' | 'audit' | 'all'
+
+/** What a purge removed; each count is 0 for a part the scope did not cover. */
+export interface PurgeReport {
+  scope: PurgeScope
+  /** Image files or rows no page refers to any more. */
+  blobs: number
+  /** Stray temporary folders (`slate-one2html-*`, `slate-theme-*`). */
+  tempDirs: number
+  /** Bytes the database file shrank by in its VACUUM. */
+  bytesFreed: number
+  logsCleared: boolean
+  auditCleared: boolean
+  /** Why the security log was kept (a fips-140-3 vault keeps it), when it was. */
+  securityLogKept?: string
+}
+
+/** "Export everything…": where it went and how much it wrote. */
+export interface ExportReport {
+  folder: string
+  pages: number
+  images: number
+  bytes: number
+}
+
+export interface PrivacyStatus {
+  gdprStrictMode: boolean
+  consents: Consents
+  /** `egressAllowed` for each feature right now. */
+  allowed: Record<ConsentFeature, boolean>
+  /** Features whose grant is `legacy`: the "Review privacy settings" card shows while any remain. */
+  legacy: ConsentFeature[]
+  /** The open vault's profile (null without one); the security log cannot be cleared under fips-140-3. */
+  profile: VaultProfile | null
+}
+
+/** Settings → Privacy and every consent step (GDPR review §3.1). All channels are refused while locked. */
+export interface PrivacyApi {
+  status(): Promise<PrivacyStatus>
+  /** Records a grant for the current disclosure text; the only way a consent is made. */
+  grant(feature: ConsentFeature): Promise<PrivacyStatus>
+  revoke(feature: ConsentFeature): Promise<PrivacyStatus>
+  /** Main asks for the folder; null when the person cancelled. */
+  exportAll(): Promise<ExportReport | null>
+  purge(scope: PurgeScope): Promise<PurgeReport>
+  /** Replaces a page's or notebook's history with its current state. */
+  eraseHistory(docId: string): Promise<void>
+  /** Erases every Slate file and keyring entry, then relaunches; `confirm` must be the literal 'ERASE'. */
+  eraseAll(confirm: 'ERASE'): Promise<void>
+  readSecurityLog(): Promise<string>
+  clearSecurityLog(): Promise<void>
+  /** Deletes the AI activity record (the MCP audit table). */
+  auditClear(): Promise<void>
+  /** Turns sync off and forgets the connection: tokens, clones and sync bookkeeping. */
+  syncForget(): Promise<void>
 }
 
 /** §6.2. `migrating`: a vault header exists but the plaintext database is still the one in use. */
@@ -491,6 +557,7 @@ export interface SlateApi {
   }
   themes: ThemesApi
   audit: { list(limit?: number): Promise<AuditEntryRow[]> }
+  privacy: PrivacyApi
   diagnostics: {
     status(): Promise<DiagnosticsStatus>
     /** The redacted log text, oldest line first. */

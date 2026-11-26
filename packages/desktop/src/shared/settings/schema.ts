@@ -9,12 +9,21 @@ import { isAllowedBranch, isAllowedRemote, type RemoteOptions } from '../gitRemo
 import { DEFAULT_THEME_ID } from '../theme/builtins'
 import { sanitizeFontOverrides } from '../theme/fonts'
 import type { MotionSetting } from '../theme/motion'
+import { sanitizeConsents } from '../privacy/consent'
 
 export interface SettingDef<T> {
   default: T
   /** A valid value for anything that passes, `undefined` for anything that does not. */
   sanitize: (value: unknown, options: RemoteOptions) => T | undefined
 }
+
+export interface SanitizeOptions extends RemoteOptions {
+  /** The patch came from a window (`settings:set`): the keys only main writes are dropped. */
+  fromRenderer?: boolean
+}
+
+/** Settings no window may write: a consent is made only through `privacy:grant` (GDPR review §3.1 step 3). */
+const MAIN_ONLY: ReadonlySet<keyof Settings> = new Set<keyof Settings>(['consents'])
 
 /** Local git remotes are refused unless the caller (main, from the e2e/test hook) allows them. */
 const STRICT: RemoteOptions = { allowLocal: false }
@@ -58,6 +67,8 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   lockOnSleep: { default: true, sanitize: bool },
   lockOnScreenLock: { default: true, sanitize: bool },
   quickUnlock: { default: false, sanitize: bool },
+  gdprStrictMode: { default: true, sanitize: bool },
+  consents: { default: {}, sanitize: sanitizeConsents },
 }
 
 const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>
@@ -65,10 +76,11 @@ const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>
 export const DEFAULT_SETTINGS: Settings = Object.fromEntries(KEYS.map((k) => [k, SCHEMA[k].default])) as unknown as Settings
 
 /** The known keys of `patch` whose values are valid; everything else is dropped. */
-export function sanitizePatch(patch: Record<string, unknown>, options: RemoteOptions = STRICT): Partial<Settings> {
+export function sanitizePatch(patch: Record<string, unknown>, options: SanitizeOptions = STRICT): Partial<Settings> {
   const out: Record<string, unknown> = {}
   for (const k of KEYS) {
     if (!(k in patch)) continue
+    if (options.fromRenderer && MAIN_ONLY.has(k)) continue
     const value = SCHEMA[k].sanitize(patch[k], options)
     if (value !== undefined) out[k] = value
   }

@@ -21,6 +21,7 @@ import { installVaultRelay } from './lock/relay'
 import { installTestHooks } from './testHooks'
 import { ThemeLayer } from './theme/ThemeLayer'
 import { EncryptWizard } from './vault/EncryptWizard'
+import { ConsentHost } from './privacy/ConsentDialog'
 import { VaultBanners } from './vault/VaultBanners'
 import { startTheme } from './theme/themeState'
 import './settings/QuickUnlockRow'
@@ -57,6 +58,7 @@ createRoot(document.getElementById('root')!).render(
           }
         />
         <EncryptWizard />
+        <ConsentHost />
       </>
     )}
   </StrictMode>,

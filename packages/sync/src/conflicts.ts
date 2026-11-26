@@ -1,4 +1,4 @@
-import type { Diff, LoroDoc, LoroEventBatch } from 'loro-crdt'
+import type { Diff, Frontiers, LoroDoc, LoroEventBatch } from 'loro-crdt'
 import { PageDoc, toMarkdown, withHandles, type Handles } from '@slate/core'
 
 export interface BoxesTouched {
@@ -15,25 +15,43 @@ function ownContainers(diff: Diff, h: Handles): void {
   else if (diff.type === 'list') for (const op of diff.diff) h.own(op.insert)
 }
 
+function recorder(touched: BoxesTouched, h: Handles) {
+  return (batch: LoroEventBatch) => {
+    for (const event of batch.events) {
+      ownContainers(event.diff, h)
+      const [root, boxId, field] = event.path
+      if (root !== 'boxes') continue
+      if (typeof boxId === 'string' && field === 'content') touched.contentEdited.add(boxId)
+      else if (event.path.length === 1 && event.diff.type === 'map') {
+        for (const id of Object.keys(event.diff.updated)) if (event.diff.updated[id] === undefined) touched.deleted.add(id)
+      }
+    }
+  }
+}
+
 /** Which boxes an update edits the content of, or deletes, when applied on top of `base`. */
 export function boxesTouched(base: LoroDoc, update: Uint8Array): BoxesTouched {
   const touched: BoxesTouched = { contentEdited: new Set(), deleted: new Set() }
   return withHandles((h) => {
-    const record = (batch: LoroEventBatch) => {
-      for (const event of batch.events) {
-        ownContainers(event.diff, h)
-        const [root, boxId, field] = event.path
-        if (root !== 'boxes') continue
-        if (typeof boxId === 'string' && field === 'content') touched.contentEdited.add(boxId)
-        else if (event.path.length === 1 && event.diff.type === 'map') {
-          for (const id of Object.keys(event.diff.updated)) if (event.diff.updated[id] === undefined) touched.deleted.add(id)
-        }
-      }
-    }
     // A fork holds memory as a document does. The scope frees it when it ends, also when the import throws.
     const fork = h.own(base.fork())
-    fork.subscribe(record)
+    fork.subscribe(recorder(touched, h))
     fork.import(update)
+    return touched
+  })
+}
+
+/**
+ * Which boxes changed in `doc` since `at`. For a shallow doc (an erased history, GDPR-04), where Loro has no
+ * `forkAt`: a fork checked out at `at` reports the change as it moves back to the latest version.
+ */
+export function boxesChangedSince(doc: LoroDoc, at: Frontiers): BoxesTouched {
+  const touched: BoxesTouched = { contentEdited: new Set(), deleted: new Set() }
+  return withHandles((h) => {
+    const fork = h.own(doc.fork())
+    fork.checkout(at)
+    fork.subscribe(recorder(touched, h))
+    fork.attach()
     return touched
   })
 }

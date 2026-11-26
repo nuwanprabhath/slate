@@ -17,3 +17,12 @@ describe('auto-formatting defaults', () => {
     expect(DEFAULT_SETTINGS.spellcheckUnderline).toBe(false)
   })
 })
+
+// GDPR Art. 25 (privacy by default), the maintainer's §3.0 item 1 of docs/reviews/gdpr-compliance-review.md:
+// a fresh install sends nothing anywhere until the person grants a feature.
+describe('privacy defaults', () => {
+  it('strict mode starts on, with no consent granted', () => {
+    expect(DEFAULT_SETTINGS.gdprStrictMode).toBe(true)
+    expect(DEFAULT_SETTINGS.consents).toEqual({})
+  })
+})

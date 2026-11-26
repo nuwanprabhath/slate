@@ -17,7 +17,9 @@ describe('redactString', () => {
   })
   it('strips passwords in URLs', () => {
     const out = redactString('fatal: unable to access https://user:pass123@github.com/o/r.git')
-    expect(out).toBe('fatal: unable to access https://[redacted]@github.com/o/r.git')
+    // GDPR-09: the remote's owner and repository go too (test/redactPrivacy.test.ts).
+    expect(out).toBe('fatal: unable to access https://github.com:[owner]/[repo]')
+    expect(out).not.toContain('pass123')
   })
   it('strips key=value secrets', () => {
     expect(redactString('token=abcd1234 password: "hunter22"')).toBe('token=[redacted] password=[redacted]')
