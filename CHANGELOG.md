@@ -6,6 +6,20 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-26
+
+What the nightly fuzz soak found on 20, 21 and 26 November.
+
+### Fixed
+
+- Log redaction could leave text a second pass would remove. A long line is cut to 512 characters,
+  and the cut came after the rules, so it could end the kept text inside something that only
+  matches once cut short: `nr@zd.o.qDxSYDqj9Ibrq` is no email address, but kept as `nr@zd.o.qD` it
+  is one. What a cut keeps is now redacted again until it fits, so redaction is final. The nightly's
+  input is kept in a new fuzz corpus and replayed for good (FX-56, seed 64).
+- The 20 and 21 November failures (seeds 56 and 57) were the check flaw FX-55 fixed in 0.7.14;
+  both seeds pass.
+
 ## [0.8.0] - 2026-11-26
 
 Privacy by design and by default (GDPR). Slate sends nothing off this computer until you allow it,
