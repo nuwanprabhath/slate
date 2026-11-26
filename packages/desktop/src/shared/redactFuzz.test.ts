@@ -200,6 +200,15 @@ describe('T-F4E-01: no credential survives, wherever it sits', () => {
 })
 
 describe('T-F4E fixed findings', () => {
+  it('FX-56: a cut that turns the end of the kept text into an address is redacted in the same pass (seed 64)', () => {
+    // Uncut, "nr@zd.o.qDxSYDqj9Ibrq" is no address: a digit breaks the last label. Cut at 512 it ends
+    // "nr@zd.o.qD", which is one, so a second pass redacted what the first had kept.
+    const input = `${'a '.repeat(251)}nr@zd.o.qD${'xSYDqj9Ibrq'}${' tail'.repeat(10)}`
+    const once = redactString(input)
+    expect(once).not.toContain('nr@zd.o.qD')
+    expect(redactString(once)).toBe(once)
+  })
+
   it('FX-55: a password the host also spells is redacted, and the host is kept (seed 59, path "136687")', () => {
     const out = redactString('<! ssh://u:prototype@h.fprototypenxs sync')
     expect(out).toBe('<! ssh://[redacted]@h.fprototypenxs sync')

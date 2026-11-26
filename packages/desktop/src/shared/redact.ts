@@ -29,6 +29,8 @@ const MAX_STRING = 512
  * a kept secret unrecognised.
  */
 const MAX_SCANNED = 16 * 1024
+/** Cuts after the first that are scrubbed again before the last one is kept as it is (FX-56). */
+const MAX_CUT_ROUNDS = 4
 
 /**
  * Secret shapes, checked before path rewriting so a token containing a slash is not mangled into
@@ -107,14 +109,28 @@ export function redactString(value: string, { home }: RedactOptions = {}): strin
   const carried = prior ? Number(prior[1]) : 0
   if (prior) value = value.slice(0, prior.index)
   const unscanned = Math.max(0, value.length - MAX_SCANNED)
-  let out = unscanned > 0 ? value.slice(0, MAX_SCANNED) : value
+  let out = scrub(unscanned > 0 ? value.slice(0, MAX_SCANNED) : value, home)
+  let dropped = unscanned + carried
+  // A cut can end the kept text inside something that only matches once cut short ("a@b.cd9e" kept as
+  // "a@b.cd"), so what a cut keeps is scrubbed again until it fits: the output is final, and a second
+  // pass changes nothing (FX-56). Each round only redacts more, so it settles within a few rounds.
+  for (let round = 0; out.length > MAX_STRING; round++) {
+    dropped += out.length - MAX_STRING
+    out = out.slice(0, MAX_STRING)
+    if (round === MAX_CUT_ROUNDS) break
+    out = scrub(out, home)
+  }
+  return dropped > 0 ? `${out}…[+${String(dropped)} chars]` : out
+}
+
+/** Every rule but length: secrets, base64 runs, this account's home, then any account's home. */
+function scrub(text: string, home: string | undefined): string {
+  let out = text
   for (const { pattern, as } of SECRETS) out = out.replace(pattern, as)
   out = out.replace(BASE64_RUN, (run) => (looksLikeBase64(run) ? '[redacted-base64]' : run))
   if (home !== undefined && home !== '') out = out.replace(new RegExp(escapeRe(home), 'g'), '~')
   // Any other account's home directory too: a path from a synced device is still somebody's name.
-  out = out.replace(HOME_LIKE, '$1~')
-  const dropped = Math.max(0, out.length - MAX_STRING) + unscanned + carried
-  return dropped > 0 ? `${out.slice(0, MAX_STRING)}…[+${String(dropped)} chars]` : out
+  return out.replace(HOME_LIKE, '$1~')
 }
 
 /**
