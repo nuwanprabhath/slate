@@ -10,14 +10,22 @@ function page(n: number): string {
 
 const links = (html: string): number => html.split('<a href="').length - 1
 
-// Best of three, so one scheduling hiccup on a loaded machine does not decide a ratio.
+/** This process's CPU time in ms: other programs and other test files running at once do not count. */
+const cpuMs = (): number => {
+  const { user, system } = process.cpuUsage()
+  return (user + system) / 1000
+}
+
+// CPU time, not the clock: on a machine busy with other work the longer 8,000-code run is preempted more,
+// which turned a linear 10x into 31x (load 20; reproduced 3 runs in 10 under 24 busy loops on 10 cores).
+// Best of three still drops a garbage collection that lands in one run.
 function best(n: number): number {
   const html = page(n)
   let min = Infinity
   for (let i = 0; i < 3; i++) {
-    const t = performance.now()
+    const t = cpuMs()
     normalizeOne2HtmlPage(html)
-    min = Math.min(min, performance.now() - t)
+    min = Math.min(min, cpuMs() - t)
   }
   return min
 }
