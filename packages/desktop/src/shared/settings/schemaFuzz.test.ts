@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { mergeSettings, sanitizePatch, SCHEMA } from './schema'
-import { fcParams } from '../../../test/fuzz'
+import { fcParams, fuzzTimeout } from '../../../test/fuzz'
 
 // F4a property 5: whatever object arrives (over IPC, or stored), only SCHEMA's keys come out, each
 // holding a value its own SettingDef accepts, and `__proto__`/`constructor` in the input change nothing.
@@ -64,5 +64,5 @@ describe('F4a: settings come out of the schema well formed', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout())
 })

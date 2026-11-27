@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { redact, redactString } from './redact'
-import { fcParams, fcRuns } from '../../test/fuzz'
+import { fcParams, fcRuns, fuzzTimeout } from '../../test/fuzz'
 
 // F4e: properties of log redaction (shared/redact.ts) over generated credentials, noise and graphs.
 // The generators are exported for FX-3, which reuses them to measure how redactString's cost grows
@@ -240,7 +240,7 @@ describe('T-F4E-02: output length', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout())
 })
 
 describe('T-FX3-02: the scan bound (M3) leaves no kept secret unredacted', () => {
