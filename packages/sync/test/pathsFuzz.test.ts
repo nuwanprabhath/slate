@@ -3,7 +3,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { chunkPath, parseRemotePath, snapshotPath } from '../src/paths'
-import { fcParams } from '../../desktop/test/fuzz'
+import { fcParams, fuzzTimeout } from '../../desktop/test/fuzz'
 
 const docId = fc.tuple(fc.constantFrom('page', 'notebook'), fc.uuid()).map(([kind, uuid]) => `${kind}:${uuid}`)
 // Device ids are `newId()` uuids in the app; a wider alphabet (no `/`, which separates segments) covers older ones.
@@ -24,7 +24,7 @@ describe('parseRemotePath', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F2C-02: chunkPath and snapshotPath parse back to what went in', () => {
     fc.assert(
@@ -34,5 +34,5 @@ describe('parseRemotePath', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 })

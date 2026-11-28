@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { importParts, NotebookDoc, PageDoc, withHandles } from '@slate/core'
 import { LoroDoc } from 'loro-crdt'
 import { LOCK_FILE } from '../lock'
+import type { DocStore } from '../store'
 import { MIGRATION_FILE } from '../vault/migration'
 import { PQ_CANDIDATE_FILE } from '../vault/pqUpgrade'
 import type { ProfileId } from '../vault/profile'
@@ -27,19 +28,12 @@ import {
 import { THROTTLE_FILE } from '../vault/unlockThrottle'
 
 /**
- * What erasing a history needs from the store: workstream D's `DocStore.replaceWithSnapshot` (one
- * transaction on compact's path that keeps the doc's sequence moving, never remove + append: FX-6) and
- * `vacuum` (checkpoint, then VACUUM, so the freed pages leave the file and the WAL).
+ * What erasing a history uses of `DocStore`: `replaceWithSnapshot` (one transaction on compact's path that keeps the
+ * doc's sequence moving, never remove + append: FX-6), `wasSynced`, `optimizeSearch` (the search index's deletes only
+ * mark entries until its segments merge) and `vacuum` (checkpoint, then VACUUM, so the freed pages leave the file and
+ * the WAL).
  */
-export interface HistoryStore {
-  load(docId: string): Uint8Array[]
-  /** Whether the doc ever went through a sync connection, including one forgotten since. */
-  wasSynced(docId: string): boolean
-  replaceWithSnapshot(docId: string, snapshot: Uint8Array): void
-  /** Merges the search index's segments, so the entries its deletes only marked leave the file too. */
-  optimizeSearch(): void
-  vacuum(): void
-}
+export type HistoryStore = Pick<DocStore, 'load' | 'wasSynced' | 'replaceWithSnapshot' | 'optimizeSearch' | 'vacuum'>
 
 export class SyncIsOn extends Error {
   constructor() {
@@ -100,27 +94,9 @@ export function loadersReadShallowHistory(): boolean {
   }
 }
 
-/**
- * Whether sync carries a history erased while it was off to the other devices once it is on again. It does for
- * every doc this erase accepts (`HistoryWasSynced` refuses the rest): the engine uploads a shallow doc whose
- * shallow point it never pushed as a snapshot file, which any device without the doc takes in whole
- * (`packages/sync/test/erasedHistory.test.ts`, `erasedHistoryGit.test.ts`, and the encrypted remote's case in
- * `main/sync/erasedHistoryEncrypted.test.ts`).
- */
-export const SYNC_CARRIES_ERASED_HISTORY = true
-
 /** Why erasing a history is refused in this build, or null when it is not. */
 export function historyEraseBlocker(): string | null {
-  if (!loadersReadShallowHistory()) return 'Slate could not reopen a page whose history was erased.'
-  if (!SYNC_CARRIES_ERASED_HISTORY) return 'a page erased now would not reach your other devices if you turn sync on later.'
-  return null
-}
-
-/** `store` when it has workstream D's history methods; the erase is refused on a store without them. */
-export function historyStore(store: object): HistoryStore {
-  const s = store as Partial<HistoryStore>
-  if (typeof s.load !== 'function' || typeof s.wasSynced !== 'function' || typeof s.replaceWithSnapshot !== 'function' || typeof s.optimizeSearch !== 'function' || typeof s.vacuum !== 'function') throw new HistoryEraseUnavailable('the database cannot replace a history yet.')
-  return s as HistoryStore
+  return loadersReadShallowHistory() ? null : 'Slate could not reopen a page whose history was erased.'
 }
 
 /**
@@ -180,8 +156,12 @@ const VAULT_FILES = [
 // update-result.json.download: the updater's pending-download sidecar (platformInstaller.ts), naming a path in the home folder.
 const ERASED_FILES: readonly string[] = [...VAULT_FILES, 'msal-cache.bin', 'update-result.json', 'update-result.json.download']
 const ERASED_DIRS = ['blobs', 'git-sync', 'logs', 'security-log']
-/** The plaintext database and an encrypted one (`slate-<8 hex>.db`), with their journals. */
-const DATABASE = /^slate(-[0-9a-f]{8})?\.db(-wal|-shm|-journal)?$/
+/**
+ * The plaintext database and an encrypted one (`slate-<8 hex>.db`), with their journals, and the temp copies a
+ * migration or rejoin interrupted mid-way left (`copyAndEncrypt`, `copyAndRekey`): once the vault files are gone,
+ * no start would remove them, and the first step's is a plaintext copy of the notes.
+ */
+const DATABASE = /^slate(-[0-9a-f]{8})?\.db((\.enc)?\.tmp)?(-wal|-shm|-journal)?$/
 /** A `writeJsonAtomic` temp file a crash left beside one of the files above. */
 const ATOMIC_TEMP = /^\.(.+)\.[0-9a-f-]{13}\.tmp$/
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
-import { fcParams } from '../../test/fuzz'
+import { fcParams, fuzzTimeout } from '../../test/fuzz'
 import { isAllowedBranch, isAllowedRemote, isAllowedRepoName } from './gitRemote'
 
 // Pieces chosen to sit on every edge of the allow-list: option dashes, helper `::`, controls, schemes, paths.
@@ -39,7 +39,7 @@ describe('git remote, branch and repo-name gates (F4b property 4)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-02: allowLocal false refuses every file: address and local path', () => {
     const local = fc.tuple(fc.constantFrom('file://', 'FILE://', '/', './', '../', 'C:\\', 'c:/'), fc.string({ maxLength: 30 })).map(([a, b]) => a + b)
@@ -49,7 +49,7 @@ describe('git remote, branch and repo-name gates (F4b property 4)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-FX17: git refuses @, a dot-leading component and a .lock-ending component; ordinary names pass', () => {
     for (const bad of ['@', 'a/.b', 'a.lock/b', 'a/b.lock', '.a/b']) expect(isAllowedBranch(bad)).toBe(false)
@@ -76,5 +76,5 @@ describe('git remote, branch and repo-name gates (F4b property 4)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 })

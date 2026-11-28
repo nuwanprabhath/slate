@@ -83,13 +83,20 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const test = () => run(() => window.slate.sync.testGit(git(), typedToken))
-  const create = () =>
+  /** A check main refuses until the person allows its feature: the consent step first, then the check again. */
+  const asked = (task: () => Promise<GitCheck>, declined: string) =>
     run(async () => {
+      let result: GitCheck = { ok: false, message: declined }
+      if (!(await withSyncConsent(async () => (result = await task()), onClose))) return { ok: false, message: declined }
+      return result
+    })
+  const test = () => asked(() => window.slate.sync.testGit(git(), typedToken), 'Testing the connection needs your permission first.')
+  const create = () =>
+    asked(async () => {
       const result = await window.slate.sync.createRepo(repoName.trim(), auth, typedToken)
       if (result.ok && result.url) setRemoteUrl(result.url)
       return result
-    })
+    }, 'Creating a repository needs your permission first.')
   const signIn = () =>
     run(async () => {
       if (!(await withSyncConsent(async () => setDeviceCode(await window.slate.sync.deviceSignIn()), onClose))) return { ok: false, message: 'Sign-in needs your permission first.' }
@@ -283,11 +290,11 @@ export function SyncSection({ onClose }: { onClose: () => void }) {
                 Cancel
               </button>
               {turningOff && (
-                <button type="button" data-testid="sync-forget" disabled={busy} onClick={() => void forget()}>
+                <button type="button" className="btn danger" data-testid="sync-forget" disabled={busy} onClick={() => void forget()}>
                   Turn off and forget this connection
                 </button>
               )}
-              <button type="button" data-testid="sync-settings-save" disabled={busy} onClick={() => void save()}>
+              <button type="button" className="btn primary" data-testid="sync-settings-save" disabled={busy} onClick={() => void save()}>
                 {turningOff ? 'Turn off' : 'Save & sync'}
               </button>
             </div>

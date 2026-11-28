@@ -3,20 +3,9 @@ import { DISCLOSURES, type ConsentFeature } from '../../../shared/privacy/consen
 import type { PrivacyStatus, Settings } from '../../../shared/api'
 import { errorText } from '../vault/events'
 import { openSettings } from '../settings/open'
+import { FIRST_RUN_RECHECK, firstRunSuppressedForTests } from '../testHooks'
 import { askConsent } from './askConsent'
 import './firstRun.css'
-
-/** The e2e hook asks the card to look again (testHooks.ts `showFirstRunPrivacy`). */
-export const FIRST_RUN_RECHECK = 'slate:first-run-recheck'
-
-/** Existing specs run with the card off: e2e hooks are installed, and the card waits for `slateTest.firstRunPrivacy`. */
-function suppressedByTestHooks(): boolean {
-  const hooks = (window as unknown as { slateTest?: { firstRunPrivacy?: boolean } }).slateTest
-  return hooks !== undefined && hooks.firstRunPrivacy !== true
-}
-
-/** The setting that remembers either answer (`settings.plugins`, free-form). */
-export const FIRST_RUN_KEY = 'firstRunPrivacy'
 
 /**
  * The first-run privacy card (GDPR-01): nothing is sent anywhere until the person turns it on. Not a modal, so
@@ -49,15 +38,14 @@ export function FirstRunPrivacy() {
     return () => window.removeEventListener(FIRST_RUN_RECHECK, again)
   }, [load])
 
-  if (settings === null || status === null || dismissed || suppressedByTestHooks()) return null
+  if (settings === null || status === null || dismissed || firstRunSuppressedForTests()) return null
   const legacy = status.legacy
-  const seen = settings.plugins[FIRST_RUN_KEY] === 'seen'
+  const seen = settings.firstRunPrivacySeen
   const firstRun = legacy.length === 0 && status.gdprStrictMode && !status.consents.updates && !seen
   if (legacy.length === 0 && !firstRun) return null
 
   const markSeen = async () => {
-    const fresh = await window.slate.settings.get()
-    setSettings(await window.slate.settings.set({ plugins: { ...fresh.plugins, [FIRST_RUN_KEY]: 'seen' } }))
+    setSettings(await window.slate.settings.set({ firstRunPrivacySeen: true }))
   }
   const fail = (e: unknown) => setError(errorText(e))
 

@@ -6,6 +6,72 @@ All notable changes to Slate are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-28
+
+The quality skills over 0.8 (security review, blast radius, UI review, architecture drift, comments and tests) and what they found, and the gate that makes them run before each release.
+
+### Fixed
+
+- A damaged snapshot of an erased page on your sync remote stopped sync on every device: the engine read its
+  header, then failed on the body and never marked the file seen, so every run failed on it again. Such a file
+  is now skipped and counted as unverifiable (security review, High).
+- After you withdrew the git sync consent, some git paths still reached your remote: the device records, the
+  post-quantum header upgrade after each unlock, and encrypting, rotating or rejoining. Every git command for
+  the remote now checks the consent.
+- A page erased while sync was off read empty on a device still on 0.7.14, and stayed empty after that device
+  updated: git lists the edit files before the snapshot, and the loader only looked for a snapshot first. It
+  now finds the snapshot wherever it was stored.
+- Erase all left the temporary database copies a cut-short encryption or rejoin leaves; the first is a
+  plaintext copy of your notes. They are removed now.
+- Log redaction let addresses such as `slate@invalid.com` through, because of its exception for Slate's own
+  placeholder address.
+- In the Glass theme the consent step over Settings let the page show through; Privacy's notes now sit under
+  the action they belong to, and other spacing fixes from the UI review.
+- Test connection reached your git remote, and Create repository reached GitHub, without asking first under
+  strict mode. They now ask for the git sync and GitHub sign-in consents, as Save & sync and Sign in with
+  GitHub do.
+- After you withdrew the Microsoft sign-in consent, Slate could still refresh its Microsoft token silently and an
+  OneNote import could read your notebooks with it. Every Microsoft token request now needs that consent;
+  OneDrive sync, which signs in with Microsoft, needs it as well as the OneDrive sync consent.
+- Erase all Slate data trusted the window's typed `ERASE` alone. Slate now asks again in its own dialog, with
+  Cancel as the default button, before it deletes anything; Cancel leaves everything as it was.
+- Erase all is refused while Slate is encrypting your notes, which could otherwise write its new database after
+  the erase.
+- Going back to 0.7.14 and then forward again re-granted consents you had withdrawn and turned strict mode back on,
+  because 0.7.14 drops settings it does not know. Slate now keeps your privacy choices under a second key 0.7.14
+  leaves alone, and restores them from there.
+- A page whose edit history you erased showed empty on a device still running Slate 0.7. While such a device is
+  listed on your sync remote, the erased page now waits, and Slate says which device to update; it syncs once
+  that device runs 0.8 or later.
+- The 0.8.0 notes and `PRIVACY.md` said freed database space is zeroed without saying since when: it is from 0.8
+  on, and text deleted before 0.8 in a database without a vault may remain in free space until the database is
+  rewritten.
+
+### Changed
+
+- "Erase edit history" is now disabled up front, with the reason, for a page that was synced, instead of being
+  offered and then refused.
+- Export everything now includes your sync conflicts (`conflicts.json`): both versions of each conflicting
+  text and the other device's name are your data. `PRIVACY.md` says for each thing Slate keeps whether the
+  export carries it, and why not.
+
+### Guardrails
+
+- **Quality skills run at milestones, not by memory.** `docs/quality-cadence.json` says when each is owed:
+  `trim-comments`, `correct`, `architecture-drift` and `prune-tests` after so many changed lines or days; the
+  security review when a security path changes, `blast-radius` when sync, the vault, the database, the store,
+  the updater or core change, `ui-review`'s screenshot pass when the renderer changes, and nightly triage when a
+  scheduled nightly fails. A release tag is refused while one is owed, or until CI passed on the tagged commit
+  (`tools/guards/quality-cadence.mjs`, `release-ci-gate.mjs`, `.githooks/pre-push`); each session starts by
+  saying what is owed.
+- New checks from this round's reviews: erase all covers every name Slate writes into its data folder; each
+  table's export coverage is in `PRIVACY.md` and checked; `slate/loro-loads-through-import-parts`; a consent
+  test for every sync method that reaches the network; the hostile remote also serves shallow snapshots; one
+  typed test hook (`renderer-test-hooks-in-one-file`, `no-window-double-cast`); the UI audit catches a
+  see-through dialog over another; every fuzz property has a scaled timeout.
+- `npm run guards` takes about 10 s instead of 74 s (the traceability guard parsed every test title once per
+  case).
+
 ## [0.8.1] - 2026-11-26
 
 What the nightly fuzz soak found on 20, 21 and 26 November.
@@ -49,7 +115,7 @@ review in `docs/reviews/gdpr-compliance-review.md`; the notice is `PRIVACY.md`.
 - In strict mode git sync commits as `Slate <slate@invalid>` with the message `slate: sync`, and a
   device is listed as `Device <id>` instead of the computer's name. Earlier commits keep theirs.
 - Freed database pages are overwritten with zeros, so a deleted note's text does not linger in the
-  file. Purge removes images no page uses and leftover import and theme temp folders.
+  file (from 0.8 on; text deleted before 0.8 in a database without a vault may remain in free space until the database is rewritten). Purge removes images no page uses and leftover import and theme temp folders.
 - Retention: AI activity 30 days in strict mode (90 otherwise), and an agent's search is recorded
   only as its length; the security record 30 days in strict mode (90 otherwise, and under
   FIPS 140-3); sync conflicts at most 90 days in strict mode. In strict mode, turning the diagnostic
@@ -82,7 +148,7 @@ review in `docs/reviews/gdpr-compliance-review.md`; the notice is `PRIVACY.md`.
   device would split in two if both devices edited it around the erase (Loro cannot merge edits
   across an erased history), so Slate refuses it and says why.
 - Purge cannot shrink the database file: the native module's SQL guard refuses the attach VACUUM
-  needs. Freed space is still zeroed.
+  needs. Freed space is still zeroed, from 0.8 on; text deleted before 0.8 in a database without a vault may remain in free space until the database is rewritten.
 
 ## [0.7.14] - 2026-11-25
 

@@ -125,4 +125,5 @@ export const CH = {
   privacySecurityLogClear: 'privacy:security-log-clear',
   auditClear: 'audit:clear',
   syncForget: 'sync:forget',
+  privacyHistoryEraseBlocker: 'privacy:history-erase-blocker',
 } as const

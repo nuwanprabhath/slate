@@ -31,7 +31,7 @@ import { registerPqIpc } from './pqIpc'
 import { registerVaultSecretIpc } from './vaultIpc'
 import { DEFAULT_SETTINGS } from '../shared/settings/schema'
 import { BLOB_SCHEME, blobNameFromUrl } from './blobs'
-import { createIpc } from './ipcGuard'
+import { createIpc, type Channel } from './ipcGuard'
 import { openExternalSafe } from './openExternal'
 import { clearBackupPick, registerIpc, registerOneNoteIpc, registerSearchIpc, registerSyncIpc } from './ipc'
 import { registerCopyIpc } from './copyHtml'
@@ -55,7 +55,7 @@ import { createRetention, type RetentionDeps } from './privacy/retention'
 import { createDataRights, type DataRightsDeps } from './privacy/dataRights'
 import { applySpellcheck } from './spellcheck'
 import { APP_NAME, defaultUserDataDir, migrateLegacyUserData } from './paths'
-import { closeServices, openServices, services, servicesOpen } from './services'
+import { closeOpenServices, closeServices, openServices, services, servicesOpen } from './services'
 import { activeThemeSpec, registerThemeIpc, windowBackground, type ThemeSource } from './theme/ipc'
 import { registerChromeIpc } from './windowChromeIpc'
 import { createWindow, isSlateWindow, loadPage, pinErrorPage } from './windows'
@@ -352,7 +352,7 @@ void app.whenReady().then(async () => {
     auth = makeAuth()
   })
   registerSyncIpc(ipc, () => services().sync)
-  const toWindows = (channel: string, payload: unknown) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(channel, payload))
+  const toWindows = (channel: Channel, payload: unknown) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(channel, payload))
   const intervalMs = Number(env('SLATE_SYNC_INTERVAL_MS'))
   const graphUrl = env('SLATE_GRAPH_URL') ?? 'https://graph.microsoft.com/v1.0'
   let currentDbFile = join(dataDir, 'slate.db')
@@ -404,7 +404,7 @@ void app.whenReady().then(async () => {
     updates?.settingsChanged()
     if (!tempSwept) {
       tempSwept = true
-      // GDPR-14: once per run. Never fatal: a sweep that fails (or is not built yet) leaves only a debug line.
+      // GDPR-14: once per run. Never fatal: a sweep that fails leaves only a debug line.
       retention.sweepTemp().catch((e: unknown) => log.debug('app', 'temp sweep skipped', { error: e instanceof Error ? e.message : String(e) }))
     }
     // After the window is asked for, not before; a query arriving first waits behind it.
@@ -427,6 +427,9 @@ void app.whenReady().then(async () => {
   registerThemeIpc(ipc, themeSource, isE2E)
   // GDPR-02: a lock closes the settings the schedule reads, and an unlock opens them again.
   vault.onChange(() => updates?.settingsChanged())
+  // §7.1: one vault change at a time. Every vault-changing channel is refused while one runs (`busy.guard`), and
+  // erase all takes it too, so no migration writes into the data folder while it is being removed.
+  const busy = new VaultBusy()
   const dataRightsDeps: DataRightsDeps = {
     store: () => services().store,
     blobs: () => services().blobs,
@@ -441,18 +444,15 @@ void app.whenReady().then(async () => {
     secrets,
     closeNotes: async () => {
       await stopMcp()
-      if (!servicesOpen()) return
-      const svc = services()
-      svc.muteEvents()
-      await svc.stopSync()
-      svc.closeWatch()
-      svc.closeDatabases()
+      if (servicesOpen()) await closeOpenServices(services())
     },
     forgetQuickUnlock: () => forgetQuickUnlock(dataDir),
     relaunch: () => {
       app.relaunch()
       app.exit(0)
     },
+    unfinishedMigration: () => vault.state === 'migrating',
+    busy,
   }
   registerPrivacyIpc(ipc, {
     ...createConsents({ store: () => services().store, profile: openProfile }),
@@ -875,9 +875,10 @@ void app.whenReady().then(async () => {
           await quietly(() => stopMcp())
           if (!servicesOpen()) return
           const svc = services()
+          // closeOpenServices' order, each step on its own: a failed self-test may find any of them not set up.
           await quietly(() => svc.muteEvents())
-          await quietly(() => svc.closeWatch())
           await quietly(() => svc.stopSync())
+          await quietly(() => svc.closeWatch())
         },
         stopUpdates: () => updates?.stop(),
         closeDatabases: () => {
@@ -912,14 +913,9 @@ void app.whenReady().then(async () => {
     resumeSync: () => servicesOpen() && services().sync.resume(),
     closeServices: async () => {
       if (!servicesOpen()) return
-      const svc = services()
       // While unlocking (following another device's key change, C9) no window shows notes, and the lock window waits on
       // this very unlock: there is nothing to flush and no one to answer.
-      if (vault.state !== 'unlocking') await flushWindows()
-      svc.muteEvents()
-      await svc.stopSync()
-      svc.closeWatch()
-      svc.closeDatabases()
+      await closeOpenServices(services(), vault.state !== 'unlocking' ? { flush: flushWindows } : {})
     },
     reopenPlaintext: () => {
       if (!servicesOpen()) startServices(null, join(dataDir, 'slate.db'))
@@ -937,8 +933,6 @@ void app.whenReady().then(async () => {
     notice: (message) => toWindows(CH.syncNotice, message),
   })
   // Quitting mid-migration waits for it (§7.1: "quitting deferred to a safe point").
-  // Every vault-changing channel is refused while one runs (`busy.guard`).
-  const busy = new VaultBusy()
   let quitAfterMigration = false
   const failure = (e: unknown): UnlockResult => ({ ok: false, message: e instanceof Error ? e.message : String(e) })
   const reloadWindows = () => BrowserWindow.getAllWindows().forEach((w) => loadPage(w, false))

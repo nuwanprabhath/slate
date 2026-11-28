@@ -16,7 +16,9 @@ import { baseCommit, exists, git, isTestFile, read, ROOT, walk } from './repo'
  *  5. no shipped source imports fast-check or a kit file;
  *  6. a test whose run count scales with SLATE_FUZZ_RUNS has a deadline that scales too. A constant
  *     one sits inside the run count at PR depth and outside it at soak depth, so the harness times
- *     out only in the nightly, hours in and far from the change that caused it (FX-49).
+ *     out only in the nightly, hours in and far from the change that caused it (FX-49);
+ *  7. every test that runs `fc.assert(` names its deadline (`fuzzTimeout(…)`, or a literal for a fixed
+ *     run count): vitest's 5 s default timed properties out under load.
  * The native corpus (packages/native/fuzz/corpus) is replayed by the C standalone driver, not by
  * replayCorpus, so rule 1 leaves it out; rules 2 and 3 cover it.
  */
@@ -87,20 +89,25 @@ export function unseededAsserts(text: string): number[] {
   return bad
 }
 
-/** The index of the `)` closing the `(` at `from`. */
+/** The index of the `)` closing the `(` at `from`, skipping parentheses inside string literals (`'(?:'`). */
 function closingParen(text: string, from: number): number {
   let depth = 0
   for (let j = from; j < text.length; j++) {
-    if (text[j] === '(') depth++
-    else if (text[j] === ')' && --depth === 0) return j
+    const ch = text[j]
+    if (ch === "'" || ch === '"' || ch === '`') {
+      for (j++; j < text.length && text[j] !== ch; j++) if (text[j] === '\\') j++
+    } else if (ch === '/' && text[j + 1] === '/') j = text.indexOf('\n', j) === -1 ? text.length : text.indexOf('\n', j)
+    else if (ch === '/' && text[j + 1] === '*') j = text.indexOf('*/', j + 2) === -1 ? text.length : text.indexOf('*/', j + 2) + 1
+    else if (ch === '(') depth++
+    else if (ch === ')' && --depth === 0) return j
   }
   return text.length - 1
 }
 
 /**
  * Rule 6: the lines where a test whose run count scales carries a constant deadline, which FX-49 was.
- * No explicit deadline is fine -- the soak passes `--testTimeout` -- and `fuzzTimeout(...)` scales by
- * design; only a numeric literal stays put while the run count grows past it.
+ * `fuzzTimeout(...)` scales by design; only a numeric literal stays put while the run count grows past it.
+ * (Rule 7 wants a deadline on every such test.)
  */
 export function constantDeadlines(text: string): number[] {
   const bad: number[] = []
@@ -117,6 +124,36 @@ export function constantDeadlines(text: string): number[] {
     const call = text.slice(open, close + 1)
     if (!/\bfcParams\b|\bfcRuns\(/.test(call)) continue
     if (/,\s*[\d_]+(?:\.\d+)?\s*\)$/.test(call)) bad.push(text.slice(0, at).split('\n').length)
+  }
+  return bad
+}
+
+/**
+ * Rule 7: the lines where a test that runs `fc.assert(` names no deadline of its own, and so runs on vitest's 5 s
+ * default, which a property under load outlasts (it timed out in the v0.8 runs). The test passes
+ * `fuzzTimeout(msPer1000Runs)` (or, for a fixed run count, a literal) as its timeout: the last argument, or
+ * `{ timeout: … }` before the function (where a deadline worked out from the run count is fine too).
+ */
+export function defaultDeadlines(text: string): number[] {
+  const bad: number[] = []
+  for (const m of text.matchAll(/\b(?:it|test)(?:\.\w+)*\s*\(/g)) {
+    const at = m.index
+    let open = at + m[0].length - 1
+    let close = closingParen(text, open)
+    const second = /^\s*\(/.exec(text.slice(close + 1))
+    if (second !== null) {
+      open = close + 1 + second[0].length - 1
+      close = closingParen(text, open)
+    }
+    const call = text.slice(open, close + 1)
+    if (!call.includes('fc.assert(')) continue
+    // A named deadline counts when the file defines it as one: `const T = fuzzTimeout(…)` or a literal.
+    const named = /,\s*([A-Za-z_$][\w$]*)\s*,?\s*\)$/.exec(call)?.[1]
+    const last =
+      /,\s*(?:fuzzTimeout\([^()]*\)|[\d_]+(?:\.\d+)?)\s*,?\s*\)$/.test(call) ||
+      (named !== undefined && new RegExp(`\\bconst\\s+${named}\\s*=\\s*(?:fuzzTimeout\\(|[\\d_])`).test(text))
+    const option = /^\(\s*(?:'[^']*'|"[^"]*"|`[^`]*`)\s*,\s*\{[^{}]*\btimeout\s*:/.test(call)
+    if (!last && !option) bad.push(text.slice(0, at).split('\n').length)
   }
   return bad
 }
@@ -185,6 +222,18 @@ describe('fuzz corpus and kit guard', () => {
     expect(bad).toEqual([])
   })
 
+  it('every test running fc.assert names its deadline, never vitest\'s 5 s default (rule 7)', () => {
+    const bad = walk('packages', ['.ts', '.tsx'])
+      .filter(isTestFile)
+      .flatMap((f) =>
+        defaultDeadlines(read(f)).map(
+          (line) =>
+            `${f}:${String(line)}: a property test on vitest's 5 s default deadline, which load outlasts: pass fuzzTimeout(msPer1000Runs) from packages/desktop/test/fuzz.ts as the test's last argument, or { timeout: fuzzTimeout(…) } (${GUIDE})`,
+        ),
+      )
+    expect(bad).toEqual([])
+  })
+
   it('each rule catches what it is for (self-test)', () => {
     const t = 'packages/sync/test/corpus/loro-update'
     expect(replayTargets(`replayCorpus('sync', 'loro-update', (b) => {})`)).toEqual([t])
@@ -216,6 +265,18 @@ describe('fuzz corpus and kit guard', () => {
     // A fixed seed and run count does not scale, so a constant deadline holds.
     expect(constantDeadlines(`it('z', () => { fc.assert(p, { seed: 7, numRuns: 10 }) }, 30000)`)).toEqual([])
     expect(constantDeadlines(`it.each(rows)('w %s', () => { fc.assert(p, fcRuns(2, 200)) }, 1000)`)).toEqual([1])
+
+    expect(defaultDeadlines(`it('x', () => {\n  fc.assert(p, fcParams)\n})`)).toEqual([1])
+    expect(defaultDeadlines(`it('x', () => { fc.assert(p, fcParams) }, fuzzTimeout(10_000))`)).toEqual([])
+    expect(defaultDeadlines(`it('x', () => { fc.assert(p, { seed: 1, numRuns: 9 }) }, 30_000)`)).toEqual([])
+    expect(defaultDeadlines(`it('x', { timeout: fuzzTimeout(20_000) }, async () => { await fc.assert(p, fcRuns(4)) })`)).toEqual([])
+    expect(defaultDeadlines(`it.each(rows)('w %s', () => { fc.assert(p, fcRuns(2)) })`)).toEqual([1])
+    expect(defaultDeadlines(`it('no property', () => { expect(1).toBe(1) })`)).toEqual([])
+    expect(defaultDeadlines(`const T = fuzzTimeout(20_000)\nit('x', () => { fc.assert(p, fcParams) }, T)`)).toEqual([])
+    expect(defaultDeadlines(`const T = later()\nit('x', () => { fc.assert(p, fcParams) }, T)`)).toEqual([2])
+    expect(defaultDeadlines(`it('x', () => {\n  // one of them doesn't throw (\n  fc.assert(p, fcParams)\n}, fuzzTimeout(1))`)).toEqual([])
+    // A parenthesis in a string does not end the test early (findFuzz's patterns: '(?:', '('.repeat(…)).
+    expect(defaultDeadlines(`describe('d', () => {\n  it('x', () => { fc.assert(p, fcParams); f('(') })\n})`)).toEqual([2])
 
     expect(importsFuzzKit(`import fc from 'fast-check'`)).toBe(true)
     expect(importsFuzzKit(`import { fcParams } from '../../test/fuzz'`)).toBe(true)

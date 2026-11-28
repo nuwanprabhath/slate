@@ -221,6 +221,30 @@ describe('a page erased while sync was off, then synced', () => {
     await b.engine.syncOnce()
     expect(text(b.local, id)).toBe('base later')
   })
+
+  it('reads and syncs, once upgraded, a page a v0.7.14 device stored from such a listing: the chunk row before the snapshot', async () => {
+    const remote = memoryDrive()
+    const a = device(remote, 'A')
+    const id = editPage(a.local, PAGE, (p) => addTextBox(p, 'base'))
+    for (const word of [' 1', ' 2']) editPage(a.local, PAGE, (p) => appendText(p, id, word))
+    erase(a.local)
+    await a.engine.syncOnce()
+    editPage(a.local, PAGE, (p) => appendText(p, id, ' later'))
+    await a.engine.syncOnce()
+    // What v0.7.14 left: every file stored as received in git's order, and marked seen.
+    const b = device(remote, 'B', undefined, false)
+    const listed = (await remote.delta(null)).items.filter((item) => item.path.startsWith('docs/')).sort((x, y) => (x.path < y.path ? -1 : 1))
+    for (const item of listed) {
+      b.local.appendLocal(PAGE, remote.files.get(item.path)!)
+      await b.local.markSeen(item.id, item.eTag)
+    }
+    expect(text(b.local, id)).toBe('base 1 2 later')
+    editPage(b.local, PAGE, (p) => appendText(p, id, ' fromB'))
+    expect((await b.engine.syncOnce()).status).toBe('idle-synced')
+    await a.engine.syncOnce()
+    expect(text(a.local, id)).toBe('base 1 2 later fromB')
+    expect(a.local.notes).toEqual([])
+  })
 })
 
 describe('conflicts on a page whose history was erased', () => {

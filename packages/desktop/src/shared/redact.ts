@@ -59,8 +59,8 @@ const SECRETS: { pattern: RegExp; as: string }[] = [
   { pattern: /(?<![\w.-])(github\.com|gitlab\.com|bitbucket\.org):(?!\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?(?=$|[\s"'),;/?#])/gi, as: '$1:[owner]/[repo]' },
   { pattern: /(?<![\w.-])([\w-]+(?:\.[\w-]+)+):(?!\/)([\w.-]+)\/([\w.-]+)\.git(?=$|[\s"'),;/?#])/g, as: '$1:[owner]/[repo]' },
   // GDPR-09: an account email (a Microsoft or GitHub error carries one). `slate@invalid`, the
-  // pseudonymous sync author, is not an address and stays readable.
-  { pattern: /(?<![A-Za-z0-9._%+-])(?!slate@invalid\b)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, as: '[redacted-email]' },
+  // pseudonymous sync author, is not an address and stays readable; `slate@invalid.com` is one.
+  { pattern: /(?<![A-Za-z0-9._%+-])(?!slate@invalid(?![A-Za-z0-9.-]))[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, as: '[redacted-email]' },
   // GDPR-09: any Windows home folder, not only the running user's (a path from another device).
   { pattern: /\b[A-Za-z]:\\Users\\[^\\\s"']+/g, as: '~' },
   { pattern: /\bAKIA[0-9A-Z]{16}\b/g, as: '[redacted-aws-key]' },

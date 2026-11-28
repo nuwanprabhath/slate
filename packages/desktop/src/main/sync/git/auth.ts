@@ -74,6 +74,8 @@ export async function githubDeviceFlow(clientId: string, onCode: (code: DeviceCo
 
 /** A new private, empty repository on the token owner's account. */
 export async function createPrivateRepo(token: string, name: string, doFetch: typeof fetch = fetch): Promise<GitCheck> {
+  // GDPR-11: api.github.com gets the token and the name, as the device sign-in does, only once the person allowed it.
+  requireConsent('githubSignIn')
   try {
     const res = await doFetch(REPOS_URL, {
       method: 'POST',

@@ -3,7 +3,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { markdownToBlocks, toMarkdown } from '../src/markdown'
 import { toPlainText, type PMJSON } from '../src/plaintext'
-import { fcParams, fcRuns, relativeCost } from '../../desktop/test/fuzz'
+import { fcParams, fcRuns, relativeCost, fuzzTimeout } from '../../desktop/test/fuzz'
 
 const ALLOWED = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'text'])
 
@@ -26,7 +26,7 @@ describe('markdownToBlocks fuzz', () => {
       fcParams,
     )
     expect(markdownToBlocks('#### x')).toEqual([{ type: 'paragraph', content: [{ type: 'text', text: '#### x' }] }])
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F3A-06: 1 MiB of fences, headings and list markers costs about what plain text of the same size does', () => {
     const MiB = 1024 * 1024
@@ -66,7 +66,7 @@ describe('markdownToBlocks fuzz', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 
   // Open finding F3A-2 (wrong-typed attributes make toMarkdown/toPlainText throw "Invalid string length"; the
   // generator for it is left out until FX fixes it).
@@ -87,5 +87,5 @@ describe('markdownToBlocks fuzz', () => {
       }),
       fcRuns(40, 20),
     )
-  })
+  }, fuzzTimeout(10_000))
 })

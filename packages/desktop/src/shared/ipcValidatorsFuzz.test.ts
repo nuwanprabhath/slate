@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import * as v from './ipcValidators'
-import { fcParams } from '../../test/fuzz'
+import { fcParams, fuzzTimeout } from '../../test/fuzz'
 
 // F4a property 4: every validator is total (never throws, whatever the renderer sends) and, when it
 // accepts, the value is within the caps it names.
@@ -25,7 +25,7 @@ const total = (name: string, check: (x: unknown) => boolean) =>
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 
 /** Each validator, and what an accepted value must satisfy beyond its type. */
 const CASES: Array<[string, (x: unknown) => boolean, (x: unknown) => boolean]> = [
@@ -81,7 +81,7 @@ describe('F4a: the IPC validators are total and keep their caps', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4A-31: a value one past each cap is refused', () => {
     expect(v.isText('x'.repeat(v.MAX_STRING + 1))).toBe(false)

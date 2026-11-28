@@ -59,6 +59,7 @@ const api: SlateApi = {
     exportAll: () => ipcRenderer.invoke(CH.privacyExport),
     purge: (scope) => ipcRenderer.invoke(CH.privacyPurge, scope),
     eraseHistory: (docId) => ipcRenderer.invoke(CH.privacyEraseHistory, docId),
+    historyEraseBlocker: (docId) => ipcRenderer.invoke(CH.privacyHistoryEraseBlocker, docId),
     eraseAll: (confirm) => ipcRenderer.invoke(CH.privacyEraseAll, confirm),
     readSecurityLog: () => ipcRenderer.invoke(CH.privacySecurityLogRead),
     clearSecurityLog: () => ipcRenderer.invoke(CH.privacySecurityLogClear),

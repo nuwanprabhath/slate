@@ -603,6 +603,41 @@ const CASES = {
       at('packages/desktop/src/renderer/src/x.tsx', "export const A = () => <a id=\"x\">x</a>"),
     ],
   },
+  'loro-loads-through-import-parts': {
+    bad: [
+      // Blast radius R1: a loader that took importBatch on its own read an erased page as empty.
+      at('packages/sync/src/engine.ts', "declare const doc: { importBatch(p: Uint8Array[]): unknown }, parts: Uint8Array[]\nexport const status = doc.importBatch(parts)"),
+      at('packages/desktop/src/main/store.ts', "declare const doc: { importBatch(p: Uint8Array[]): unknown }, parts: Uint8Array[]\nexport const status = doc['importBatch'](parts)"),
+      at('packages/editor/src/x.ts', "declare const doc: { importBatch(p: Uint8Array[]): unknown }\nexport const load = doc.importBatch.bind(doc)"),
+    ],
+    good: [
+      at('packages/core/src/importParts.ts', "declare const doc: { importBatch(p: Uint8Array[]): unknown }, parts: Uint8Array[]\nexport const status = doc.importBatch(parts)"),
+      at('packages/sync/src/engine.ts', "declare const importParts: (d: unknown, p: Uint8Array[]) => unknown, doc: unknown, parts: Uint8Array[]\nexport const status = importParts(doc, parts)"),
+      at('packages/core/test/x.test.ts', "declare const doc: { importBatch(p: Uint8Array[]): unknown }, parts: Uint8Array[]\nexport const status = doc.importBatch(parts)"),
+    ],
+  },
+  'renderer-test-hooks-in-one-file': {
+    bad: [
+      // Architecture drift D5: product code read the hook to decide whether to show itself.
+      { ...at('packages/desktop/src/renderer/src/privacy/FirstRunPrivacy.tsx', 'export const off = () => window.slateTest !== undefined && !window.slateTest.firstRunPrivacy'), count: 2 },
+      at('packages/desktop/src/renderer/src/x.ts', "export const hooks = (window as unknown as Record<string, unknown>)['slateTest']"),
+    ],
+    good: [
+      at('packages/desktop/src/renderer/src/testHooks.ts', 'export const off = () => window.slateTest !== undefined && !window.slateTest.firstRunPrivacy'),
+      at('packages/desktop/src/renderer/src/privacy/FirstRunPrivacy.tsx', "import { firstRunSuppressedForTests } from '../testHooks'\nexport const off = firstRunSuppressedForTests()"),
+    ],
+  },
+  'no-window-double-cast': {
+    bad: [
+      // Architecture drift D5: four sites, each with its own shape of the same object.
+      at('packages/desktop/src/renderer/src/privacy/FirstRunPrivacy.tsx', 'export const hooks = (window as unknown as { slateTest?: { firstRunPrivacy?: boolean } }).slateTest'),
+      at('packages/editor/src/x.ts', 'export const g = (globalThis as unknown as { x: number }).x'),
+    ],
+    good: [
+      at('packages/desktop/src/renderer/src/x.ts', 'export const api = window.slate'),
+      at('packages/editor/src/x.ts', 'declare const v: { domObserver?: unknown }\nexport const o = (v as unknown as { domObserver?: { flush(): void } }).domObserver'),
+    ],
+  },
   'log-through-logger': {
     bad: [
       at('packages/desktop/src/main/update/index.ts', 'export const log = (m: unknown) => console.error(m)'),

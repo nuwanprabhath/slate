@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { expect, MOD, test } from '../fixtures'
 import type { PrivacyStatus } from '../../src/shared/api'
 import { reviewUi } from './review'
-import { stubInvoke, stubInvokeError } from './states'
+import { stubInvoke } from './states'
 
 async function openPrivacy(p: Page): Promise<void> {
   if (!(await p.getByTestId('settings-dialog').isVisible())) await p.keyboard.press(`${MOD}+,`)
@@ -94,18 +94,33 @@ test('UI: Privacy erase edit history, offered for a page never synced, then done
     await expect(p.getByTestId('privacy-history-confirm')).toBeVisible()
     await p.getByTestId('privacy-history-confirm-yes').click()
     await expect(p.getByTestId('privacy-erase-note')).toContainText('edit history is erased')
+    // The result sits under the action it answers, not under Erase all Slate data.
+    await expect(p.locator('.privacy-erase-row', { has: p.getByTestId('privacy-erase-history') }).getByTestId('privacy-erase-note')).toBeVisible()
   } })
 })
 
-test('UI: Privacy erase edit history refused for a page that was synced', async ({ app, page }) => {
+test('UI: Privacy erase edit history is disabled up front, with the reason, for a page that was synced', async ({ app, page }) => {
   test.setTimeout(300_000)
   await expect(page.getByTestId('canvas')).toBeVisible()
   await page.evaluate(() => window.slate.settings.set({ syncProvider: null }))
-  await stubInvokeError(app, 'privacy:erase-history', 'This page has been synced, so another device may have it. Its edit history can only be erased while it exists on this computer alone.')
+  await stubInvoke(app, 'privacy:history-erase-blocker', 'This page has been synced, so another device may have it. Its edit history can only be erased while it exists on this computer alone.')
   await reviewUi(app, page, 'privacy erase history synced', { scroll, close, open: async (p) => {
     await openPrivacy(p)
-    await p.getByTestId('privacy-erase-history').click()
-    await p.getByTestId('privacy-history-confirm-yes').click()
-    await expect(p.getByTestId('privacy-erase-note')).toContainText('another device may have it')
+    await expect(p.getByTestId('privacy-erase-history')).toBeDisabled()
+    await expect(p.locator('.privacy-erase-row', { has: p.getByTestId('privacy-erase-history') })).toContainText('another device may have it')
+  } })
+})
+
+test('UI: Privacy erase all answered Cancel at main\'s own question says nothing was erased', async ({ app, page }) => {
+  test.setTimeout(300_000)
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await stubInvoke(app, 'privacy:erase-all', false)
+  await reviewUi(app, page, 'privacy erase all cancelled', { scroll, close, open: async (p) => {
+    await openPrivacy(p)
+    await p.getByTestId('privacy-erase-all').click()
+    await p.getByTestId('privacy-all-typed').fill('ERASE')
+    await p.getByTestId('privacy-all-confirm-yes').click()
+    await expect(p.getByTestId('privacy-all-note')).toHaveText('Nothing was erased.')
+    await expect(p.getByTestId('privacy-erase-all')).toBeEnabled()
   } })
 })

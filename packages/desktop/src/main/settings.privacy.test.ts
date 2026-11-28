@@ -48,6 +48,50 @@ describe('GDPR strict mode for existing and fresh installs (§3.1 step 4)', () =
     store.close()
   })
 
+  it('a downgrade to 0.7.14 and back does not grant again what the person withdrew, nor turn strict mode back on (blast radius R2)', () => {
+    const store = tempStore()
+    store.setSetting('settings', { syncProvider: null, updateAutomaticChecks: true })
+    expect(readSettings(store).consents).toEqual({ updates: legacy('updates') })
+    writeSettings(store, { consents: {}, gdprStrictMode: false })
+    // 0.7.14's sanitizePatch keeps only its own keys, so its next settings write drops both.
+    const { gdprStrictMode: _strict, consents: _consents, ...older } = store.getSetting<Record<string, unknown>>('settings')!
+    store.setSetting('settings', { ...older, fontSize: 15 })
+    const again = readSettings(store)
+    expect(again.consents).toEqual({})
+    expect(again.gdprStrictMode).toBe(false)
+    expect(store.getSetting<Record<string, unknown>>('settings')).toMatchObject({ gdprStrictMode: false, consents: {} })
+    // A grant made since is what comes back after the next round trip.
+    writeSettings(store, { consents: { updates: { grantedAt: 5, textVersion: DISCLOSURES.updates.textVersion, source: 'user' } } })
+    const { gdprStrictMode: _s2, consents: _c2, ...older2 } = store.getSetting<Record<string, unknown>>('settings')!
+    store.setSetting('settings', older2)
+    expect(readSettings(store).consents).toEqual({ updates: { grantedAt: 5, textVersion: DISCLOSURES.updates.textVersion, source: 'user' } })
+    store.close()
+  })
+
+  it('an install 0.8.0 migrated keeps a copy of its choices from its first read, so a later downgrade cannot undo them', () => {
+    const store = tempStore()
+    store.setSetting('settings', { updateAutomaticChecks: true, gdprStrictMode: false, consents: {} })
+    expect(readSettings(store).gdprStrictMode).toBe(false)
+    const { gdprStrictMode: _s, consents: _c, ...older } = store.getSetting<Record<string, unknown>>('settings')!
+    store.setSetting('settings', older)
+    expect(readSettings(store)).toMatchObject({ gdprStrictMode: false, consents: {} })
+    store.close()
+  })
+
+  it('a withdrawal made by 0.8.0 or 0.8.1 (which keep no copy) is what a later downgrade and upgrade restores (security review of correct)', () => {
+    const store = tempStore()
+    const granted = { updates: { grantedAt: 5, textVersion: DISCLOSURES.updates.textVersion, source: 'user' as const } }
+    writeSettings(store, { gdprStrictMode: true, consents: granted })
+    // 0.8.1 withdraws: it rewrites only the settings row.
+    store.setSetting('settings', { ...store.getSetting<Record<string, unknown>>('settings')!, consents: {} })
+    expect(readSettings(store).consents).toEqual({})
+    // 0.7.14 then drops both keys from the row.
+    const { gdprStrictMode: _s, consents: _c, ...older } = store.getSetting<Record<string, unknown>>('settings')!
+    store.setSetting('settings', older)
+    expect(readSettings(store).consents).toEqual({})
+    store.close()
+  })
+
   it('OneDrive sync keeps its sign-in, and a vault means no plaintext-sync grant', () => {
     setLegacyPrivacyContext({ encrypted: () => true })
     const store = tempStore()

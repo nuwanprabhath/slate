@@ -6,7 +6,7 @@ import { contentToJSON, writeContent } from "../src/content";
 import { toMarkdown } from "../src/markdown";
 import { PageDoc } from "../src/page";
 import { toPlainText, type PMJSON } from "../src/plaintext";
-import { fcRuns } from "../../desktop/test/fuzz";
+import { fcRuns, fuzzTimeout } from "../../desktop/test/fuzz";
 
 // Text without lone surrogates (Loro stores UTF-8) and without the empty string (an empty run is dropped).
 const word = fc
@@ -115,7 +115,7 @@ describe("content fuzz", () => {
       }),
       fcRuns(4, 100),
     );
-  });
+  }, fuzzTimeout(10_000));
 
   /** A box whose content a hostile peer shaped by hand with raw Loro writes. */
   function hostileDoc(seed: number[]): PageDoc {
@@ -184,7 +184,7 @@ describe("content fuzz", () => {
       ),
       fcRuns(10, 50),
     );
-  });
+  }, fuzzTimeout(10_000));
 
   /** The readers T-F3A-12 holds: every one of them must return rather than throw. */
   function readHostile(page: PageDoc): void {

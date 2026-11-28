@@ -301,6 +301,30 @@ export const SANCTIONED = [
       'A double cast to Buffer, Uint8Array, ArrayBuffer or KeyBytes would unwrap an opaque KeyRing key (red team G2-5). Use `withKeyBytes(key, (bytes) => …)` from src/main/vault/keyring.ts, or give the value its real type.',
   },
 
+  // Known limit (as with every syntax rule here, see CLAUDE.md "Residual risk"): a name built at run time passes,
+  // e.g. `Reflect.get(window, 'slate' + 'Test')` or a computed key from a variable. Review catches those.
+  {
+    name: 'renderer-test-hooks-in-one-file',
+    kind: 'syntax',
+    files: [...RENDERER, ...EDITOR],
+    ignores: TESTS,
+    selectors: ["Identifier[name='slateTest']", "Literal[value='slateTest']"],
+    allow: ['packages/desktop/src/renderer/src/testHooks.ts'],
+    description: 'window.slateTest only in src/renderer/src/testHooks.ts.',
+    message:
+      'Ask through a function exported from src/renderer/src/testHooks.ts (as `firstRunSuppressedForTests` does), which owns the typed `window.slateTest` (`SlateTestHooks`): product code then never depends on a test hook\'s shape, and the hooks stay in one file (golden-paths "A test hook").',
+  },
+  {
+    name: 'no-window-double-cast',
+    kind: 'syntax',
+    files: [...RENDERER, ...EDITOR],
+    ignores: TESTS,
+    selectors: ["TSAsExpression[expression.type='TSAsExpression'][expression.expression.type='Identifier'][expression.expression.name=/^(window|globalThis|self)$/]"],
+    description: 'No `window as unknown as …` in renderer code.',
+    message:
+      'Declare the property on `Window` with `declare global { interface Window { … } }` (src/renderer/src/env.d.ts for `slate`, testHooks.ts for `slateTest`) and read it typed: a double cast lets each caller invent its own shape of the same object.',
+  },
+
   // ── 3. IPC has one door ────────────────────────────────────────────────────────────────────────
   {
     name: 'ipc-through-registrar',
@@ -755,5 +779,21 @@ export const SANCTIONED = [
     description: 'No console in main; use the logger.',
     message:
       "Use `log.info/warn/error(scope, message, fields)` from src/main/log/logger.ts (or a `ScopedLog` passed in): it redacts paths and credentials and is off unless the user turns it on. console output lands in terminals and crash reports unredacted.",
+  },
+
+  // ── 11. Loading Loro documents ─────────────────────────────────────────────────────────────────
+  // Known limit: spellings that reach the method without naming it as a member pass, e.g. a template-literal key
+  // (doc[`importBatch`]), a destructuring (({ importBatch }) => importBatch)(doc), or Reflect.get. Review catches those.
+  {
+    name: 'loro-loads-through-import-parts',
+    kind: 'syntax',
+    files: ALL_SRC,
+    ignores: TESTS,
+    selectors: ["MemberExpression[property.name='importBatch']", "MemberExpression[computed=true][property.value='importBatch']"],
+    allow: ['packages/core/src/importParts.ts'],
+    description: "Loro's importBatch only in packages/core/src/importParts.ts.",
+    message:
+      "Load a doc's stored or received parts with `importParts(doc, parts)` from `@slate/core` (packages/core/src/importParts.ts). " +
+      "Loro 1.17's importBatch drops a shallow snapshot that is not first in the batch, so an erased page stored after its chunks read empty (v0.8 blast radius R1).",
   },
 ]

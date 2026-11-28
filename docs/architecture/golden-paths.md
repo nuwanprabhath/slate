@@ -113,6 +113,12 @@ obey goes in `APP_ENV_VARS` and, with its reason, in `tools/guards/allowlists/en
 (`tools/guards/envVars.test.ts`); a platform variable goes in `PLATFORM_ENV_VARS`. A pure function that takes an `env`
 record gets `envSnapshot()` (only the documented names), never `process.env`. Copy `SLATE_TEST_IDLE_MS`.
 
+In the renderer, e2e hooks live on `window.slateTest`, typed by `SlateTestHooks` in
+`src/renderer/src/testHooks.ts`, the only file that touches it (`slate/renderer-test-hooks-in-one-file`).
+Product code that must behave differently under a hook asks a function exported from that file
+(copy `firstRunSuppressedForTests`). Never cast `window` (`slate/no-window-double-cast`): declare the
+property on `Window`.
+
 ## A dependency
 
 Add it to the right `package.json` with an exact or caret registry version, and add a line with the
@@ -189,8 +195,11 @@ home):
    `textVersion`, so older grants stop counting and the person is asked again.
 2. Gate it at the call, in the file that makes the request: `requireConsent('<feature>')` before a
    user-started call, `allowed('<feature>')` (or `egressAllowed(settings, '<feature>')`) before a
-   background one. Copy `src/main/onenote/auth.ts`. In the renderer, an error named `ConsentRequired`
-   opens `ConsentDialog`. A one-off request per click (a link opened in the browser) needs no feature,
+   background one. Copy `src/main/onenote/auth.ts`. Gate every path to the sink, not just one: a new
+   public method of `SyncService` or an auth service that can reach the network gets a row in the
+   consent tables of `main/sync/syncPrivacy.test.ts` or `main/onenote/auth.privacy.test.ts`, which call
+   it with the consent withdrawn. In the renderer, an error named `ConsentRequired` opens
+   `ConsentDialog` (`withSyncConsent` in Sync settings, `withConsent` elsewhere). A one-off request per click (a link opened in the browser) needs no feature,
    and something that cannot reach a remote host is neither.
 3. The maintainer lists the file in `tools/guards/allowlists/egress.json` with its feature
    (`tools/guards/egress.test.ts` finds every sink file and checks the gate is in its source; a file
@@ -203,7 +212,10 @@ home):
 (what it holds, how long it is kept, what prunes it), and cover it in Settings → Privacy's export
 (`main/privacy/export.ts`) and erase (`main/privacy/erase.ts`); prune by age in
 `main/privacy/retention.ts` if it grows. `privacyNotice.test.ts` checks every `CREATE TABLE` under
-`src/main` against the retention section.
+`src/main` against the retention section, whose Export column says "exported" (the table is a key of
+`EXPORTED_TABLES` in `export.ts`) or "not exported: <why>". `eraseCoverage.test.ts` checks that every name main writes into
+the data folder (a `*_FILE` constant, a literal joined onto `dataDir`/`userData`, a migration's temp copy)
+is one `erasableNames` removes, or is excluded there with a reason; give a new file a `*_FILE` constant.
 
 **Device names:** never read the machine's or the person's identity from the OS: no `os.hostname()`,
 `os.userInfo()` or `os.networkInterfaces()` in the main process (`slate/no-personal-identifiers`;
@@ -218,7 +230,9 @@ A stateless property goes in `<subject>Fuzz.test.ts`, a state machine in `<subje
 titles starting `T-<task>-<nn>:`. Take runs and the seed from the kit in `packages/desktop/test/fuzz.ts`:
 `fc.assert(prop, fcParams)`, or `fcRuns(divisor)` when one run is expensive. Never read `process.env`,
 `Math.random` or `Date.now` for a seed; CI pins `0x51a7e`, and the nightly soak sets `SLATE_FUZZ_SEED`,
-`SLATE_FUZZ_RUNS` and `SLATE_SIM_RUNS` through the kit. Time oracles are ratios (`relativeCost`).
+`SLATE_FUZZ_RUNS` and `SLATE_SIM_RUNS` through the kit. Time oracles are ratios (`relativeCost`). The
+test names its deadline with `fuzzTimeout(msPer1000Runs)` (its last argument, or `{ timeout: … }`), which
+grows with the soak's run count; vitest's 5 s default is outlasted under load.
 
 Byte inputs that once broke a parser live in `packages/<pkg>/test/corpus/<target>/`, each named by the
 first 16 hex of the SHA-256 of its own bytes plus an extension, at most 64 KiB, the folder at most 1 MiB,

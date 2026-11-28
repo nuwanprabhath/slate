@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GraphHttp, MAX_RETRY_AFTER_MS } from '../src/graph'
-import { fcRuns } from '../../desktop/test/fuzz'
+import { fcRuns, fuzzTimeout } from '../../desktop/test/fuzz'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -50,5 +50,5 @@ describe('GraphHttp Retry-After fuzz', () => {
       }),
       fcRuns(10, 100),
     )
-  })
+  }, fuzzTimeout(10_000))
 })

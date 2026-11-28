@@ -114,6 +114,8 @@ export function createAuthService(opts: {
       await store.clear()
     },
     async token(scopes) {
+      // A silent refresh reaches Microsoft too, with the cached refresh token: after a withdrawal it must not.
+      requireConsent('microsoftSignIn')
       const a = await account()
       if (a) {
         try {

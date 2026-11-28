@@ -102,7 +102,7 @@ export function AppearanceSection({ settings, patch }: SectionProps) {
       />
       {claude && <ThemeDescribe onSaved={choose} />}
       {!claude && needsConsent && (
-        <div className="settings-stack" data-testid="theme-describe-consent">
+        <div className="settings-field" data-testid="theme-describe-consent">
           <button type="button" className="btn" data-testid="theme-describe-ask" onClick={describeWithClaude}>
             Describe a theme with Claude…
           </button>

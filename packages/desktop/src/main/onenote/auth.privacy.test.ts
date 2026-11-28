@@ -6,7 +6,8 @@ import { DEFAULT_SETTINGS } from '../../shared/settings/schema'
 import { DISCLOSURES } from '../../shared/privacy/consent'
 import { ConsentRequired, setPrivacySource } from '../privacy/gate'
 import { createSecretStorage, secretFile } from '../secretStorage'
-import { createAuthService, encryptedCachePlugin, IMPORT_SCOPES, SIGN_IN_SCOPES } from './auth'
+import { PublicClientApplication } from '@azure/msal-node'
+import { createAuthService, encryptedCachePlugin, IMPORT_SCOPES, SIGN_IN_SCOPES, type AuthService } from './auth'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -78,5 +79,55 @@ describe('Microsoft sign-in privacy (GDPR-10, GDPR-06)', () => {
     const auth = createAuthService({ clientId: 'id', cacheFile: file, openBrowser: vi.fn(), fake: false, secrets: keyring })
     await auth.signOut()
     expect(existsSync(file)).toBe(false)
+  })
+})
+
+/**
+ * Security review (v0.8): only the browser sign-in asked for microsoftSignIn, so after a withdrawal a silent refresh
+ * still went to login.microsoftonline.com with the cached refresh token, and an import read Graph with it. Every
+ * method that can reach Microsoft refuses without the consent, signed in or not.
+ */
+describe('every Microsoft auth method that reaches the network refuses without microsoftSignIn', () => {
+  const signedInAccount = { homeAccountId: 'h', environment: 'login.microsoftonline.com', tenantId: 't', username: 'me@example.com', localAccountId: 'l' }
+  const reaches: Record<string, (auth: AuthService) => Promise<unknown>> = {
+    'signIn()': (auth) => auth.signIn(),
+    'token() for an import': (auth) => auth.token(IMPORT_SCOPES),
+    'token() for OneDrive sync': (auth) => auth.token(SIGN_IN_SCOPES),
+  }
+
+  /** The auth service's other methods, and why they reach nothing: with `reaches`, they must name every key it has. */
+  const local: Record<string, string> = {
+    status: "reads the accounts in MSAL's local token cache",
+    signOut: 'removes the cached accounts and deletes the cache file on this computer',
+  }
+
+  it('reaches and its reasoned exceptions name every method the auth service has, so a new one cannot be missed', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'slate-authp-'))
+    dirs.push(dir)
+    const keys = Object.keys(createAuthService({ clientId: 'id', cacheFile: join(dir, 'msal.bin'), openBrowser: vi.fn(), fake: false, secrets: keyring })).sort()
+    const named = new Set([...Object.keys(reaches).map((r) => r.slice(0, r.indexOf('('))), ...Object.keys(local)])
+    expect(keys.filter((k) => !named.has(k)).map((k) => `auth.${k}: add a row to reaches calling it with microsoftSignIn withdrawn, or a reason in local`)).toEqual([])
+    expect([...named].filter((k) => !keys.includes(k))).toEqual([])
+  })
+
+  it.each(Object.entries(reaches))('%s, signed in, after the consent was withdrawn', async (name, reach) => {
+    const dir = mkdtempSync(join(tmpdir(), 'slate-authp-'))
+    dirs.push(dir)
+    const silent = vi.spyOn(PublicClientApplication.prototype, 'acquireTokenSilent').mockResolvedValue({ accessToken: 'refreshed' } as never)
+    const cache = vi.spyOn(PublicClientApplication.prototype, 'getTokenCache').mockReturnValue({ getAllAccounts: async () => [signedInAccount] } as never)
+    try {
+      setPrivacySource(() => ({ ...DEFAULT_SETTINGS, gdprStrictMode: true, consents: {} }))
+      const openBrowser = vi.fn()
+      const auth = createAuthService({ clientId: 'id', cacheFile: join(dir, 'msal.bin'), openBrowser, fake: false, secrets: keyring })
+      await expect(reach(auth), name).rejects.toMatchObject({ name: 'ConsentRequired', feature: 'microsoftSignIn' })
+      expect(silent, `${name} refreshed the token silently`).not.toHaveBeenCalled()
+      expect(openBrowser).not.toHaveBeenCalled()
+      // Granted again, the silent refresh is what token() uses.
+      consent('microsoftSignIn')
+      if (name.startsWith('token')) expect(await reach(auth)).toBe('refreshed')
+    } finally {
+      silent.mockRestore()
+      cache.mockRestore()
+    }
   })
 })

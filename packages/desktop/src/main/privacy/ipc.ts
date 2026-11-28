@@ -1,7 +1,6 @@
 /**
- * The privacy channels (GDPR review §3.1 step 6-7): consent grants and withdrawals, which A implements
- * here against the settings, and the data-rights and retention backends (workstreams E and D). Every
- * channel is `unlocked`: nothing here is served while an encrypted vault is locked.
+ * The privacy channels (GDPR review §3.1 step 6-7): consent grants and withdrawals against the settings,
+ * and the data-rights and retention backends. Every channel is `unlocked`: nothing here is served while an encrypted vault is locked.
  */
 import type { PrivacyStatus } from '../../shared/api'
 import { CH } from '../../shared/ipc'
@@ -23,7 +22,6 @@ export interface ConsentOps {
 export interface PrivacyDeps extends ConsentOps {
   dataRights: DataRights
   retention: Retention
-  /** `services().sync`; C replaces the `forget` stub. */
   sync: () => { forget(): Promise<void> }
 }
 
@@ -68,6 +66,10 @@ export function registerPrivacyIpc(ipc: IpcRegistrar, deps: PrivacyDeps): void {
   ipc.handle(CH.privacyPurge, (_e, scope: unknown) => {
     if (!isPurgeScope(scope)) refuse(CH.privacyPurge)
     return deps.retention.purge(scope)
+  })
+  ipc.handle(CH.privacyHistoryEraseBlocker, (_e, docId: unknown) => {
+    if (!isDocId(docId)) refuse(CH.privacyHistoryEraseBlocker)
+    return deps.dataRights.historyEraseBlocker(docId)
   })
   ipc.handle(CH.privacyEraseHistory, (_e, docId: unknown) => {
     if (!isDocId(docId)) refuse(CH.privacyEraseHistory)

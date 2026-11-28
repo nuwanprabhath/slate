@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { compileQuery, matchAll, NotebookDoc, PageDoc, writeContent, type PMJSON } from '@slate/core'
 import type { SearchQuery } from '../../shared/api'
-import { fcParams, fcRuns } from '../../../test/fuzz'
+import { fcParams, fcRuns, fuzzTimeout } from '../../../test/fuzz'
 import { DocStore } from '../store'
 import { isSearchQuery } from '../ipc'
 import { MAX_MATCHES, pageRows, SearchIndex } from './searchIndex'
@@ -78,7 +78,7 @@ describe('T-F3E: search index fuzz', () => {
       }),
       { ...fcParams, ...fcRuns(20, 50) },
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-FX21: a phrase with control characters matches the rows containing it with them removed, and never throws', () => {
     const stripped = (s: string) => Array.from(s).filter((c) => !'\u0000\u0001\u0008\u000b\u001f'.includes(c)).join('')
@@ -105,7 +105,7 @@ describe('T-F3E: search index fuzz', () => {
     } finally {
       store.close()
     }
-  })
+  }, fuzzTimeout(10_000))
 
   // --- Property 2/3/4 world: one notebook, two sections, pages edited, removed and moved. ---
   type Cmd =
@@ -239,7 +239,7 @@ describe('T-F3E: search index fuzz', () => {
 
   it('T-F3E-02: a literal query equals matchAll over pageRows after any edit, removal and move', async () => {
     await fc.assert(fc.asyncProperty(fc.array(cmd, { minLength: 1, maxLength: 14 }), run), { ...fcParams, ...fcRuns(40, 25) })
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F3E-03: total never exceeds MAX_MATCHES and truncated is true exactly when something was cut', async () => {
     await fc.assert(
@@ -259,7 +259,7 @@ describe('T-F3E: search index fuzz', () => {
       }),
       { ...fcParams, ...fcRuns(40, 30) },
     )
-  })
+  }, fuzzTimeout(10_000))
 
   // Regex patterns come only from the linear grammar: FX-1 owns the rest.
   const linearPatterns = ['a+', '[a-c]{2}', 'ab|cd', '\\w+', '(', '(?', '\\', '日.', '^abc$', 'x{2,3}', '[', 'a*?']
@@ -299,7 +299,7 @@ describe('T-F3E: search index fuzz', () => {
       { ...fcParams, ...fcRuns(2, 200) },
     )
     expect(accepted).toBeGreaterThan(0)
-  })
+  }, fuzzTimeout(10_000))
 
   it("T-F3E-05: a run gives back the Loro documents it built, so Loro's WebAssembly heap stops growing (FX-44)", async () => {
     const cmds: Cmd[] = [

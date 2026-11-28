@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LoroDoc } from 'loro-crdt'
-import { eraseDocHistory, eraseEverything, erasableNames, historyEraseBlocker, HistoryEraseUnavailable, historyStore, HistoryWasSynced, loadersReadShallowHistory, SYNC_CARRIES_ERASED_HISTORY, SyncIsOn, type EraseAllSteps, type HistoryStore } from './erase'
+import { eraseDocHistory, eraseEverything, erasableNames, historyEraseBlocker, HistoryEraseUnavailable, HistoryWasSynced, loadersReadShallowHistory, SyncIsOn, type EraseAllSteps, type HistoryStore } from './erase'
 
 const dirs: string[] = []
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
 const MARKER = 'ERASED-MARKER-7f3a'
 const has = (bytes: Uint8Array, text: string) => Buffer.from(bytes).includes(text)
 
-/** A fake of workstream D's store methods, holding rows as `DocStore` does: snapshot first, then updates. */
+/** A fake of the `DocStore` methods an erase uses, holding rows as `DocStore` does: snapshot first, then updates. */
 function fakeStore(rows: Uint8Array[], synced = false): HistoryStore & { rows: Uint8Array[]; calls: string[] } {
   const calls: string[] = []
   return {
@@ -84,7 +84,6 @@ describe('eraseDocHistory (GDPR-04)', () => {
   })
 
   it('is not blocked by the build: sync carries a page erased before it ever synced (packages/sync/test/erasedHistory.test.ts)', () => {
-    expect(SYNC_CARRIES_ERASED_HISTORY).toBe(true)
     expect(historyEraseBlocker()).toBeNull()
     const store = fakeStore(typedThenDeleted())
     eraseDocHistory(store, 'page:x', false, () => {})
@@ -95,14 +94,6 @@ describe('eraseDocHistory (GDPR-04)', () => {
     const store = fakeStore(typedThenDeleted(), true)
     expect(() => eraseDocHistory(store, 'page:x', false, () => {})).toThrow(HistoryWasSynced)
     expect(store.calls).toEqual([])
-  })
-
-  it('needs workstream D’s store methods, and says so on a store without them', () => {
-    expect(() => historyStore({ load: () => [] })).toThrow(HistoryEraseUnavailable)
-    const { wasSynced: _, ...noSyncCheck } = fakeStore([])
-    expect(() => historyStore(noSyncCheck)).toThrow(HistoryEraseUnavailable)
-    const full = fakeStore([])
-    expect(historyStore(full)).toBe(full)
   })
 
   it('is refused while sync is on, and touches nothing', () => {
@@ -131,8 +122,18 @@ describe('erasableNames', () => {
     expect(erasableNames(entries, null)).toContain('fips')
   })
 
+  it('names a crashed migration\'s temp copies of a database, which may be plaintext notes', () => {
+    const temps = ['slate-0a1b2c3d.db.tmp', 'slate-0a1b2c3d.db.enc.tmp', 'slate-0a1b2c3d.db.tmp-wal', 'slate-0a1b2c3d.db.enc.tmp-journal']
+    expect(erasableNames([...temps, 'slate-0a1b2c3d.db.tmpx', 'slate.db.bak'], 'standard')).toEqual(temps)
+  })
+
   it('names the updater\'s pending-download sidecar, which holds the download\'s path in the home folder', () => {
     expect(erasableNames(['update-result.json.download', 'update-result.json.downloadx'], 'standard')).toEqual(['update-result.json.download'])
+  })
+
+  it('names the temp copies a migration or rejoin left mid-way (the first is a plaintext copy of the notes), which no start removes once the vault files are gone', () => {
+    const temps = ['slate-0a1b2c3d.db.tmp', 'slate-0a1b2c3d.db.tmp-journal', 'slate-0a1b2c3d.db.tmp-wal', 'slate-0a1b2c3d.db.tmp-shm', 'slate-0a1b2c3d.db.enc.tmp']
+    expect(erasableNames([...temps, 'slate-0a1b2c3d.db.tmpx', 'slate-0a1b2c3d.db.bak'], 'standard').sort()).toEqual([...temps].sort())
   })
 })
 
@@ -169,6 +170,22 @@ describe('eraseEverything (GDPR-06, GDPR-18)', () => {
     expect(report.failed).toEqual([])
     expect(readdirSync(d).sort()).toEqual(['Local Storage', 'Preferences', 'slate.lock'])
     expect(report.removed.sort()).toEqual(['blobs', 'git-sync', 'logs', 'msal-cache.bin', 'slate.db', 'slate.db-wal', 'vault.json'])
+  })
+
+  it('deletes a symlink in the data folder, never what it points at, also one inside blobs/', async () => {
+    const d = dataDir()
+    const outside = mkdtempSync(join(tmpdir(), 'slate-erase-outside-'))
+    dirs.push(outside)
+    writeFileSync(join(outside, 'mine.txt'), 'not Slate\'s')
+    rmSync(join(d, 'logs'), { recursive: true })
+    symlinkSync(outside, join(d, 'logs'))
+    symlinkSync(outside, join(d, 'blobs', 'linked'))
+    symlinkSync(join(outside, 'mine.txt'), join(d, 'blobs', 'file-link'))
+    const report = await eraseEverything(steps(d, []))
+    expect(report.failed).toEqual([])
+    expect(existsSync(join(d, 'logs'))).toBe(false)
+    expect(existsSync(join(d, 'blobs'))).toBe(false)
+    expect(readdirSync(outside)).toEqual(['mine.txt'])
   })
 
   it('is best-effort: a failing step is reported by name and the rest still run', async () => {

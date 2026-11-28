@@ -69,6 +69,7 @@ export const SCHEMA: { [K in keyof Settings]: SettingDef<Settings[K]> } = {
   quickUnlock: { default: false, sanitize: bool },
   gdprStrictMode: { default: true, sanitize: bool },
   consents: { default: {}, sanitize: sanitizeConsents },
+  firstRunPrivacySeen: { default: false, sanitize: bool },
 }
 
 const KEYS = Object.keys(SCHEMA) as Array<keyof Settings>
@@ -88,8 +89,15 @@ export function sanitizePatch(patch: Record<string, unknown>, options: SanitizeO
 }
 
 /** Stored values over the defaults; a bad stored value falls back to its default. */
+/** Where builds before 0.8.2 kept the first-run card's answer: inside the activity-bar plugins' bag. */
+const OLD_FIRST_RUN_KEY = 'firstRunPrivacy'
+
 export function mergeSettings(stored: Record<string, unknown>, options: RemoteOptions = STRICT): Settings {
-  return { ...DEFAULT_SETTINGS, ...sanitizePatch(stored, options) }
+  const merged: Settings = { ...DEFAULT_SETTINGS, ...sanitizePatch(stored, options) }
+  if (!(OLD_FIRST_RUN_KEY in merged.plugins)) return merged
+  // Carried over once read: the answer becomes its own setting, and the plugins' bag is theirs again.
+  const { [OLD_FIRST_RUN_KEY]: old, ...plugins } = merged.plugins
+  return { ...merged, plugins, firstRunPrivacySeen: stored.firstRunPrivacySeen === undefined ? old === 'seen' : merged.firstRunPrivacySeen }
 }
 
 /**

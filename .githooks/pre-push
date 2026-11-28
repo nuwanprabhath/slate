@@ -3,7 +3,26 @@
 # by the maintainer's signed confirmation, and every guard-file change confirmed. The check is the
 # main checkout's copy, never the pushing branch's own (red team final F-4).
 main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-node "$main/scripts/agents/check-push.mjs" || exit 1
+refs=$(cat)
+echo "$refs" | node "$main/scripts/agents/check-push.mjs" || exit 1
+# A release tag waits, first and quickest, for CI to have passed on the commit it tags (the release
+# workflow repeats CI's checks and publishes nothing if they fail), then for the quality skills owed a
+# run (docs/quality-cadence.json): the security review, blast-radius, ui-review's screenshot pass, nightly
+# triage and the rest. SLATE_CADENCE_DEFER="<reason>" lets an urgent hotfix through; only the maintainer
+# sets it. Again the main checkout's copies (tools/guards/quality-cadence.mjs).
+for sha in $(echo "$refs" | awk '$3 ~ /^refs\/tags\/v/ { print $2 }'); do
+  commit=$(git rev-parse "$sha^{commit}")
+  node "$main/tools/guards/release-ci-gate.mjs" "$commit" || exit 1
+  if [ -n "${SLATE_CADENCE_DEFER:-}" ]; then
+    echo "pre-push: quality skills deferred for this release: $SLATE_CADENCE_DEFER"
+  else
+    node "$main/tools/guards/quality-cadence.mjs" check "$commit" || exit 1
+  fi
+done
+# A push to main says which skills are owed, without refusing it.
+if echo "$refs" | awk '$3 == "refs/heads/main" { found = 1 } END { exit !found }'; then
+  node "$main/tools/guards/quality-cadence.mjs" status || true
+fi
 # Tests make git repositories of their own: git's variables for this push (GIT_DIR, set when the
 # push comes from a worktree) would point their git commands at this repository instead.
 unset $(git rev-parse --local-env-vars)

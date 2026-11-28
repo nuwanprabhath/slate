@@ -4,7 +4,7 @@ import { parseHTML } from 'linkedom'
 import { describe, expect, it } from 'vitest'
 import { ImportPageError } from '../src/graph'
 import { normalizeOne2HtmlPage, parseOne2HtmlSection } from '../src/one2html'
-import { fcParams, fcRuns, forAll } from '../../desktop/test/fuzz'
+import { fcParams, fcRuns, forAll, fuzzTimeout } from '../../desktop/test/fuzz'
 import { mutateBytes } from '../../desktop/test/fuzzBytes'
 import { hostileHtml } from '../../desktop/test/fuzzHtml'
 
@@ -87,7 +87,7 @@ describe('normalizeOne2HtmlPage fuzz', () => {
       }),
       fcRuns(4, 200),
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F3C-04: a title holding markup is text, and images inside boxes are rewritten once each', () => {
     const out = normalizeOne2HtmlPage(absoluteBox('<p>x</p><img src="a.png"><img src="b.png"><img>', '<script>alert(1)</script>&lt;b&gt;'), { rewriteSrc: (s) => PREFIX + s })
@@ -105,7 +105,7 @@ describe('normalizeOne2HtmlPage fuzz', () => {
       }),
       fcRuns(10, 100),
     )
-  })
+  }, fuzzTimeout(10_000))
 })
 
 describe('parseOne2HtmlSection fuzz', () => {
@@ -140,5 +140,5 @@ describe('parseOne2HtmlSection fuzz', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 })

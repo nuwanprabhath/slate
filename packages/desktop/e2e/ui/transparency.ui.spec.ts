@@ -34,6 +34,9 @@ test('UI: Updates section names the recipient; ticking automatic asks for consen
   await expect(section).toContainText('GitHub, Inc. (USA)')
   await expect(section.getByTestId('setting-update-automatic')).not.toBeChecked()
   await reviewUi(app, page, 'updates section strict', { open: async (p) => expect(p.getByTestId('updates-section')).toBeVisible() })
+  // The help under the checkbox sits on its label's edge (.settings-indent), not on the box's.
+  const left = (sel: string) => section.locator(sel).first().evaluate((el) => el.getBoundingClientRect().left)
+  expect((await left('.updates-help')) - (await left('[data-testid="setting-update-automatic"]'))).toBeGreaterThanOrEqual(20)
   await section.getByTestId('setting-update-automatic').click()
   await expect(dialog(page)).toBeVisible()
   await page.keyboard.press('Escape')
@@ -63,7 +66,14 @@ test('UI: Appearance offers Describe a theme with Claude before any consent; Esc
   const ask = page.getByTestId('theme-describe-ask')
   await expect(ask).toBeVisible()
   await expect(page.getByTestId('theme-describe-consent')).toContainText('Anthropic')
-  await reviewUi(app, page, 'appearance describe with claude', { open: async (p) => expect(p.getByTestId('theme-describe-ask')).toBeVisible() })
+  await reviewUi(app, page, 'appearance describe with claude', {
+    scroll: '[data-testid="settings-body"]',
+    open: async (p) => expect(p.getByTestId('theme-describe-ask')).toBeVisible(),
+  })
+  // The note sits under its button like any control's help, not a stack gap away.
+  const box = (id: string) => page.getByTestId(id).evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect)
+  const help = await page.getByTestId('theme-describe-consent').locator('.settings-help').evaluate((el) => el.getBoundingClientRect().top)
+  expect(help - (await box('theme-describe-ask')).bottom).toBeLessThanOrEqual(6)
   await ask.click()
   await expect(dialog(page)).toContainText('Anthropic')
   await page.keyboard.press('Escape')
@@ -141,4 +151,42 @@ test('Connect AI agents says what the provider may receive', async ({ app, page 
   await expect(page.getByTestId('connect-agents-provider')).toHaveText('Agents you connect may send what they read to their provider (for Claude Code: Anthropic).')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('connect-agents')).toHaveCount(0)
+})
+
+test('UI: Import names Microsoft before Sign in, and Connect AI agents names the provider', async ({ app, page }) => {
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await stubInvoke(app, 'onenote:status', { configured: true, signedIn: false })
+  await reviewUi(app, page, 'import dialog sign in', {
+    open: async (p) => {
+      if ((await p.getByTestId('import-dialog').count()) === 0) {
+        await expect(async () => {
+          await clickMenu(app, 'import-onenote')
+          await expect(p.getByTestId('import-dialog')).toBeVisible({ timeout: 1000 })
+        }).toPass({ timeout: 15_000 })
+      }
+      await expect(p.getByTestId('import-sign-in')).toBeVisible()
+    },
+    close: async (p) => {
+      await p.keyboard.press('Escape')
+      await expect(p.getByTestId('import-dialog')).toHaveCount(0)
+    },
+  })
+  await reviewUi(app, page, 'connect agents provider', {
+    open: async (p) => {
+      if ((await p.getByTestId('connect-agents').count()) === 0) {
+        await expect(async () => {
+          await clickMenu(app, 'connect-agents')
+          await expect(p.getByTestId('connect-agents')).toBeVisible({ timeout: 1000 })
+        }).toPass({ timeout: 15_000 })
+      }
+      await expect(p.getByTestId('connect-agents-provider')).toBeVisible()
+      // Secondary lines' text starts on the dialog's text edge, like the line above them.
+      const left = (l: ReturnType<Page['locator']>) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft))
+      expect(await left(p.getByTestId('connect-agents-provider'))).toBe(await left(p.getByTestId('connect-agents').locator('p').first()))
+    },
+    close: async (p) => {
+      await p.keyboard.press('Escape')
+      await expect(p.getByTestId('connect-agents')).toHaveCount(0)
+    },
+  })
 })

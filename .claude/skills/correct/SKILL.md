@@ -71,3 +71,9 @@ skill delete the prose.
 
 **Reply:** each class with its evidence (commit, review, brief item), the level chosen and why a
 higher one did not work, the check, and the output showing it failing on the real mistake.
+
+## Record the run
+
+When every finding since the last run is corrected or explicitly left (with the reason), record it: `node tools/guards/quality-cadence.mjs done correct`, committed with the run's work. That
+resets its count in `docs/quality-cadence.json`. A release tag is refused while a skill is owed a run
+(`.githooks/pre-push`), and each session starts by saying which are (`tools/guards/quality-cadence.mjs`).

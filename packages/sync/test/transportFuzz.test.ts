@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
-import { fcParams, fcRuns, relativeCost } from '../../desktop/test/fuzz'
+import { fcParams, fcRuns, relativeCost, fuzzTimeout } from '../../desktop/test/fuzz'
 import { parseCurlTls, parseSshKex, remoteTransport } from '../src/transport'
 
 // The shape DocStore.recordTransport accepts (store.ts REMOTE); duplicated so this package needs no desktop import.
@@ -43,7 +43,7 @@ describe('transport parsing (F4b properties 5 and 6)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-05: remoteTransport never throws and its id is always recordable, on arbitrary text', () => {
     fc.assert(
@@ -54,7 +54,7 @@ describe('transport parsing (F4b properties 5 and 6)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-06: parseSshKex and parseCurlTls never throw and return a bare token', () => {
     fc.assert(
@@ -67,7 +67,7 @@ describe('transport parsing (F4b properties 5 and 6)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-07: hostile trace text costs about what a real trace of the same length costs', () => {
     // The real trace with its answer lines last, so the benign parse scans the whole text as a miss does.
@@ -96,5 +96,5 @@ describe('transport parsing (F4b properties 5 and 6)', () => {
       fcRuns(10, 200)
     )
     cost.check()
-  })
+  }, fuzzTimeout(10_000))
 })

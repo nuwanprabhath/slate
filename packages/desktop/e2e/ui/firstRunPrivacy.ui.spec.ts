@@ -7,7 +7,8 @@ import { stubInvoke } from './states'
 const card = (page: Page) => page.getByTestId('first-run-privacy')
 const show = (page: Page) => page.evaluate(() => (window as unknown as { slateTest: { showFirstRunPrivacy(): void } }).slateTest.showFirstRunPrivacy())
 const status = (page: Page) => page.evaluate(() => window.slate.privacy.status()) as Promise<PrivacyStatus>
-const plugins = (page: Page) => page.evaluate(() => window.slate.settings.get().then((s) => s.plugins))
+/** The card's answer is its own setting; the plugins' bag no longer holds it. */
+const answered = (page: Page) => page.evaluate(() => window.slate.settings.get().then((s) => ({ seen: s.firstRunPrivacySeen, inPlugins: 'firstRunPrivacy' in s.plugins })))
 
 /** What a legacy install's status reports: `updates` and `gitSync` carried over, not yet reviewed. */
 const LEGACY: PrivacyStatus = {
@@ -57,7 +58,7 @@ test('turning on updates asks for consent, records it, and the card does not ret
   await dialog.getByRole('button', { name: 'Allow' }).click()
   await expect(card(page)).toHaveCount(0)
   expect((await status(page)).allowed.updates).toBe(true)
-  expect((await plugins(page)).firstRunPrivacy).toBe('seen')
+  expect(await answered(page)).toEqual({ seen: true, inPlugins: false })
   await show(page)
   await expect(card(page)).toHaveCount(0)
 })
@@ -72,7 +73,7 @@ test('declining the consent leaves the card; No thanks is remembered and grants 
   expect((await status(page)).consents).toEqual({})
   await card(page).getByTestId('first-run-dismiss').click()
   await expect(card(page)).toHaveCount(0)
-  expect((await plugins(page)).firstRunPrivacy).toBe('seen')
+  expect(await answered(page)).toEqual({ seen: true, inPlugins: false })
   expect((await status(page)).allowed.updates).toBe(false)
   await show(page)
   await expect(card(page)).toHaveCount(0)
@@ -84,7 +85,7 @@ test('Escape closes the card like No thanks', async ({ page }) => {
   await card(page).getByTestId('first-run-dismiss').focus()
   await page.keyboard.press('Escape')
   await expect(card(page)).toHaveCount(0)
-  expect((await plugins(page)).firstRunPrivacy).toBe('seen')
+  expect(await answered(page)).toEqual({ seen: true, inPlugins: false })
 })
 
 test('the legacy card lists the features, Keep grants and Withdraw revokes', async ({ app, page }) => {

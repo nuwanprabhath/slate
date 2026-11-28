@@ -1,6 +1,7 @@
 /* Settings → Privacy: the settings groups (vault.css), plus the few pieces they lack. */
+/* A question in place of its buttons, drawn like .security-sandbox-notice: no fill, so Glass's translucent panel-2 never greys it. */
 .privacy-section > .settings-group { align-self: stretch; }
-.privacy-confirm { align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 4px; background: var(--panel-2); }
+.privacy-confirm { align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 4px; }
 .privacy-confirm > p { margin: 0; line-height: 1.45; }
 .privacy-disclosures, .privacy-consent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
 .privacy-disclosures > li { display: flex; flex-direction: column; gap: 2px; }

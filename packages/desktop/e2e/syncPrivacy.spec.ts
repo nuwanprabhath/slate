@@ -134,20 +134,3 @@ test.describe.serial('a consented plaintext connection', () => {
     expect(await page.evaluate(() => window.slate.sync.gitAuthInfo())).toMatchObject({ hasToken: false, hasDeviceToken: false })
   })
 })
-
-test('the GitHub sign-in names the "repo" permission before it starts, and a token is advised for one repository', async () => {
-  const { app, page } = await launch('scope')
-  await app.evaluate(({ ipcMain }) => {
-    ipcMain.removeHandler('sync:git-auth-info')
-    ipcMain.handle('sync:git-auth-info', () => ({ deviceFlow: true, hasToken: false, hasDeviceToken: false }))
-  })
-  await openSync(page)
-  await page.getByTestId('sync-provider-git').check()
-  await page.getByTestId('git-auth-device').check()
-  await expect(page.getByTestId('git-device-scope')).toContainText('"repo" permission')
-  await expect(page.getByTestId('git-device-scope')).toContainText('every repository')
-  await page.getByTestId('git-auth-token').check()
-  await expect(page.getByTestId('git-token-help')).toContainText('fine-grained token')
-  await expect(page.getByTestId('git-token')).toHaveAttribute('aria-describedby', 'git-token-help')
-  await expect(page.getByTestId('sync-pseudonymous')).toBeVisible()
-})

@@ -62,3 +62,9 @@ change's safety depends on and push each as far down this list as is cheap, then
 - **Cleared**: what you checked and why it is fine.
 - **Before you merge**: the cheapest test or repro that would catch the real bug, and the guard
   (a `slate/*` rule or guard test) that would stop it recurring, for the `correct` skill.
+
+## Record the run
+
+When a release range's changes to sync, the vault, the database, the store, the updater or core have been through this skill (it is owed whenever one of those changes), record it: `node tools/guards/quality-cadence.mjs done blast-radius`, committed with the run's work. That
+resets its count in `docs/quality-cadence.json`. A release tag is refused while a skill is owed a run
+(`.githooks/pre-push`), and each session starts by saying which are (`tools/guards/quality-cadence.mjs`).

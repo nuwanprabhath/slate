@@ -12,6 +12,11 @@ describe('email addresses (GDPR-09)', () => {
   it('keeps slate@invalid, the pseudonymous sync author', () => {
     expect(redactString('author Slate <slate@invalid>')).toBe('author Slate <slate@invalid>')
   })
+
+  it('redacts an address that only starts like slate@invalid', () => {
+    expect(redactString('signed in as slate@invalid.com')).toBe('signed in as [redacted-email]')
+    expect(redactString('from slate@invalid.example.org, retry')).toBe('from [redacted-email], retry')
+  })
 })
 
 describe('git repository owners (GDPR-09)', () => {

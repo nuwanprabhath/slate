@@ -6,7 +6,7 @@ import { newId, NotebookDoc, PageDoc } from '@slate/core'
 import { DEFAULT_SETTINGS } from '../../shared/settings/schema'
 import { FileBlobStore } from '../blobs'
 import { DocStore } from '../store'
-import { exportFolderName, safeName, writeExport, type ExportManifest, type ExportSource } from './export'
+import { EXPORTED_TABLES, exportFolderName, safeName, writeExport, type ExportManifest, type ExportSource } from './export'
 
 const dirs: string[] = []
 const temp = (): string => {
@@ -42,6 +42,7 @@ function fixture() {
   store.append('page:00000000-0000-4000-8000-000000000001', orphan.doc.export({ mode: 'snapshot' }))
   store.append(`notebook:${newId()}`, nb.doc.export({ mode: 'snapshot' }))
   store.appendAudit({ tool: 'search', target: '[5 chars]', outcome: 'ok' })
+  store.addConflict({ id: 'c1', pageId: a.pageId, boxId: 'b1', device: 'Device 1234abcd', mine: 'my words', theirs: 'their words', merged: 'merged words', at: 1 })
   const src: ExportSource = { store, blobs, settings: { ...DEFAULT_SETTINGS, deviceId: 'laptop' }, securityLog: () => 'unlock ok\n', appVersion: '9.9.9', now: NOW }
   return { store, blobs, src, url, a, b }
 }
@@ -76,7 +77,16 @@ describe('writeExport (GDPR-05)', () => {
     expect(JSON.parse(readFileSync(join(report.folder, 'settings.json'), 'utf8'))).toMatchObject({ deviceId: 'laptop' })
     expect(JSON.parse(readFileSync(join(report.folder, 'ai-audit.json'), 'utf8'))).toEqual([expect.objectContaining({ tool: 'search', target: '[5 chars]' })])
     expect(readFileSync(join(report.folder, 'security-log.txt'), 'utf8')).toBe('unlock ok\n')
+    expect(JSON.parse(readFileSync(join(report.folder, 'conflicts.json'), 'utf8'))).toEqual([expect.objectContaining({ device: 'Device 1234abcd', mine: 'my words', theirs: 'their words' })])
     expect(report.bytes).toBeGreaterThan(PNG.byteLength)
+  })
+
+  it('writes a file or folder for every table EXPORTED_TABLES names (PRIVACY.md says which tables are exported)', async () => {
+    const { store, src } = fixture()
+    const report = await writeExport(temp(), src)
+    store.close()
+    const missing = Object.entries(EXPORTED_TABLES).filter(([, out]) => !existsSync(join(report.folder, ...out.split('/'))))
+    expect(missing).toEqual([])
   })
 
   it('makes files 0600 and folders 0700', async () => {
@@ -101,7 +111,7 @@ describe('writeExport (GDPR-05)', () => {
     const { store, src, a } = fixture()
     const broken: ExportSource = {
       ...src,
-      store: { list: (p) => store.list(p), listAudit: (n) => store.listAudit(n), load: (id) => (id === `page:${a.pageId}` ? [new Uint8Array([1, 2, 3])] : store.load(id)) },
+      store: { list: (p) => store.list(p), listAudit: (n) => store.listAudit(n), listConflicts: () => store.listConflicts(), load: (id) => (id === `page:${a.pageId}` ? [new Uint8Array([1, 2, 3])] : store.load(id)) },
       blobs: { list: () => [], has: () => false, read: () => new Uint8Array() },
       securityLog: () => {
         throw new Error('not implemented')

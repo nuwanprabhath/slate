@@ -1,11 +1,12 @@
 /**
  * "Export everything" (GDPR-05, review §3.5 step 1-2): every notebook as Markdown, every image, the
- * settings, the AI activity record and the security log, in a new folder. A folder rather than a zip,
+ * settings, the AI activity record, the sync conflicts and the security log, in a new folder. A folder rather than a zip,
  * so no new dependency. Private boxes are included: this is the person's own copy.
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { NotebookDoc, PageDoc, toMarkdown, type Access, type PMJSON, type TreeItem } from '@slate/core'
+import type { ConflictRecord } from '@slate/sync'
 import type { ExportReport, Settings } from '../../shared/api'
 import { blobNameFromUrl, type BlobStore } from '../blobs'
 import type { AuditRow } from '../store'
@@ -36,7 +37,7 @@ export interface ExportManifest {
 }
 
 export interface ExportSource {
-  store: { list(prefix: string): string[]; load(docId: string): Uint8Array[]; listAudit(limit: number): AuditRow[] }
+  store: { list(prefix: string): string[]; load(docId: string): Uint8Array[]; listAudit(limit: number): AuditRow[]; listConflicts(): ConflictRecord[] }
   blobs: Pick<BlobStore, 'list' | 'has' | 'read'>
   settings: Settings
   /** The security log's text; throws when it cannot be read (listed in `errors`). */
@@ -44,6 +45,19 @@ export interface ExportSource {
   appVersion: string
   now: Date
 }
+
+/**
+ * Each table the export carries, with the file or folder (relative to the export) it goes to. PRIVACY.md's retention
+ * table says "exported" for exactly these and why each other table is not (tools/guards/privacyNotice.test.ts).
+ */
+export const EXPORTED_TABLES = {
+  snapshots: 'notebooks',
+  updates: 'notebooks',
+  settings: 'settings.json',
+  blob_data: 'images',
+  audit: 'ai-audit.json',
+  conflicts: 'conflicts.json',
+} as const
 
 /** The most AI activity rows the store keeps (store.ts prunes to this). */
 const AUDIT_ROWS = 10_000
@@ -212,6 +226,7 @@ export async function writeExport(parent: string, src: ExportSource): Promise<Ex
 
   await write(['settings.json'], `${JSON.stringify(src.settings, null, 2)}\n`)
   await write(['ai-audit.json'], `${JSON.stringify(src.store.listAudit(AUDIT_ROWS), null, 2)}\n`)
+  await write(['conflicts.json'], `${JSON.stringify(src.store.listConflicts(), null, 2)}\n`)
   try {
     await write(['security-log.txt'], src.securityLog())
   } catch (e) {

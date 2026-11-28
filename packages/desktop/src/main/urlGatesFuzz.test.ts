@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, sep, isAbsolute } from 'node:path'
 import { remoteTransport } from '@slate/sync'
-import { fcParams, fcRuns } from '../../test/fuzz'
+import { fcParams, fcRuns, fuzzTimeout } from '../../test/fuzz'
 import { hostileUrl } from '../../test/fuzzHtml'
 import { safeExternalUrl } from './openExternal'
 import { isAppEntry, isAppUrl, resolveAppPath } from './appProtocol'
@@ -50,7 +50,7 @@ describe('address and path gates (F4b properties 1 to 3, 5)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-09: resolveAppPath gives null or a path strictly inside the root, whatever the traversal spelling', () => {
     fc.assert(
@@ -63,7 +63,7 @@ describe('address and path gates (F4b properties 1 to 3, 5)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-10: isAppUrl and isAppEntry accept only the app://slate origin', () => {
     fc.assert(
@@ -80,7 +80,7 @@ describe('address and path gates (F4b properties 1 to 3, 5)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-11: blobNameFromUrl gives null or a bare name with no separator, .. or NUL', () => {
     const blobLike = fc.oneof(
@@ -99,7 +99,7 @@ describe('address and path gates (F4b properties 1 to 3, 5)', () => {
       }),
       fcParams
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4B-12: every accepted remote records only a host-level id: no credential reaches transport_observations', () => {
     const dir = mkdtempSync(join(tmpdir(), 'slate-f4b-'))
@@ -131,5 +131,5 @@ describe('address and path gates (F4b properties 1 to 3, 5)', () => {
     } finally {
       store.close()
     }
-  })
+  }, fuzzTimeout(10_000))
 })

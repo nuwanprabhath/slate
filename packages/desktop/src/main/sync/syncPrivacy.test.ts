@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PageDoc } from '@slate/core'
+import { nodeGitRunner } from '@slate/sync'
 import { startFakeDrive, type FakeDrive } from '../../../../sync/test/fakeDrive'
 import { addTextBox } from '../../../../sync/test/memoryLocal'
 import type { GitSettings } from '../../shared/api'
@@ -16,7 +17,7 @@ import { DocStore } from '../store'
 import { importKey } from '../../../test/vaultKeys'
 import { SCHEDULE_V1 } from '../vault/suite'
 import { KeyRing } from '../vault/keyring'
-import { PlaintextSyncRefused, SyncService } from './syncService'
+import { PlaintextSyncRefused, SyncService, type SyncServiceDeps } from './syncService'
 
 const PAGE = 'page:22222222-2222-4222-8222-222222222222'
 const secrets = {
@@ -38,6 +39,7 @@ interface Options {
   strict?: boolean
   keyRing?: KeyRing
   deviceName?: string
+  deps?: Partial<SyncServiceDeps>
 }
 
 async function device(name: string, opts: Options = {}) {
@@ -66,9 +68,10 @@ async function device(name: string, opts: Options = {}) {
     emitStatus: () => {},
     emitNotice: (m) => notices.push(m),
     ...(opts.keyRing ? { keyRing: opts.keyRing } : {}),
+    ...opts.deps,
   })
   open.push({ service, store })
-  return { service, store, notices, gitDir: join(dir, `${name}-git`) }
+  return { service, store, notices, auth, gitDir: join(dir, `${name}-git`) }
 }
 
 const git = (): GitSettings => ({ remoteUrl: `file://${bare}`, branch: 'main', auth: 'system' })
@@ -124,17 +127,8 @@ describe('GDPR-03: consent before sync', { timeout: 60_000 }, () => {
     expect(headOrNone()).toBeNull()
   })
 
-  it('needs no plaintextSync consent once the notes are encrypted', async () => {
-    const a = await device('A', { consents: grants('gitSync'), keyRing: ring() })
-    await a.service.configure({ provider: 'git', git: git() })
-    expect((await a.service.now()).status).toBe('idle-synced')
-  })
-
-  it('needs no plaintextSync consent with strict mode off', async () => {
-    const a = await device('A', { strict: false })
-    await a.service.configure({ provider: 'git', git: git() })
-    expect((await a.service.now()).status).toBe('idle-synced')
-  })
+  // That encrypted notes, or strict mode off, need no plaintextSync consent is checked where those cases sync
+  // anyway: 'under strict mode with a vault…' and 'with strict mode off and no vault…' below.
 
   it('pauses at the next run once a consent is withdrawn, as disabled with one notice, and pushes nothing', async () => {
     const a = await device('A', { consents: grants('gitSync', 'plaintextSync') })
@@ -165,6 +159,19 @@ describe('GDPR-03: consent before sync', { timeout: 60_000 }, () => {
     expect(drive.files.size).toBe(before)
   })
 
+  it('runs no git command for the remote once gitSync is withdrawn, whatever asks for it (device records, the vault header)', async () => {
+    const a = await device('A', { consents: grants('gitSync'), keyRing: ring() })
+    await a.service.configure({ provider: 'git', git: git() })
+    expect((await a.service.now()).status).toBe('idle-synced')
+    const head = headOrNone()
+    writeSettings(a.store, { consents: {} })
+    await expect(a.service.deviceRecords()).rejects.toMatchObject({ name: 'ConsentRequired', feature: 'gitSync' })
+    const remote = a.service.vaultRemote()
+    expect(remote).not.toBeNull()
+    await expect(remote!.read()).rejects.toMatchObject({ name: 'ConsentRequired', feature: 'gitSync' })
+    expect(headOrNone()).toBe(head)
+  })
+
   it('resumes once the consent is given again', async () => {
     const a = await device('A', { consents: grants('gitSync', 'plaintextSync') })
     await a.service.configure({ provider: 'git', git: git() })
@@ -172,6 +179,151 @@ describe('GDPR-03: consent before sync', { timeout: 60_000 }, () => {
     expect((await a.service.now()).status).toBe('disabled')
     writeSettings(a.store, { consents: grants('gitSync', 'plaintextSync') })
     expect((await a.service.now()).status).toBe('idle-synced')
+  })
+})
+
+/**
+ * Security review (v0.8): the egress guard checks a gate is somewhere in a file, not on every path to its sink, and git
+ * paths outside the sync timer skipped it. Each public method that can reach the network is listed here, and each must
+ * refuse, or do nothing, without its consent: no git command for a remote, no Graph token asked for, no fetch.
+ */
+type Call = (s: SyncService) => Promise<unknown>
+interface Reach {
+  /** The method and how it is called. */
+  call: Call
+  /** The consent its refusal names; null when it answers with a no-op value instead (then `quiet` is that value). */
+  refuses: ConsentFeature | null
+  quiet?: unknown
+  /** Needs a vault (an encrypted remote); the rest run without one, as the native secure heap holds only so many keys. */
+  vault?: boolean
+}
+
+const GIT_METHODS: Record<string, Reach> = {
+  'now()': { call: async (s) => (await s.now()).status, refuses: null, quiet: 'disabled' },
+  'deviceRecords()': { call: (s) => s.deviceRecords(), refuses: 'gitSync' },
+  'supersedeCurrent()': { call: (s) => s.supersedeCurrent('conversion'), refuses: 'gitSync', vault: true },
+  'vaultRemote().read()': { call: (s) => s.vaultRemote()!.read(), refuses: 'gitSync' },
+  'ensureBlob()': { call: (s) => s.ensureBlob('missing.png'), refuses: null, quiet: false },
+  'testGit()': { call: (s) => s.testGit(git()), refuses: 'gitSync' },
+  'checkTransport()': { call: async (s) => (await s.checkTransport()).length, refuses: null, quiet: 0 },
+  'configure()': { call: (s) => s.configure({ provider: 'git', git: git() }), refuses: 'gitSync' },
+  'createRepo()': { call: (s) => s.createRepo('notes', 'token', 'ghp_typed'), refuses: 'githubSignIn' },
+  'deviceSignIn()': { call: (s) => s.deviceSignIn(), refuses: 'githubSignIn' },
+}
+
+const ONEDRIVE_METHODS: Record<string, Reach> = {
+  'now()': { call: async (s) => (await s.now()).status, refuses: null, quiet: 'disabled' },
+  'deviceRecords()': { call: (s) => s.deviceRecords(), refuses: 'oneDriveSync' },
+  'vaultRemote().read()': { call: (s) => s.vaultRemote()!.read(), refuses: 'oneDriveSync' },
+  'ensureBlob()': { call: (s) => s.ensureBlob('missing.png'), refuses: null, quiet: false },
+  'checkTransport()': { call: async (s) => (await s.checkTransport()).length, refuses: null, quiet: 0 },
+  'setEnabled(true)': { call: (s) => s.setEnabled(true), refuses: 'oneDriveSync' },
+}
+
+/**
+ * Every other method of SyncService, with why it needs no row: it never reaches the network itself. The tables plus
+ * this list must name every method on SyncService.prototype, so a new one fails here until it gets a row or a reason.
+ */
+const NO_NETWORK: Record<string, string> = {
+  hasSyncedBefore: 'reads the settings and a local cursor',
+  clearSuperseded: 'writes local sync bookkeeping',
+  start: "only schedules now(), whose row covers what a run reaches",
+  edited: "only schedules now(), whose row covers what a run reaches",
+  status: 'reads the settings, the last report and the Microsoft sign-in status from its local cache',
+  forget: 'clears tokens, clones and bookkeeping on this computer',
+  transports: 'reads recorded observations from the database',
+  requirePq: 'reads a setting',
+  plaintextSync: 'reads a setting',
+  gitAuthInfo: 'reads which tokens are stored locally',
+  deviceSignInWait: "awaits the flow deviceSignIn() started (that row refuses it); starts nothing itself",
+  recordOpen: 'writes the open notebook into a local doc',
+  pause: 'waits for the run in flight; starts none',
+  resume: 'clears a flag',
+  whilePaused: 'pauses around a caller-supplied function; reaches nothing itself',
+  conflicts: 'reads the conflicts table',
+  resolve: 'rewrites a local box, then edited() schedules a run (see edited)',
+  close: 'stops timers',
+  stop: 'aborts the run in flight and closes the store',
+}
+
+/** Private helpers: reached only through the public methods above, which the tables call. */
+const PRIVATE = ['log', 'settings', 'refused', 'runner', 'policyRunner', 'remoteGit', 'connection', 'noticeUnrelated', 'token', 'gitAuthEnv', 'schedule', 'missingConsent', 'vaultState', 'probeIfDue', 'noticePq', 'followOtherDevices', 'idle', 'run', 'setReport']
+
+/** Network methods OneDrive has no row for, and why. */
+const GIT_ONLY: Record<string, string> = {
+  supersedeCurrent: 'needs an encrypted remote; the OneDrive drive goes through the same getToken gate as deviceRecords',
+  testGit: 'tests a git remote',
+  configure: "OneDrive's configure is setEnabled(true), which has its row",
+  createRepo: 'creates a GitHub repository',
+  deviceSignIn: 'GitHub sign-in',
+}
+
+const methodOf = (row: string) => row.slice(0, row.search(/[(.]/))
+
+const NETWORK_GIT = new Set(['fetch', 'push', 'ls-remote', 'clone', 'pull'])
+
+async function expectReach(name: string, reach: Reach, service: SyncService): Promise<void> {
+  const outcome = reach.call(service)
+  if (reach.refuses) await expect(outcome, name).rejects.toMatchObject({ name: 'ConsentRequired', feature: reach.refuses })
+  else expect(await outcome, name).toEqual(reach.quiet)
+}
+
+describe('every method that reaches the network refuses without its consent (security review v0.8)', { timeout: 60_000 }, () => {
+  it('the tables and their reasoned exceptions name every method of SyncService, so a new one cannot be missed', () => {
+    const methods = Object.getOwnPropertyNames(SyncService.prototype).filter((m) => m !== 'constructor').sort()
+    const named = [...new Set([...Object.keys(GIT_METHODS), ...Object.keys(ONEDRIVE_METHODS)].map(methodOf)), ...Object.keys(NO_NETWORK), ...PRIVATE]
+    expect(methods.filter((m) => !named.includes(m)).map((m) => `SyncService.${m}: add a row to GIT_METHODS (and ONEDRIVE_METHODS) calling it with the consent withdrawn, or, if it never reaches the network, a reason in NO_NETWORK`)).toEqual([])
+    expect(named.filter((m) => !methods.includes(m)).map((m) => `${m} is listed but SyncService has no such method`)).toEqual([])
+    const onedrive = new Set(Object.keys(ONEDRIVE_METHODS).map(methodOf))
+    expect(Object.keys(GIT_METHODS).map(methodOf).filter((m) => !onedrive.has(m) && !(m in GIT_ONLY))).toEqual([])
+  })
+
+
+  it.each(Object.entries(GIT_METHODS))('git, with gitSync and githubSignIn withdrawn: %s', async (name, reach) => {
+    const commands: string[][] = []
+    const fetched = vi.fn(async () => new Response('{}', { status: 500 }))
+    vi.stubGlobal('fetch', fetched)
+    try {
+      const a = await device('A', {
+        consents: grants('gitSync', 'githubSignIn', 'plaintextSync'),
+        ...(reach.vault ? { keyRing: ring() } : {}),
+        deps: {
+          githubClientId: 'client',
+          gitRunner: (o) => {
+            const run = nodeGitRunner(undefined, o)
+            return (args, opts) => {
+              commands.push(args)
+              return run(args, opts)
+            }
+          },
+          probeSsh: () => Promise.reject(new Error('no ssh probe in this test')),
+        },
+      })
+      await a.service.configure({ provider: 'git', git: git() })
+      expect((await a.service.now()).status).toBe('idle-synced')
+      const head = headOrNone()
+      writeSettings(a.store, { consents: grants('plaintextSync') })
+      commands.length = 0
+      await expectReach(name, reach, a.service)
+      expect(commands.filter((c) => c.some((arg) => NETWORK_GIT.has(arg))), `${name} ran a git command for the remote`).toEqual([])
+      expect(fetched, `${name} fetched`).not.toHaveBeenCalled()
+      expect(headOrNone()).toBe(head)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it.each(Object.entries(ONEDRIVE_METHODS))('OneDrive, with oneDriveSync withdrawn: %s', async (name, reach) => {
+    const probeTls = vi.fn(async () => 'X25519')
+    const a = await device('A', { consents: grants('oneDriveSync', 'plaintextSync'), deps: { probeTls } })
+    await a.service.setEnabled(true)
+    const before = drive.files.size
+    writeSettings(a.store, { consents: grants('plaintextSync') })
+    const token = vi.spyOn(a.auth, 'token')
+    await expectReach(name, reach, a.service)
+    expect(token, `${name} asked for a Graph token`).not.toHaveBeenCalled()
+    expect(probeTls, `${name} probed a Microsoft host`).not.toHaveBeenCalled()
+    expect(drive.files.size).toBe(before)
   })
 })
 

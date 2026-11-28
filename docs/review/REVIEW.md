@@ -109,3 +109,9 @@ VERDICT: APPROVE
 The last line is exactly `VERDICT: APPROVE` or `VERDICT: CHANGES`. Any Critical, High or unaccepted
 Medium finding means `VERDICT: CHANGES`. `scripts/agents/merge-wp.sh` merges a branch that touches a
 security path only when this file approves the branch's current head.
+
+## Record the run
+
+When a release range's changes to `tools/guards/security-paths.txt` paths have been reviewed against this checklist and the findings fixed or left with a reason (it is owed whenever one of those paths changes), record it: `node tools/guards/quality-cadence.mjs done security-review`, committed with the run's work. That
+resets its count in `docs/quality-cadence.json`. A release tag is refused while a skill is owed a run
+(`.githooks/pre-push`), and each session starts by saying which are (`tools/guards/quality-cadence.mjs`).

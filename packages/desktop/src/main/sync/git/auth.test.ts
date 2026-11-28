@@ -80,6 +80,9 @@ describe('githubDeviceFlow', () => {
 })
 
 describe('createPrivateRepo', () => {
+  // Gated on githubSignIn like the device flow (syncPrivacy.test.ts refuses it without); these cases cover it once allowed.
+  beforeEach(() => setPrivacySource(() => ({ ...DEFAULT_SETTINGS, consents: { githubSignIn: { grantedAt: 1, textVersion: DISCLOSURES.githubSignIn.textVersion, source: 'user' } } })))
+  afterEach(() => setPrivacySource(() => null))
   it('creates a private, empty repository with the token', async () => {
     const { fetch, calls } = scripted([{ status: 201, body: { clone_url: 'https://github.com/me/notes.git', ssh_url: 'git@github.com:me/notes.git' } }])
     expect(await createPrivateRepo('tok', 'notes', fetch)).toEqual({ ok: true, message: 'Created me/notes', url: 'https://github.com/me/notes.git' })

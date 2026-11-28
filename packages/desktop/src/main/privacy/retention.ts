@@ -1,6 +1,5 @@
 /**
- * Retention, purge and the security log's view (GDPR review §3.4: GDPR-04, 07, 08, 13, 14). The
- * signatures are the contract with index.ts and `privacy/ipc.ts`.
+ * Retention, purge and the security log's view (GDPR review §3.4: GDPR-04, 07, 08, 13, 14).
  */
 import { lstatSync, readdirSync, rmSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'

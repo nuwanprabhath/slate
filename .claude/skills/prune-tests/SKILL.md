@@ -201,3 +201,9 @@ node .claude/skills/prune-tests/overlap.mjs lost
   that remove cases carry `Removed-Tests-Reason:`.
 - Follow the version and changelog rule for every change. Work on a branch and merge with merge-wp,
   as for any work package.
+
+## Record the run
+
+When the measured before and after numbers are reported and the changes merged, record it: `node tools/guards/quality-cadence.mjs done prune-tests`, committed with the run's work. That
+resets its count in `docs/quality-cadence.json`. A release tag is refused while a skill is owed a run
+(`.githooks/pre-push`), and each session starts by saying which are (`tools/guards/quality-cadence.mjs`).

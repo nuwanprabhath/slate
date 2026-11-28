@@ -196,6 +196,7 @@ export const CHANNEL_POLICY: Readonly<Record<keyof typeof CH, ChannelPolicy>> = 
   privacySecurityLogClear: 'unlocked',
   auditClear: 'unlocked',
   syncForget: 'unlocked',
+  privacyHistoryEraseBlocker: 'unlocked',
 }
 
 
@@ -334,6 +335,7 @@ export const SELF_TEST_POLICY: Readonly<Record<keyof typeof CH, SelfTestPolicy>>
   privacySecurityLogClear: 'refused',
   auditClear: 'refused',
   syncForget: 'refused',
+  privacyHistoryEraseBlocker: 'refused',
 }
 
 const channelsWith = (policy: ChannelPolicy): ReadonlySet<string> =>

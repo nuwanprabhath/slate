@@ -38,6 +38,32 @@ export class SyncAborted extends Error {
 
 export const unverifiedMessage = (n: number) => `${n} synced files could not be verified and were ignored`
 
+/** Device records of Slate before this release read an erased page as empty (Loro 1.17's importBatch, blast radius R1b). */
+const ERASED_NEEDS = [0, 8, 0] as const
+export const erasedWaitsMessage = (devices: readonly string[]) =>
+  `A page whose edit history you erased waits to sync until ${devices.join(', ')} ${devices.length === 1 ? 'is' : 'are'} updated to Slate 0.8 or later; until then that device would show it empty`
+
+/** A device record is a few hundred bytes; one larger than this is not read (a remote could serve any size). */
+const MAX_DEVICE_RECORD_BYTES = 64 * 1024
+const MAX_DEVICE_NAME = 64
+
+/** A remote-chosen device name as it may appear in a notice: printable characters only, at most 64 of them. */
+function shownDeviceName(name: unknown): string {
+  if (typeof name !== 'string') return 'A device'
+  // eslint-disable-next-line no-control-regex -- the point is to remove control characters a remote put in the name
+  const printable = name.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const cut = [...printable].slice(0, MAX_DEVICE_NAME).join('')
+  return cut === '' ? 'A device' : cut
+}
+
+/** Whether `version` ("0.7.14") is older than `floor`; a version Slate cannot read is not called older. */
+function olderThan(version: string, floor: readonly number[]): boolean {
+  const parts = /^(\d+)\.(\d+)\.(\d+)/.exec(version)?.slice(1).map(Number)
+  if (!parts) return false
+  for (let i = 0; i < floor.length; i++) if (parts[i] !== floor[i]) return parts[i]! < floor[i]!
+  return false
+}
+
 type Counts = Pick<SyncReport, 'pushed' | 'pulled' | 'conflicts'>
 
 /** A doc being pulled into: `doc` holds what was stored at pull start plus every import since. */
@@ -99,7 +125,11 @@ const META = {
    * considered again by every run until one finishes: their `base` moves only then. Empty means "consider every
    * doc": set that way by `forgetPushed` and by a `selfCheck` reset, which both need a full scan next run.
    */
-  changed: 'changedSeq'
+  changed: 'changedSeq',
+  /** Erased docs waiting while a device older than 0.8 is on the remote: considered again by every run until sent. */
+  held: 'heldErased',
+  /** The last notice about them, so a run that changes nothing does not say it again. */
+  heldNotice: 'heldErasedNotice',
 }
 
 /** Lets the window route a key press between documents of a long pull. */
@@ -162,6 +192,8 @@ export class SyncEngine {
   private signal: AbortSignal | undefined
   /** `forgetPushed` ran since the current sync read its cursor: that sync must not write the cursor back. */
   private forgotten = false
+  /** This run's answer to "which devices on the remote are older than 0.8", read once and only when needed. */
+  private olderDevices: Promise<string[]> | undefined
 
   constructor(opts: SyncEngineOptions) {
     this.local = opts.local
@@ -188,8 +220,19 @@ export class SyncEngine {
       await this.beforeUpload?.()
       const pushedAt = new Map<string, VersionVector>()
       this.forgotten = false
+      this.olderDevices = undefined
       const changed = await this.changedDocs()
-      for (const docId of changed.ids) pushedAt.set(docId, await this.pushDoc(docId, counts))
+      const held = new Set(await this.jsonMeta<string[]>(META.held, []))
+      for (const docId of new Set([...changed.ids, ...held])) {
+        const version = await this.pushDoc(docId, counts)
+        if (version === null) {
+          held.add(docId)
+          continue
+        }
+        held.delete(docId)
+        pushedAt.set(docId, version)
+      }
+      await this.holdErased(held)
       await this.pushBlobs()
       await this.writeDevice()
       await this.flush()
@@ -254,8 +297,43 @@ export class SyncEngine {
     return raw === undefined ? fallback : (JSON.parse(raw) as T)
   }
 
-  /** Returns the doc version it considered. */
-  private async pushDoc(docId: string, counts: Counts): Promise<VersionVector> {
+  /**
+   * The names of the devices whose record on the remote says a Slate older than 0.8. A record without a version is
+   * not counted: only builds that write one can be told apart.
+   */
+  private readOlderDevices(): Promise<string[]> {
+    this.olderDevices ??= (async () => {
+      const names: string[] = []
+      const page = await this.transfer(() => this.remote.delta(null, this.signal))
+      for (const item of page.items) {
+        if (item.deleted || !/^devices\/[^/]+\.json$/.test(item.path) || item.path === `devices/${this.deviceId}.json`) continue
+        if (item.size !== undefined && item.size > MAX_DEVICE_RECORD_BYTES) continue
+        try {
+          const bytes = await this.transfer(() => this.remote.download(item.path, this.signal))
+          if (bytes.byteLength > MAX_DEVICE_RECORD_BYTES) continue
+          const r = JSON.parse(new TextDecoder().decode(bytes)) as { name?: unknown; appVersion?: unknown }
+          if (typeof r.appVersion === 'string' && olderThan(r.appVersion, ERASED_NEEDS)) names.push(shownDeviceName(r.name))
+        } catch (e) {
+          if (e instanceof SyncAborted) throw e
+          // A record this device cannot read says nothing about its version.
+        }
+      }
+      return names.sort()
+    })()
+    return this.olderDevices
+  }
+
+  /** Keeps the erased docs that wait for the next run, and says once which devices they wait for. */
+  private async holdErased(held: Set<string>): Promise<void> {
+    await this.local.setMeta(META.held, JSON.stringify([...held]))
+    const message = held.size > 0 ? erasedWaitsMessage(await this.readOlderDevices()) : ''
+    if (message === ((await this.local.getMeta(META.heldNotice)) ?? '')) return
+    await this.local.setMeta(META.heldNotice, message)
+    if (message !== '') await this.local.notify(message)
+  }
+
+  /** Returns the doc version it considered, or null for an erased doc that waits for older devices to update. */
+  private async pushDoc(docId: string, counts: Counts): Promise<VersionVector | null> {
     await this.removeStale(docId)
     const doc = await this.load(docId)
     const pushed = await this.pushedVersion(docId)
@@ -264,6 +342,7 @@ export class SyncEngine {
 
     const seq = Number((await this.local.getMeta(META.seq(docId))) ?? 0) + 1
     if (doc.isShallow() && ahead(doc.shallowSinceVV(), pushed)) {
+      if ((await this.readOlderDevices()).length > 0) return null
       // The history was erased (GDPR-04) past what was pushed: no update from `pushed` can be made any more, so the
       // doc goes up whole, as the snapshot that replaces this device's files for it.
       await this.compact(docId, doc, seq, await this.jsonMeta<string[]>(META.chunks(docId), []))
@@ -487,15 +566,20 @@ export class SyncEngine {
       }
       const shallow = parsed.kind === 'snapshot' && !state.empty ? shallowRange(bytes) : null
       if (shallow) {
-        let outcome: 'taken' | 'kept'
+        let outcome: 'taken' | 'kept' | 'unreadable'
         try {
           outcome = await this.takeErased(parsed.docId, state, bytes, shallow, parsed.deviceId, counts)
+        } catch {
+          // The header read with its checksum unchecked: a damaged or hostile body throws here, and is skipped like
+          // any unverifiable file rather than failing this and every later run on it.
+          outcome = 'unreadable'
         } finally {
           shallow.since.free()
           shallow.end.free()
         }
         await this.local.markSeen(item.id, item.eTag)
         if (outcome === 'taken') counts.pulled++
+        if (outcome === 'unreadable') unverified++
         continue
       }
       try {

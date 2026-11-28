@@ -12,8 +12,9 @@ import type { SearchIndex } from '../search/searchIndex'
 import { secretFile, type SecretStorage } from '../secretStorage'
 import type { DocStore } from '../store'
 import type { SyncService } from '../sync/syncService'
+import type { VaultBusy } from '../vault/busy'
 import type { ProfileId } from '../vault/profile'
-import { eraseDocHistory, eraseEverything, historyStore, SyncIsOn } from './erase'
+import { eraseDocHistory, eraseEverything, historyEraseBlocker, HistoryEraseUnavailable, HistoryWasSynced, SyncIsOn } from './erase'
 import { writeExport } from './export'
 import type { Retention } from './retention'
 
@@ -42,13 +43,31 @@ export interface DataRightsDeps {
   forgetQuickUnlock: () => Promise<void>
   /** `app.relaunch()` then `app.exit(0)`. */
   relaunch: () => void
+  /** A migration a crash or failure left unfinished on disk (`vault.state === 'migrating'`). */
+  unfinishedMigration: () => boolean
+  /**
+   * The vault's one-change-at-a-time lock. A running encryption, rekey or history replace holds it (its vault state
+   * stays 'plaintext' or 'unlocked' until it ends); erase all takes it, so none starts while files are removed.
+   */
+  busy: VaultBusy
+}
+
+/** Erase all waits for a migration: one still running could write its database or a vault file after the listing. */
+export class EraseWhileMigrating extends Error {
+  constructor() {
+    super('Slate is encrypting your notes. Wait until it has finished, or cancel it, then erase everything.')
+    this.name = 'EraseWhileMigrating'
+  }
 }
 
 export interface DataRights {
   /** Asks for a folder (main's dialog); null when the person cancelled. */
   exportAll(): Promise<ExportReport | null>
   eraseHistory(docId: string): Promise<void>
-  eraseAll(): Promise<void>
+  /** What `eraseHistory(docId)` would refuse with now, as the message it would show; null when it would go ahead. */
+  historyEraseBlocker(docId: string): Promise<string | null>
+  /** False when the person answered Cancel to main's question (nothing was touched); true once erased, before the relaunch. */
+  eraseAll(): Promise<boolean>
 }
 
 /** What Electron does for these rights; replaced in unit tests, which run without Electron. */
@@ -56,6 +75,11 @@ export interface DataRightsPlatform {
   /** A folder the person picked, or null when they cancelled. */
   pickFolder(): Promise<string | null>
   clearBrowserStorage(): Promise<void>
+  /**
+   * Main's own question before erase all, whatever the renderer sent: true only when the person chose to erase.
+   * The destructive button is never the default one.
+   */
+  confirmEraseAll(): Promise<boolean>
 }
 
 export const electronPlatform: DataRightsPlatform = {
@@ -68,6 +92,20 @@ export const electronPlatform: DataRightsPlatform = {
   async clearBrowserStorage() {
     await session.defaultSession.clearStorageData()
     await session.defaultSession.clearCache()
+  },
+  async confirmEraseAll() {
+    const options: Electron.MessageBoxOptions = {
+      type: 'warning',
+      message: 'Erase all Slate data on this computer?',
+      detail: 'Your notes, images, settings, sign-ins and logs are deleted, and Slate restarts. This cannot be undone. Notes you synced stay at your sync provider.',
+      buttons: ['Cancel', 'Erase everything'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    }
+    const win = BrowserWindow.getFocusedWindow()
+    const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+    return response === 1
   },
 }
 
@@ -103,26 +141,47 @@ export function createDataRights(deps: DataRightsDeps, platform: DataRightsPlatf
         // The person can act on "turn sync off"; say that before what this build cannot do.
         if (syncOn) throw new SyncIsOn()
         const search = deps.search()
-        eraseDocHistory(historyStore(deps.store()), docId, syncOn, (id) => search.docChanged(id))
+        eraseDocHistory(deps.store(), docId, syncOn, (id) => search.docChanged(id))
+      })
+    },
+
+    historyEraseBlocker(docId) {
+      return Promise.resolve().then(() => {
+        // The order eraseHistory refuses in: what the person can act on first.
+        if (deps.settings().syncProvider !== null) return new SyncIsOn().message
+        const blocked = historyEraseBlocker()
+        if (blocked !== null) return new HistoryEraseUnavailable(blocked).message
+        return deps.store().wasSynced(docId) ? new HistoryWasSynced().message : null
       })
     },
 
     async eraseAll() {
-      const profile = deps.profile()
-      const report = await eraseEverything({
-        dataDir: deps.dataDir,
-        profile,
-        signOut: () => deps.auth.signOut(),
-        closeNotes: deps.closeNotes,
-        secrets: SEALED_FILES.map(([name, file]) => ({ name, clear: () => secretFile(join(deps.dataDir, file), deps.secrets).clear() })),
-        forgetQuickUnlock: deps.forgetQuickUnlock,
-        clearBrowserStorage: platform.clearBrowserStorage,
-        sweepTemp: () => deps.retention.sweepTemp(),
-        // Collected, not logged one by one: the logs folder is being erased, and each line would bring a file back.
-        warn: () => {},
-      })
-      if (report.failed.length > 0) log.warn('app', 'erase all left items behind', { failed: report.failed.join(', ') })
-      deps.relaunch()
+      const migrating = () => deps.unfinishedMigration() || deps.busy.running
+      if (migrating()) throw new EraseWhileMigrating()
+      // The renderer's typed ERASE is its own step; main asks again, since a compromised renderer could send the word.
+      if (!(await platform.confirmEraseAll())) return false
+      // Again after the dialog (a migration may have started while it was open), then under the lock itself.
+      if (migrating()) throw new EraseWhileMigrating()
+      return deps.busy.run(() => eraseAllNow())
     },
+  }
+
+  async function eraseAllNow(): Promise<boolean> {
+    const profile = deps.profile()
+    const report = await eraseEverything({
+      dataDir: deps.dataDir,
+      profile,
+      signOut: () => deps.auth.signOut(),
+      closeNotes: deps.closeNotes,
+      secrets: SEALED_FILES.map(([name, file]) => ({ name, clear: () => secretFile(join(deps.dataDir, file), deps.secrets).clear() })),
+      forgetQuickUnlock: deps.forgetQuickUnlock,
+      clearBrowserStorage: platform.clearBrowserStorage,
+      sweepTemp: () => deps.retention.sweepTemp(),
+      // Collected, not logged one by one: the logs folder is being erased, and each line would bring a file back.
+      warn: () => {},
+    })
+    if (report.failed.length > 0) log.warn('app', 'erase all left items behind', { failed: report.failed.join(', ') })
+    deps.relaunch()
+    return true
   }
 }

@@ -135,5 +135,8 @@ html[data-material='glass'] :is(.settings-dialog, .vault-dialog, .lock-card, .ai
   background-color: var(--bg);
   background-image: linear-gradient(var(--panel), var(--panel));
 }
-html[data-material='glass'] .lock-card { background-image: linear-gradient(var(--popover), var(--popover)); }
+html[data-material='glass'] :is(.lock-card, .consent-dialog, .first-run) {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--popover), var(--popover));
+}
 .theme-describe label { display: flex; flex-direction: column; gap: 2px; }

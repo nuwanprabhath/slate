@@ -1,0 +1,92 @@
+{
+  "_about": "When each quality skill is owed a run (tools/guards/quality-cadence.mjs). `every`: changed lines of code, or days once the code moved. `when`: something it covers changed since its last run. A skill's last step records its run with `node tools/guards/quality-cadence.mjs done <skill>`.",
+  "skills": {
+    "trim-comments": {
+      "every": {
+        "lines": 1500,
+        "days": 14
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-25T12:00:00.000Z"
+      }
+    },
+    "correct": {
+      "every": {
+        "lines": 2000,
+        "days": 14
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-25T12:00:00.000Z"
+      }
+    },
+    "architecture-drift": {
+      "every": {
+        "lines": 4000,
+        "days": 30
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-25T12:00:00.000Z"
+      }
+    },
+    "prune-tests": {
+      "every": {
+        "lines": 6000,
+        "days": 45
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-25T12:00:00.000Z"
+      }
+    },
+    "security-review": {
+      "when": {
+        "pathsFile": "tools/guards/security-paths.txt"
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-25T12:00:00.000Z"
+      }
+    },
+    "blast-radius": {
+      "when": {
+        "paths": [
+          "packages/sync/src/**",
+          "packages/core/src/**",
+          "packages/desktop/src/main/vault/**",
+          "packages/desktop/src/main/db/**",
+          "packages/desktop/src/main/sync/**",
+          "packages/desktop/src/main/store.ts",
+          "packages/desktop/src/main/blobs.ts",
+          "packages/desktop/src/main/update/**"
+        ]
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-25T12:00:00.000Z"
+      }
+    },
+    "ui-review": {
+      "when": {
+        "paths": [
+          "packages/desktop/src/renderer/**"
+        ]
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-25T12:00:00.000Z"
+      }
+    },
+    "nightly-triage": {
+      "when": {
+        "nightly": true
+      },
+      "last": {
+        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
+        "at": "2026-11-27T00:00:00.000Z"
+      }
+    }
+  }
+}

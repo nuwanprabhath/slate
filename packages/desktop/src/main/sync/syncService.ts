@@ -160,7 +160,7 @@ export class PlaintextSyncRefused extends Error {
   }
 }
 
-/** `DocStore.forgetSync` (workstream D, GDPR-06): the sync bookkeeping rows of one connection. */
+/** `DocStore.forgetSync` (GDPR-06): the sync bookkeeping rows of one connection. */
 interface SyncRowsForgetter {
   forgetSync(prefix: string | null, remote: string | null): void
 }
@@ -314,6 +314,9 @@ export class SyncService {
   /** Every git call for one remote, through the policy; an ssh server without hybrids under 'require' is refused. */
   private remoteGit(url: string): GitRunner {
     return async (args, opts) => {
+      // GDPR-03: the one door of every git command for the remote, as getToken is for OneDrive: the device records,
+      // the vault header and the migrations reach the remote outside `run()`, so the consent is checked here too.
+      if (!egressAllowed(this.settings(), 'gitSync')) throw new ConsentRequired('gitSync')
       const { run, require } = await this.policyRunner(url)
       const result = await run(args, opts)
       if (require && result.code !== 0 && NO_SHARED_KEX.test(result.stderr)) throw this.refused(PQ_REFUSAL.server)
@@ -612,6 +615,8 @@ export class SyncService {
     // The same allow-list the settings schema applies, before the URL becomes a `git` argument (C3).
     if (!isAllowedRemote(git.remoteUrl, { allowLocal: allowLocalGitRemotes() })) return { ok: false, message: 'That is not a git remote Slate will use' }
     if (!isAllowedBranch(git.branch)) return { ok: false, message: 'That is not a branch name git accepts' }
+    // GDPR-03: testing runs git ls-remote against the remote, with the token when one is typed.
+    if (!egressAllowed(this.settings(), 'gitSync')) throw new ConsentRequired('gitSync')
     let env: Record<string, string>
     try {
       env = token ? tokenEnv(token, tokenHost(git.remoteUrl)) : await this.gitAuthEnv(git)

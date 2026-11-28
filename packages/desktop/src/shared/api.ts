@@ -80,6 +80,8 @@ export interface Settings {
   gdprStrictMode: boolean
   /** Granted only through `privacy.grant`; `settings.set` from a window never changes it. */
   consents: Consents
+  /** The first-run privacy card was answered (No thanks, or updates turned on); it is not shown again. */
+  firstRunPrivacySeen: boolean
 }
 
 /** What Settings → Privacy's "Purge" clears (`Retention.purge`). */
@@ -130,8 +132,11 @@ export interface PrivacyApi {
   purge(scope: PurgeScope): Promise<PurgeReport>
   /** Replaces a page's or notebook's history with its current state. */
   eraseHistory(docId: string): Promise<void>
+  /** Why erasing `docId`'s history would be refused now (sync on, synced before, not in this build), or null. */
+  historyEraseBlocker(docId: string): Promise<string | null>
   /** Erases every Slate file and keyring entry, then relaunches; `confirm` must be the literal 'ERASE'. */
-  eraseAll(confirm: 'ERASE'): Promise<void>
+  /** False when the person answered Cancel to main's own question; otherwise Slate erases and restarts. */
+  eraseAll(confirm: 'ERASE'): Promise<boolean>
   readSecurityLog(): Promise<string>
   clearSecurityLog(): Promise<void>
   /** Deletes the AI activity record (the MCP audit table). */

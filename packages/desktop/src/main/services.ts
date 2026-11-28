@@ -6,6 +6,7 @@ import { openDatabase, type Database } from './db/openDatabase'
 import { assertNotesMayOpen } from './db/dbModule'
 import { createExternalWatch } from './externalWatch'
 import type { ScopedLog } from './log/logger'
+import type { Channel } from './ipcGuard'
 import { ImportService } from './onenote/importService'
 import { SearchIndex } from './search/searchIndex'
 import { readSettings } from './settings'
@@ -20,7 +21,7 @@ type ImportDeps = Omit<ConstructorParameters<typeof ImportService>[0], 'dbFile' 
 export interface ServiceContext {
   dataDir: string
   /** To every window; dropped once the lock sequence mutes the services. */
-  emit(channel: string, payload: unknown): void
+  emit(channel: Channel, payload: unknown): void
   sync: Omit<SyncServiceDeps, 'dbFile' | 'dbKey' | 'blobs' | 'emitStatus' | 'emitNotice' | 'emitOpenNotebook' | 'checkVault' | 'afterSync'>
   importer: ImportDeps
   watchLog?: ScopedLog
@@ -72,7 +73,7 @@ export function openServices(keyRing: KeyRing | null, dbFile: string, ctx: Servi
   assertNotesMayOpen('openServices')
   if (current) throw new Error('Services are already open')
   let muted = false
-  const emit = (channel: string, payload: unknown) => {
+  const emit = (channel: Channel, payload: unknown) => {
     if (!muted) ctx.emit(channel, payload)
   }
   // LK is the key ring's handle (C4: it was unwrapped inside the module and never existed as bytes);
@@ -164,4 +165,20 @@ export function openServices(keyRing: KeyRing | null, dbFile: string, ctx: Servi
 /** At quit: everything, without waiting for a sync in flight. */
 export function closeServices(): void {
   current?.closeDatabases()
+}
+
+/**
+ * The one order that closes the open notes, short of a lock or a shutdown (which take the same steps as named
+ * callbacks, `runLock`/`runShutdown`): the windows' pending writes first, then no more events to the renderer, sync
+ * finishes its run in flight, the file watch stops, and the databases close last.
+ */
+export async function closeOpenServices(
+  svc: Pick<Services, 'muteEvents' | 'stopSync' | 'closeWatch' | 'closeDatabases'>,
+  opts: { flush?: () => Promise<void> } = {},
+): Promise<void> {
+  await opts.flush?.()
+  svc.muteEvents()
+  await svc.stopSync()
+  svc.closeWatch()
+  svc.closeDatabases()
 }

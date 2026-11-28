@@ -43,3 +43,9 @@ are statements about behaviour and are out of scope unless the caller names them
    the lint requires), and the tests of any file whose code changed.
 6. **Report**: comment lines removed, restorations, reshapes done, reshapes open, constraints
    enforced or left in prose.
+
+## Record the run
+
+When a pass over everything changed since the last run is merged (or found nothing to cut), record it: `node tools/guards/quality-cadence.mjs done trim-comments`, committed with the run's work. That
+resets its count in `docs/quality-cadence.json`. A release tag is refused while a skill is owed a run
+(`.githooks/pre-push`), and each session starts by saying which are (`tools/guards/quality-cadence.mjs`).

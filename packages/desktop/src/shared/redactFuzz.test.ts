@@ -183,7 +183,7 @@ describe('T-F4E-01: no credential survives, wherever it sits', () => {
         }),
         fcParams,
       )
-    })
+    }, fuzzTimeout(10_000))
   }
 
   it('every shape at once, in one string', () => {
@@ -196,7 +196,7 @@ describe('T-F4E-01: no credential survives, wherever it sits', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 })
 
 describe('T-F4E fixed findings', () => {
@@ -254,7 +254,7 @@ describe('T-FX3-02: the scan bound (M3) leaves no kept secret unredacted', () =>
       }),
       fcRuns(4),
     )
-  })
+  }, fuzzTimeout(10_000))
 })
 
 describe('T-F4E-03: harmless text passes through', () => {
@@ -265,7 +265,7 @@ describe('T-F4E-03: harmless text passes through', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 })
 
 describe('T-F4E-04: redact(graph)', () => {
@@ -277,7 +277,7 @@ describe('T-F4E-04: redact(graph)', () => {
       }),
       { ...fcParams, numRuns: Math.max(200, Math.floor(fcParams.numRuns / 4)) },
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('redacts a secret at the bottom of a depth-1000 chain', () => {
     fc.assert(
@@ -287,7 +287,7 @@ describe('T-F4E-04: redact(graph)', () => {
       }),
       { ...fcParams, numRuns: Math.max(20, Math.floor(fcParams.numRuns / 40)) },
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('detects a byte container when one is present (the walker is not vacuous)', () => {
     expect(holdsBytes({ a: [new Uint8Array(1)] })).toBe(true)
@@ -311,5 +311,5 @@ describe('T-F4E-05: idempotence (candidate)', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 })

@@ -83,3 +83,17 @@ describe('settings schema', () => {
     expect(sanitizePatch({ consents: 'all' })).toEqual({})
   })
 })
+
+describe('firstRunPrivacySeen (architecture drift D6: one owner, not the plugins bag)', () => {
+  it('is a setting of its own, off by default, and carries over the answer an older build kept in plugins', () => {
+    expect(DEFAULT_SETTINGS.firstRunPrivacySeen).toBe(false)
+    const carried = mergeSettings({ plugins: { firstRunPrivacy: 'seen', calendar: { week: 1 } } })
+    expect(carried.firstRunPrivacySeen).toBe(true)
+    // The plugins bag is the plugins' again.
+    expect(carried.plugins).toEqual({ calendar: { week: 1 } })
+    expect(mergeSettings({ plugins: { firstRunPrivacy: 'seen' }, firstRunPrivacySeen: false }).firstRunPrivacySeen).toBe(false)
+    expect(mergeSettings({ plugins: { firstRunPrivacy: 'other' } }).firstRunPrivacySeen).toBe(false)
+    expect(sanitizePatch({ firstRunPrivacySeen: 'yes' })).toEqual({})
+    expect(sanitizePatch({ firstRunPrivacySeen: true })).toEqual({ firstRunPrivacySeen: true })
+  })
+})

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { openDatabase, WrongKey } from './db/openDatabase'
 import type { AuthService } from './onenote/auth'
-import { closeServices, openServices, services, servicesOpen, type ServiceContext } from './services'
+import { closeOpenServices, closeServices, openServices, services, servicesOpen, type ServiceContext } from './services'
 import { DocStore } from './store'
 import { lkBytesOf } from '../../test/vaultKeys'
 import { Locked } from './vault/keyring'
@@ -95,5 +95,30 @@ describe('services (§6.2)', () => {
       svc.closeDatabases()
       keyRing.close()
     }
+  })
+})
+
+describe('closeOpenServices: the one order that closes the open notes (architecture drift D4)', () => {
+  it('flushes the windows, mutes events, stops sync, closes the watch, then the databases', async () => {
+    const calls: string[] = []
+    const svc = {
+      muteEvents: () => void calls.push('mute events'),
+      stopSync: async () => {
+        await Promise.resolve()
+        calls.push('stop sync')
+      },
+      closeWatch: () => void calls.push('close watch'),
+      closeDatabases: () => void calls.push('close databases'),
+    }
+    await closeOpenServices(svc, {
+      flush: async () => {
+        await Promise.resolve()
+        calls.push('flush windows')
+      },
+    })
+    expect(calls).toEqual(['flush windows', 'mute events', 'stop sync', 'close watch', 'close databases'])
+    calls.length = 0
+    await closeOpenServices(svc)
+    expect(calls).toEqual(['mute events', 'stop sync', 'close watch', 'close databases'])
   })
 })

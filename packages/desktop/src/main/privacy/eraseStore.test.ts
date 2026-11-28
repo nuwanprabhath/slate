@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { PageDoc, type PMJSON } from '@slate/core'
 import { SearchIndex } from '../search/searchIndex'
 import { DocStore } from '../store'
-import { eraseDocHistory, historyStore } from './erase'
+import { eraseDocHistory } from './erase'
 
 const MARKER = 'OKAPI-ERASED-51d2'
 const PAGE = 'page:0b7e1c52-5f0c-4c1e-9a43-7d1f2b9e6a10'
@@ -61,7 +61,7 @@ describe('erase history on the real DocStore (GDPR-04)', () => {
     // The deleted text is still in the history: the check below can see it.
     expect(inFile(file, MARKER)).toBe(true)
 
-    eraseDocHistory(historyStore(store), PAGE, false, changed, () => null)
+    eraseDocHistory(store, PAGE, false, changed, () => null)
 
     expect(inFile(file, MARKER)).toBe(false)
     const loaded = PageDoc.fromUpdates(store.load(PAGE))

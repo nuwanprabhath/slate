@@ -67,24 +67,24 @@ Notes on these features:
 
 Slate stores these in one local database file (`slate.db`) plus a few folders. "Local" means your computer only.
 
-| Data | Where (table or file) | Contains | Kept for |
-| --- | --- | --- | --- |
-| Notes, with their edit history | `snapshots`, `updates` | All note content, including text you later deleted (the history allows undo and sync merging) | Until you delete the note, or Erase all. For a note never synced, Settings → Privacy → Erase edit history drops deleted text |
-| Search index | `search` | The plain text of every box, so search is fast | Rewritten as you edit; freed space is overwritten with zeros, and Purge caches rebuilds the index |
-| Edit sequence bookkeeping | `doc_heads`, `seq_counter` | Counters per note, no content | With the notes |
-| Settings | `settings` | Your preferences, consents, the sync remote address, device id, theme prompts | Until you change them or erase all |
-| Images | `blob_data` (with a vault) or the `blobs` folder (without) | Images pasted into notes | Until no note uses them and you purge caches in Settings → Privacy |
-| AI activity | `audit` | Which tool an agent called and on which page; for searches only the length of the query | The most recent entries, up to 30 days in strict mode (90 days with strict mode off), or until you press Clear in AI Activity |
-| Sync bookkeeping | `sync_meta`, `sync_seen`, `blob_synced`, `transport_observations` | Cursors, item ids, host names | Until you turn sync off and forget the connection |
-| Sync conflicts | `conflicts` | Both versions of a conflicting text and the other device's name | Until you resolve each one; in strict mode, at most 90 days |
-| Sync and import notices | `notices` | Short status messages | The most recent 1,000 |
-| OneNote import | `import_items`, `import_map` | OneNote ids and import status | Until you erase all |
-| Diagnostic log | `logs` folder | What Slate did, with notes' text, titles and search queries left out, and your home folder shown as `~`; tokens and passwords stripped | Off by default. While on, 7 days or 20 MB. In strict mode, switching it off removes the files; otherwise Purge caches and logs does |
-| Security record | `security-log` folder | Unlock and lock times and methods, no notes | Always on. 30 days in strict mode, 90 days with strict mode off or under FIPS 140-3. View and clear it in Settings → Privacy (not clearable under FIPS 140-3) |
-| Sign-in tokens | `msal-cache.bin`, `git-sync` folder | Microsoft and GitHub tokens, sealed by your operating system's keyring | Until you sign out or forget the connection |
-| Temporary files | `slate-one2html-*`, `slate-theme-*` in your temporary folder | OneNote backup contents while importing | Removed when the import ends, and any left after a crash are removed at the next start |
-| Update bookkeeping | `update-result.json`, `update-result.json.download` | The outcome of the last macOS install, and the path and checksum of the installer it used (a path in your Downloads folder) | Read and removed at the next start after an install; a verified installer download is deleted then too; Erase all removes both files |
-| Browser storage | Chromium `Local Storage` | Panel layout and custom colours | Until you erase all |
+| Data | Where (table or file) | Contains | Kept for | Export |
+| --- | --- | --- | --- | --- |
+| Notes, with their edit history | `snapshots`, `updates` | All note content, including text you later deleted (the history allows undo and sync merging) | Until you delete the note, or Erase all. For a note never synced, Settings → Privacy → Erase edit history drops deleted text | exported: the current text as Markdown, not the edit history |
+| Search index | `search` | The plain text of every box, so search is fast | Rewritten as you edit; freed space is overwritten with zeros (from 0.8 on; text deleted before 0.8 in a database without a vault may remain in free space until the database is rewritten), and Purge caches rebuilds the index | not exported: rebuilt from the notes, which are |
+| Edit sequence bookkeeping | `doc_heads`, `seq_counter` | Counters per note, no content | With the notes | not exported: counters with no content |
+| Settings | `settings` | Your preferences, consents, the sync remote address, device id, theme prompts | Until you change them or erase all | exported |
+| Images | `blob_data` (with a vault) or the `blobs` folder (without) | Images pasted into notes | Until no note uses them and you purge caches in Settings → Privacy | exported |
+| AI activity | `audit` | Which tool an agent called and on which page; for searches only the length of the query | The most recent entries, up to 30 days in strict mode (90 days with strict mode off), or until you press Clear in AI Activity | exported |
+| Sync bookkeeping | `sync_meta`, `sync_seen`, `blob_synced`, `transport_observations` | Cursors, item ids, host names | Until you turn sync off and forget the connection | not exported: cursors and item ids only this device's sync can use; the remote's address is in the exported settings |
+| Sync conflicts | `conflicts` | Both versions of a conflicting text and the other device's name | Until you resolve each one; in strict mode, at most 90 days | exported |
+| Sync and import notices | `notices` | Short status messages | The most recent 1,000 | not exported: status messages Slate wrote, none of your content |
+| OneNote import | `import_items`, `import_map` | OneNote ids and import status | Until you erase all | not exported: OneNote ids that only a re-import on this device uses |
+| Diagnostic log | `logs` folder | What Slate did, with notes' text, titles and search queries left out, and your home folder shown as `~`; tokens and passwords stripped | Off by default. While on, 7 days or 20 MB. In strict mode, switching it off removes the files; otherwise Purge caches and logs does | not exported: off by default and holds no note content; Settings → Diagnostics opens the file |
+| Security record | `security-log` folder | Unlock and lock times and methods, no notes | Always on. 30 days in strict mode, 90 days with strict mode off or under FIPS 140-3. View and clear it in Settings → Privacy (not clearable under FIPS 140-3) | exported |
+| Sign-in tokens | `msal-cache.bin`, `git-sync` folder | Microsoft and GitHub tokens, sealed by your operating system's keyring | Until you sign out or forget the connection | not exported: secrets sealed to this computer's keyring, which open nothing elsewhere |
+| Temporary files | `slate-one2html-*`, `slate-theme-*` in your temporary folder | OneNote backup contents while importing | Removed when the import ends, and any left after a crash are removed at the next start | not exported: removed when the import ends |
+| Update bookkeeping | `update-result.json`, `update-result.json.download` | The outcome of the last macOS install, and the path and checksum of the installer it used (a path in your Downloads folder) | Read and removed at the next start after an install; a verified installer download is deleted then too; Erase all removes both files | not exported: install bookkeeping, removed at the next start |
+| Browser storage | Chromium `Local Storage` | Panel layout and custom colours | Until you erase all | not exported: panel layout and colours |
 
 A vault encrypts `slate.db` and the images. The security record, the diagnostic log and the tokens are not
 inside the vault: the logs hold no note content, and the tokens are sealed by your operating system.
@@ -94,12 +94,12 @@ inside the vault: the logs hold no note content, and the tokens are sealed by yo
 Open Settings → Privacy.
 
 - **Access and portability:** "Export everything…" writes your notes as Markdown with their images, your
-  settings, the AI activity and the security record to a folder you pick.
-- **Erasure:** delete a note in the library, and the space it used is overwritten with zeros; "Purge caches and
+  settings, the AI activity, the sync conflicts and the security record to a folder you pick.
+- **Erasure:** delete a note in the library, and the space it used is overwritten with zeros (from 0.8 on; text deleted before 0.8 in a database without a vault may remain in free space until the database is rewritten); "Purge caches and
   logs" removes unused images, temporary files and logs; "Erase all Slate data…" (type `ERASE`) removes every
   Slate file and sealed sign-in token on this computer and restarts Slate. The system keyring keeps one entry,
   Slate's storage key, which opens nothing once those files are gone. "Erase edit history…" replaces a note's
-  history with its current state, so text you deleted no longer sits in it. It works on a note that has never been
+  history with its current state, so text you deleted no longer sits in it (zeroed from 0.8 on, as above). It works on a note that has never been
   synced, with sync off; a note already on another device could not be merged with that device's edits afterwards,
   so Slate refuses it and says why. Data you already synced stays at your sync provider until you remove it there.
 - **Withdrawing consent:** each consent in the list has a Withdraw button. Withdrawing is as easy as granting.

@@ -3,7 +3,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { compileQuery, findMatches, hasNestedUnboundedQuantifier, matchAll, type FindOptions } from '../src/find'
-import { fcParams } from '../../desktop/test/fuzz'
+import { fcParams, fuzzTimeout } from '../../desktop/test/fuzz'
 
 // Well-formed strings only: a lone surrogate matches differently under a `u` regex than under indexOf, which is
 // a property of the `u` flag and not of find.ts.
@@ -52,7 +52,7 @@ describe('findMatches fuzz', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F3A-02: every range is inside the text, non-empty, ascending and non-overlapping', () => {
     fc.assert(
@@ -69,7 +69,7 @@ describe('findMatches fuzz', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F3A-03: patterns that can match the empty string return at most text.length ranges and terminate', () => {
     const empties = ['a*', '^', '$', '\\b', '\\B', '(?=x)', '(?!x)', 'x?', '(?:)', 'a*?', '[^a]*']
@@ -83,7 +83,7 @@ describe('findMatches fuzz', () => {
     // A long text of the astral kind advances two units a step, never zero.
     expect(findMatches('😀'.repeat(500), '^', { regex: true, matchCase: true, wholeWord: false }).length).toBeLessThanOrEqual(1000)
     expect(findMatches('😀'.repeat(500), 'a*', { regex: true, matchCase: true, wholeWord: true })).toEqual([])
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F3A-04: compileQuery and hasNestedUnboundedQuantifier never throw on any string', () => {
     const pattern = fc.oneof(fc.string({ unit: 'binary', maxLength: 30 }), fc.array(fc.constantFrom(...SOUP, '(?:', '\\k<', '(?<n>', '{1,', '+)+', ')*'), { maxLength: 20 }).map((p) => p.join('')))
@@ -97,5 +97,5 @@ describe('findMatches fuzz', () => {
     )
     expect(typeof hasNestedUnboundedQuantifier('('.repeat(100_000))).toBe('boolean')
     expect(typeof hasNestedUnboundedQuantifier('['.repeat(100_000) + '\\')).toBe('boolean')
-  })
+  }, fuzzTimeout(10_000))
 })

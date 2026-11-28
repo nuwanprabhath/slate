@@ -39,7 +39,8 @@ function setup(profile: 'standard' | 'fips-140-3' | null = null) {
   const dataRights: DataRights = {
     exportAll: async () => (calls.push('exportAll'), null),
     eraseHistory: async (docId: string) => void calls.push(`eraseHistory:${docId}`),
-    eraseAll: async () => void calls.push('eraseAll'),
+    historyEraseBlocker: async (docId: string) => (calls.push(`historyEraseBlocker:${docId}`), null),
+    eraseAll: async () => (calls.push('eraseAll'), true),
   }
   const deps: PrivacyDeps = {
     ...createConsents({ store: () => store, profile: () => profile, now: () => 1234 }),
@@ -57,7 +58,7 @@ function setup(profile: 'standard' | 'fips-140-3' | null = null) {
 describe('registerPrivacyIpc', () => {
   it('registers every privacy channel', () => {
     const { handlers } = setup()
-    for (const ch of [CH.privacyStatus, CH.privacyGrant, CH.privacyRevoke, CH.privacyExport, CH.privacyPurge, CH.privacyEraseHistory, CH.privacyEraseAll, CH.privacySecurityLogRead, CH.privacySecurityLogClear, CH.auditClear, CH.syncForget]) {
+    for (const ch of [CH.privacyStatus, CH.privacyGrant, CH.privacyRevoke, CH.privacyExport, CH.privacyPurge, CH.privacyEraseHistory, CH.privacyHistoryEraseBlocker, CH.privacyEraseAll, CH.privacySecurityLogRead, CH.privacySecurityLogClear, CH.auditClear, CH.syncForget]) {
       expect(handlers.has(ch), ch).toBe(true)
     }
   })
@@ -107,12 +108,13 @@ describe('registerPrivacyIpc', () => {
     expect(await call(CH.privacyExport)).toBeNull()
     await call(CH.privacyPurge, 'logs')
     await call(CH.privacyEraseHistory, docId)
+    expect(await call(CH.privacyHistoryEraseBlocker, docId)).toBeNull()
     await call(CH.privacyEraseAll, 'ERASE')
     expect(await call(CH.privacySecurityLogRead)).toBe('log text')
     await call(CH.privacySecurityLogClear)
     await call(CH.auditClear)
     await call(CH.syncForget)
-    expect(calls).toEqual(['exportAll', 'purge:logs', `eraseHistory:${docId}`, 'eraseAll', 'readSecurityLog', 'clearSecurityLog', 'clearAudit', 'syncForget'])
+    expect(calls).toEqual(['exportAll', 'purge:logs', `eraseHistory:${docId}`, `historyEraseBlocker:${docId}`, 'eraseAll', 'readSecurityLog', 'clearSecurityLog', 'clearAudit', 'syncForget'])
   })
 
   it('refuses malformed arguments before any backend or the settings are reached', async () => {
@@ -126,6 +128,8 @@ describe('registerPrivacyIpc', () => {
       [CH.privacyPurge, []],
       [CH.privacyEraseHistory, ['test:1']],
       [CH.privacyEraseHistory, [5]],
+      [CH.privacyHistoryEraseBlocker, ['test:1']],
+      [CH.privacyHistoryEraseBlocker, [{}]],
       [CH.privacyEraseAll, ['erase']],
       [CH.privacyEraseAll, [true]],
       [CH.privacyEraseAll, []],

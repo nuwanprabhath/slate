@@ -40,3 +40,9 @@ it starts, not five.
    in priority order (security first).
 
 Read-only until step 7. Do not fix code while measuring.
+
+## Record the run
+
+When the report is written and its drift classes are handed to `correct`, record it: `node tools/guards/quality-cadence.mjs done architecture-drift`, committed with the run's work. That
+resets its count in `docs/quality-cadence.json`. A release tag is refused while a skill is owed a run
+(`.githooks/pre-push`), and each session starts by saying which are (`tools/guards/quality-cadence.mjs`).

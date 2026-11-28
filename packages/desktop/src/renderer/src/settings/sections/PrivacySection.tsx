@@ -137,7 +137,7 @@ function YourData() {
     <fieldset className="settings-group" data-testid="privacy-data">
       <legend>Your data</legend>
       <p className="settings-help">
-        An export is a new folder with every page as Markdown (private boxes too), every image, your settings, the AI activity record and the security log. Nothing in
+        An export is a new folder with every page as Markdown (private boxes too), every image, your settings, the AI activity record, the sync conflicts and the security log. Nothing in
         it is encrypted, so keep it somewhere safe.
       </p>
       {confirmPurge ? (
@@ -218,6 +218,16 @@ function SecurityLog({ profile }: { profile: PrivacyStatus['profile'] | undefine
   )
 }
 
+type EraseRow = 'history' | 'remote' | 'all'
+
+function EraseNote({ testId, text }: { testId: string; text: string }) {
+  return (
+    <span className="vault-hint privacy-note" role="status" data-testid={testId}>
+      {text}
+    </span>
+  )
+}
+
 type RemoteHistory = { kind: 'none' } | { kind: 'encrypted'; remote: string } | { kind: 'plaintext'; remote: string }
 
 function Erase({ settings }: { settings: SectionProps['settings'] }) {
@@ -225,7 +235,8 @@ function Erase({ settings }: { settings: SectionProps['settings'] }) {
   const pageId = currentSession.get()?.pageId ?? null
   const [ask, setAsk] = useState<'history' | 'remote' | 'all' | null>(null)
   const [typed, setTyped] = useState('')
-  const [note, setNote] = useState('')
+  // Each result is shown under the action it came from, not at the foot of the group.
+  const [note, setNote] = useState<{ row: EraseRow; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [remote, setRemote] = useState<RemoteHistory>({ kind: 'none' })
   useEffect(() => {
@@ -246,16 +257,16 @@ function Erase({ settings }: { settings: SectionProps['settings'] }) {
     }
   }, [settings.syncProvider, settings.git?.remoteUrl])
 
-  const run = (work: () => Promise<string>) => {
+  const run = (row: EraseRow, work: () => Promise<string>) => {
     setAsk(null)
     setBusy(true)
     work()
-      .then(setNote)
-      .catch((e: unknown) => setNote(errorText(e)))
+      .then((text) => setNote({ row, text }))
+      .catch((e: unknown) => setNote({ row, text: errorText(e) }))
       .finally(() => setBusy(false))
   }
   const eraseHistory = () =>
-    run(async () => {
+    run('history', async () => {
       if (!pageId) return ''
       // Every edit stored first: one still queued would be written after the erase, on top of the history it removed.
       await allSavesIdle()
@@ -265,21 +276,45 @@ function Erase({ settings }: { settings: SectionProps['settings'] }) {
       return 'The open page’s edit history is erased; it keeps only what it shows now.'
     })
   const replaceRemote = () =>
-    run(async () => {
+    run('remote', async () => {
       const r = await window.slate.vault.replaceSyncHistory()
       return r.ok ? 'The sync repository’s history now holds only the current, encrypted files.' : r.message
     })
   const eraseAll = () => {
     setBusy(true)
-    setNote('Erasing everything; Slate will restart…')
+    setNote({ row: 'all', text: 'Erasing everything; Slate will restart…' })
     setAsk(null)
-    window.slate.privacy.eraseAll('ERASE').catch((e: unknown) => {
-      setBusy(false)
-      setNote(`Could not erase: ${errorText(e)}`)
-    })
+    window.slate.privacy.eraseAll('ERASE').then(
+      (erased) => {
+        if (erased) return
+        // Cancelled at main's own question: nothing was touched.
+        setBusy(false)
+        setTyped('')
+        setNote({ row: 'all', text: 'Nothing was erased.' })
+      },
+      (e: unknown) => {
+        setBusy(false)
+        setNote({ row: 'all', text: `Could not erase: ${errorText(e)}` })
+      },
+    )
   }
 
-  const historyReason = syncOn ? 'Turn sync off first: other devices keep their own copies and would bring the history back.' : pageId ? '' : 'Open a page first.'
+  // Main says up front what it would refuse (a page synced before, a build that cannot), so the button is never offered
+  // only to be refused; asked again after each erase result.
+  const [mainReason, setMainReason] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    setMainReason(null)
+    if (syncOn || !pageId) return
+    window.slate.privacy.historyEraseBlocker(`page:${pageId}`).then(
+      (reason) => live && setMainReason(reason),
+      () => {},
+    )
+    return () => {
+      live = false
+    }
+  }, [syncOn, pageId, note])
+  const historyReason = syncOn ? 'Turn sync off first: other devices keep their own copies and would bring the history back.' : !pageId ? 'Open a page first.' : (mainReason ?? '')
   return (
     <fieldset className="settings-group" data-testid="privacy-erase">
       <legend>Erase</legend>
@@ -318,6 +353,7 @@ function Erase({ settings }: { settings: SectionProps['settings'] }) {
               Erase edit history of this page…
             </button>
             <span className="settings-help">{historyReason || 'Removes earlier versions and deleted text; the page keeps what it shows now. Only for a page that has never been synced.'}</span>
+            <EraseNote testId="privacy-erase-note" text={note?.row === 'history' ? note.text : ''} />
           </div>
           {remote.kind !== 'none' && (
             <div className="privacy-erase-row">
@@ -327,6 +363,7 @@ function Erase({ settings }: { settings: SectionProps['settings'] }) {
               <span className="settings-help" data-testid="privacy-replace-remote-help">
                 {remote.kind === 'plaintext' ? 'For an unencrypted repository, this is coming in the next release.' : 'The repository keeps only one commit of its current files.'}
               </span>
+              <EraseNote testId="privacy-remote-note" text={note?.row === 'remote' ? note.text : ''} />
             </div>
           )}
           <div className="privacy-erase-row">
@@ -334,12 +371,10 @@ function Erase({ settings }: { settings: SectionProps['settings'] }) {
               Erase all Slate data…
             </button>
             <span className="settings-help">Everything Slate keeps on this computer, then a restart.</span>
+            <EraseNote testId="privacy-all-note" text={note?.row === 'all' ? note.text : ''} />
           </div>
         </>
       )}
-      <span className="vault-hint privacy-note" role="status" data-testid="privacy-erase-note">
-        {note}
-      </span>
     </fieldset>
   )
 }

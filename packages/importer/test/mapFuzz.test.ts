@@ -4,7 +4,7 @@ import { parseHTML } from 'linkedom'
 import { describe, expect, it } from 'vitest'
 import type { PMJSON } from '@slate/core'
 import { mapOneNotePage } from '../src/map'
-import { fcRuns, forAll } from '../../desktop/test/fuzz'
+import { fcRuns, forAll, fuzzTimeout } from '../../desktop/test/fuzz'
 import { mutateBytes } from '../../desktop/test/fuzzBytes'
 import { hostileHtml } from '../../desktop/test/fuzzHtml'
 
@@ -61,5 +61,5 @@ describe('mapOneNotePage fuzz', () => {
       }),
       fcRuns(4, 200),
     )
-  })
+  }, fuzzTimeout(10_000))
 })

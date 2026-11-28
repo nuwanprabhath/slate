@@ -27,6 +27,20 @@ async function pickFolder(app: ElectronApplication, folder: string): Promise<voi
   }, folder)
 }
 
+/** Main's erase-all question answers button `response` (0 Cancel, 1 Erase everything); each question is kept. */
+async function answerEraseAll(app: ElectronApplication, response: number): Promise<void> {
+  await app.evaluate(({ dialog }, r) => {
+    const g = globalThis as unknown as { eraseAsked?: unknown[] }
+    g.eraseAsked ??= []
+    Object.assign(dialog, {
+      showMessageBox: (...args: unknown[]) => {
+        g.eraseAsked!.push(args[args.length - 1])
+        return Promise.resolve({ response: r, checkboxChecked: false })
+      },
+    })
+  }, response)
+}
+
 const status = (page: Page) => page.evaluate(() => window.slate.privacy.status()) as Promise<PrivacyStatus>
 
 test('Export everything writes a new folder with the page as Markdown and a manifest (GDPR-05)', async ({ app, page }) => {
@@ -126,7 +140,19 @@ test('Erase all Slate data needs ERASE typed, deletes the data folder and quits 
   await app.evaluate(({ app: electronApp }) => {
     Object.assign(electronApp, { relaunch: () => {} })
   })
+  // Main asks too (the renderer's ERASE is not enough on its own). First Cancel: nothing goes.
+  await answerEraseAll(app, 0)
   await openPrivacy(page)
+  await page.getByTestId('privacy-erase-all').click()
+  await page.getByTestId('privacy-all-typed').fill('ERASE')
+  await page.getByTestId('privacy-all-confirm-yes').click()
+  await expect.poll(() => app.evaluate(() => (globalThis as unknown as { eraseAsked?: unknown[] }).eraseAsked?.length ?? 0)).toBe(1)
+  const asked = (await app.evaluate(() => (globalThis as unknown as { eraseAsked: Array<{ buttons: string[]; defaultId: number; cancelId: number }> }).eraseAsked[0]))!
+  expect(asked.buttons[asked.defaultId]).toBe('Cancel')
+  expect(asked.cancelId).toBe(asked.defaultId)
+  await expect(page.getByTestId('privacy-all-note')).toHaveText('Nothing was erased.')
+  expect(existsSync(join(userData, 'slate.db'))).toBe(true)
+  await answerEraseAll(app, 1)
   await page.getByTestId('privacy-erase-all').click()
   const go = page.getByTestId('privacy-all-confirm-yes')
   await expect(go).toBeDisabled()

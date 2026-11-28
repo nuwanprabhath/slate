@@ -5,7 +5,8 @@
 .update-banner button.update-banner-link { background: none; border: none; color: var(--muted); text-decoration: underline; }
 .update-banner button.update-banner-close { background: none; border: none; color: var(--muted); font-size: 15px; line-height: 1; }
 .updates-section { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
-.updates-section p { margin: 0; }
+/* Block margins only, so .settings-indent still puts the help on the checkbox label's edge. */
+.updates-section p { margin-block: 0; }
 .updates-help { color: var(--muted); font-size: 12px; }
 .updates-check { display: flex; align-items: center; gap: 10px; }
 .updates-field { display: flex; align-items: center; gap: 8px; }

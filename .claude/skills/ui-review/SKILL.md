@@ -136,3 +136,9 @@ writes the spec into the brief:
 - **Each theme's concern.** Glass needs an opaque surface under text; Light and Paper need contrast.
 - **The UI scenarios to write,** by name and state. These are the acceptance criteria, together
   with the functional tests.
+
+## Record the run
+
+When the lead has looked at every state's screenshots for a release range's renderer changes (layer 3; it is owed whenever the renderer changes), record it: `node tools/guards/quality-cadence.mjs done ui-review`, committed with the run's work. That
+resets its count in `docs/quality-cadence.json`. A release tag is refused while a skill is owed a run
+(`.githooks/pre-push`), and each session starts by saying which are (`tools/guards/quality-cadence.mjs`).

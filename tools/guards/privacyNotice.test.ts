@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { EXPORTED_TABLES } from '../../packages/desktop/src/main/privacy/export'
 import { CONSENT_FEATURES, DISCLOSURES } from '../../packages/desktop/src/shared/privacy/consent'
 import { egressEntries, GATES, LITERALS } from './egressScan'
 import { exists, isTestFile, read, walk } from './repo'
@@ -35,6 +36,22 @@ export function retentionSection(markdown: string): string | null {
   return (end === -1 ? rest : rest.slice(0, end)).join('\n')
 }
 
+/** Each row of the retention table: the names it writes as code, and its Export cell (null when the table has no such column). */
+export function retentionRows(section: string): Array<{ names: string[]; export: string | null }> {
+  const rows = section.split('\n').filter((l) => l.trimStart().startsWith('|'))
+  const cells = (l: string) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
+  if (rows.length < 2) return []
+  const col = cells(rows[0]!).findIndex((h) => /^export$/i.test(h))
+  return rows.slice(2).map((l) => {
+    const c = cells(l)
+    return { names: [...l.matchAll(/`([^`]+)`/g)].map((m) => m[1]!), export: col === -1 ? null : (c[col] ?? '') }
+  })
+}
+
+/** "exported" (with detail after a colon) or "not exported: <why>". */
+export const exportSays = (cell: string | null): 'exported' | 'not exported' | null =>
+  cell === null ? null : /^exported\b/.test(cell) ? 'exported' : /^not exported: \S/.test(cell) ? 'not exported' : null
+
 /** The name written as code (`name`), so a common word such as "updates" in prose does not count. */
 export const namesAsCode = (text: string, name: string): boolean => text.includes(`\`${name}\``)
 
@@ -55,6 +72,17 @@ describe('privacy notice helpers (fixtures)', () => {
     expect(retentionSection('# Privacy\nnothing')).toBeNull()
   })
 
+  it('reads each retention row\'s Export cell, and wants "exported" or "not exported: <why>"', () => {
+    const md = '| Data | Where | Export |\n| --- | --- | --- |\n| Notes | `snapshots` | exported: as Markdown |\n| Notices | `notices` | not exported |\n'
+    expect(retentionRows(md)).toEqual([{ names: ['snapshots'], export: 'exported: as Markdown' }, { names: ['notices'], export: 'not exported' }])
+    expect(retentionRows('| Data | Where |\n| --- | --- |\n| Notes | `snapshots` |\n')).toEqual([{ names: ['snapshots'], export: null }])
+    expect(exportSays('exported')).toBe('exported')
+    expect(exportSays('not exported: rebuilt from the notes')).toBe('not exported')
+    expect(exportSays('not exported')).toBeNull()
+    expect(exportSays('')).toBeNull()
+    expect(exportSays(null)).toBeNull()
+  })
+
   it('wants a name as code', () => {
     expect(namesAsCode('the `updates` check', 'updates')).toBe(true)
     expect(namesAsCode('checks for updates', 'updates')).toBe(false)
@@ -72,6 +100,25 @@ describe('PRIVACY.md matches the code', () => {
     expect(section, `${NOTICE} needs a section whose heading says "Retention"`).not.toBeNull()
     const missing = [...tables].filter((t) => !namesAsCode(section ?? '', t)).sort()
     expect(missing.map((t) => `table \`${t}\`: add its row to ${NOTICE}'s retention section (what it holds, how long, how it is erased), and cover it in export and erase; see ${PATH}`)).toEqual([])
+  })
+
+  it('says for every retention row whether Export carries it, and why not (GDPR Art. 15 and 20)', () => {
+    const rows = retentionRows(retentionSection(notice()) ?? '')
+    expect(rows.length).toBeGreaterThan(0)
+    const bad = rows.filter((r) => exportSays(r.export) === null)
+    expect(bad.map((r) => `${r.names.map((n) => `\`${n}\``).join(', ')}: give the row an Export cell that says "exported" or "not exported: <why>" in ${NOTICE}'s retention table; see ${PATH}`)).toEqual([])
+  })
+
+  it('a table PRIVACY.md calls exported is one export.ts writes, and no other', () => {
+    const tables = new Set(walk('packages/desktop/src/main', ['.ts']).filter((f) => !isTestFile(f)).flatMap((f) => createdTables(read(f))))
+    const rows = retentionRows(retentionSection(notice()) ?? '')
+    const said = new Map(rows.flatMap((r) => r.names.filter((n) => tables.has(n)).map((n) => [n, exportSays(r.export)] as const)))
+    const exported = new Set(Object.keys(EXPORTED_TABLES))
+    const problems = [
+      ...[...said].filter(([t, s]) => s === 'exported' && !exported.has(t)).map(([t]) => `\`${t}\`: ${NOTICE} says exported, but main/privacy/export.ts does not write it; write it there and add it to EXPORTED_TABLES, or say "not exported: <why>"`),
+      ...[...exported].filter((t) => said.get(t) !== 'exported').map((t) => `\`${t}\`: main/privacy/export.ts writes it (EXPORTED_TABLES), so its ${NOTICE} retention row must say "exported"`),
+    ]
+    expect(problems).toEqual([])
   })
 
   it('names every endpoint DISCLOSURES lists', () => {

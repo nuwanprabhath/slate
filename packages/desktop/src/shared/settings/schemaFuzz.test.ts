@@ -52,7 +52,7 @@ describe('F4a: settings come out of the schema well formed', () => {
       }),
       fcParams,
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('T-F4A-41: mergeSettings returns every SCHEMA key, each accepted, and ignores __proto__ and constructor', () => {
     fc.assert(

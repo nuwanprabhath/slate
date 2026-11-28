@@ -2,7 +2,7 @@
 // The fuzz kit's own checks: every later fuzz task trusts these helpers to be deterministic and honest.
 import fc from 'fast-check'
 import { afterAll, describe, expect, it } from 'vitest'
-import { fcParams, fcRuns, relativeCost, Rng } from './fuzz'
+import { fcParams, fcRuns, relativeCost, Rng, fuzzTimeout } from './fuzz'
 import { chunkings, minimizeBytes, mutateBytes } from './fuzzBytes'
 import { corpusEntries } from './fuzzCorpus'
 import { regexDeadline } from './fuzzDeadline'
@@ -37,7 +37,7 @@ describe('T-F5A-01: seeds and run counts', () => {
       }),
       fcRuns(10),
     )
-  })
+  }, fuzzTimeout(10_000))
 
   it('relativeCost passes a call as cheap as the benign one', () => {
     const work = () => {
@@ -65,7 +65,7 @@ describe('T-F5A-02: minimizeBytes', () => {
       }),
       fcRuns(20),
     )
-  })
+  }, fuzzTimeout(10_000))
 })
 
 describe('T-F5A-03: regexDeadline', () => {

@@ -24,7 +24,7 @@ export function allowed(feature: ConsentFeature): boolean {
   return settings !== null && egressAllowed(settings, feature)
 }
 
-/** How B and C refuse: the renderer reads the feature back with `consentRequiredFeature` and shows the dialog. */
+/** How a gated call refuses: the renderer reads the feature back with `consentRequiredFeature` and shows the dialog. */
 export class ConsentRequired extends Error {
   override name = CONSENT_REQUIRED
   constructor(readonly feature: ConsentFeature) {

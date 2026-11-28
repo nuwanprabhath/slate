@@ -1,13 +1,13 @@
 // A remote the attacker controls completely: `delta` lists generated items (hostile paths, false sizes, repeated ids
-// and eTags, this device's own id, deletions) and `download` serves valid updates, mutated ones, arbitrary bytes,
-// errors, or never answers. Whatever it does, a sync settles, refuses oversized files unfetched, and leaves local
+// and eTags, this device's own id, deletions) and `download` serves valid updates, shallow snapshots (an erased
+// history), mutated ones, arbitrary bytes, errors, or never answers. Whatever it does, a sync settles, refuses oversized files unfetched, and leaves local
 // documents alone when nothing it served is a Loro update.
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { LoroDoc } from 'loro-crdt'
 import { PageDoc } from '@slate/core'
 import { SyncAborted, SyncEngine, unverifiedMessage } from '../src/engine'
-import { docKey, parseRemotePath } from '../src/paths'
+import { docKey, parseRemotePath, snapshotPath } from '../src/paths'
 import { OfflineError, UnverifiableFileError, type RemoteDrive, type RemoteItem, type SyncReport } from '../src/types'
 import { Rng, fcRuns, fuzzTimeout } from '../../desktop/test/fuzz'
 import { mutateBytes } from '../../desktop/test/fuzzBytes'
@@ -29,9 +29,29 @@ const VALID: Uint8Array[] = [PAGE, OTHER_PAGE].map((_, i) => {
   return doc.export({ mode: 'update' })
 })
 
+/**
+ * Shallow snapshots (an erased history, GDPR-04) another device could have written: of the page this device holds,
+ * with edits it never saw, and of a page it does not hold. A device holding the page sends them to `takeErased`,
+ * outside the import path that skips what cannot be read (security review v0.8, HIGH).
+ */
+const SHALLOW: Uint8Array[] = [PAGE, OTHER_PAGE].map((_, i) => {
+  const doc = new LoroDoc()
+  doc.setPeerId(BigInt(700 + i))
+  const page = new PageDoc(doc)
+  addTextBox(page, `erased ${i}`)
+  doc.commit()
+  addTextBox(page, `kept ${i}`)
+  doc.commit()
+  const bytes = doc.export({ mode: 'shallow-snapshot', frontiers: doc.oplogFrontiers() })
+  doc.free()
+  return bytes
+})
+
 type Serve =
   | { kind: 'valid'; pick: number }
   | { kind: 'mutated'; pick: number; salt: number }
+  | { kind: 'shallow'; pick: number }
+  | { kind: 'mutatedShallow'; pick: number; salt: number }
   | { kind: 'garbage'; bytes: Uint8Array }
   | { kind: 'missing' | 'unverifiable' | 'offline' | 'boom' | 'hang' }
 
@@ -40,6 +60,8 @@ const garbage = fc.uint8Array({ maxLength: 64 }).map((b) => Uint8Array.from([0x0
 const serve: fc.Arbitrary<Serve> = fc.oneof(
   fc.nat(VALID.length - 1).map<Serve>((pick) => ({ kind: 'valid', pick })),
   fc.record({ pick: fc.nat(VALID.length - 1), salt: fc.nat() }).map<Serve>((r) => ({ kind: 'mutated', ...r })),
+  fc.nat(SHALLOW.length - 1).map<Serve>((pick) => ({ kind: 'shallow', pick })),
+  fc.record({ pick: fc.nat(SHALLOW.length - 1), salt: fc.nat() }).map<Serve>((r) => ({ kind: 'mutatedShallow', ...r })),
   garbage.map<Serve>((bytes) => ({ kind: 'garbage', bytes })),
   fc.constantFrom<Serve>({ kind: 'missing' }, { kind: 'unverifiable' }, { kind: 'offline' }, { kind: 'boom' }, { kind: 'hang' })
 )
@@ -106,6 +128,10 @@ function hostileDrive(h: Hostile): HostileDrive {
           return Promise.resolve(VALID[s.pick]!.slice())
         case 'mutated':
           return Promise.resolve(mutateBytes(new Rng(s.salt), VALID[s.pick]!))
+        case 'shallow':
+          return Promise.resolve(SHALLOW[s.pick]!.slice())
+        case 'mutatedShallow':
+          return Promise.resolve(mutateBytes(new Rng(s.salt), SHALLOW[s.pick]!))
         case 'garbage':
           return Promise.resolve(s.bytes.slice())
         case 'missing':
@@ -263,5 +289,27 @@ describe('a hostile remote', () => {
       fcRuns(4)
     )
     expect(counted, 'runs with refused files').toBeGreaterThan(0)
+  })
+
+  it('a damaged or hostile shallow snapshot of a page this device holds never fails a sync, this run or the next', { timeout: fuzzTimeout(20_000) }, async () => {
+    const shallowServe = fc.oneof(
+      fc.constant<Serve>({ kind: 'shallow', pick: 0 }),
+      fc.nat().map<Serve>((salt) => ({ kind: 'mutatedShallow', pick: 0, salt })),
+    )
+    const listing = fc.array(fc.tuple(fc.constantFrom('d2', 'd3'), fc.nat(99)), { minLength: 1, maxLength: 12 }).map((files) =>
+      files.map(([device, seq], i): RemoteItem => ({ id: `s${i}`, path: snapshotPath(PAGE, device, seq), eTag: 'e', deleted: false, isFile: true })),
+    )
+    await fc.assert(
+      fc.asyncProperty(listing, fc.array(shallowServe, { minLength: 1, maxLength: 8 }), async (items, serves) => {
+        const { local } = device()
+        const drive = hostileDrive({ items, serves })
+        const engine = new SyncEngine({ local, remote: drive, deviceId: ME, deviceName: ME, compactAfter: 2 })
+        for (const run of ['first', 'next']) {
+          const report = await syncWithDeadline(engine, drive)
+          expect(report instanceof SyncAborted ? 'aborted' : report.status, `${run} sync`).toBe('idle-synced')
+        }
+      }),
+      fcRuns(4),
+    )
   })
 })

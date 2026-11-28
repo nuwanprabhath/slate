@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, MOD, test } from '../fixtures'
-import { reviewUi } from './review'
+import { reviewUi, setTheme } from './review'
 import { stubInvoke } from './states'
 
 /** GDPR-03, -06, -11: Settings → Sync in each privacy state a person reaches. */
@@ -57,7 +57,14 @@ test('UI: Sync settings for git with the pseudonymous note, the token advice and
         await p.getByTestId('sync-provider-git').check()
         await p.getByTestId(`git-auth-${auth}`).check()
         await expect(p.getByTestId('sync-pseudonymous')).toBeVisible()
-        await expect(p.getByTestId(auth === 'token' ? 'git-token-help' : 'git-device-scope')).toBeVisible()
+        if (auth === 'token') {
+          await expect(p.getByTestId('git-token-help')).toContainText('fine-grained token')
+          await expect(p.getByTestId('git-token')).toHaveAttribute('aria-describedby', 'git-token-help')
+        } else {
+          // GDPR-11: the sign-in names the permission it asks for before it starts.
+          await expect(p.getByTestId('git-device-scope')).toContainText('"repo" permission')
+          await expect(p.getByTestId('git-device-scope')).toContainText('every repository')
+        }
       },
       close: closeAll,
     })
@@ -77,8 +84,61 @@ test('UI: turning sync off offers Turn off and Turn off and forget this connecti
         await expect(p.getByTestId('sync-forget')).toBeVisible()
         await expect(p.getByTestId('sync-settings-save')).toHaveText('Turn off')
         await expect(p.getByTestId('sync-forget-sign-out')).toHaveCount(saved === 'onedrive' ? 1 : 0)
+        // Turn off is the main action; forgetting deletes, so it is drawn as a danger button.
+        await expect(p.getByTestId('sync-settings-save')).toHaveClass(/\bprimary\b/)
+        await expect(p.getByTestId('sync-forget')).toHaveClass(/\bdanger\b/)
       },
       close: closeAll,
     })
   }
+})
+
+test('in Glass the consent step over Settings is opaque, so the fields behind it do not read through', async ({ app, page }) => {
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await setTheme(app, page, 'glass')
+  await saveGit(page)
+  const alpha = await page.getByTestId('consent-dialog').evaluate((el) => {
+    const m = /rgba?\(([^)]+)\)/.exec(getComputedStyle(el).backgroundColor)
+    const parts = m ? m[1]!.split(',').map((x) => Number(x.trim())) : []
+    return parts.length === 4 ? parts[3] : 1
+  })
+  expect(alpha).toBe(1)
+  await closeAll(page)
+})
+
+test('UI: Test connection asks for the gitSync consent first, and Create repository for the GitHub sign-in', async ({ app, page }) => {
+  await expect(page.getByTestId('canvas')).toBeVisible()
+  await reviewUi(app, page, 'sync consent test connection', {
+    open: async (p) => {
+      await openSync(p)
+      await p.getByTestId('sync-provider-git').check()
+      await p.getByTestId('git-remote-url').fill('file:///tmp/never-contacted.git')
+      await p.getByTestId('git-test').click()
+      await expect(p.getByTestId('consent-dialog')).toBeVisible()
+      await expect(p.getByTestId('consent-dialog')).toContainText('git')
+    },
+    close: closeAll,
+  })
+  await reviewUi(app, page, 'sync consent create repository', {
+    open: async (p) => {
+      await openSync(p)
+      await p.getByTestId('sync-provider-git').check()
+      await p.getByTestId('git-auth-token').check()
+      await p.getByTestId('git-token').fill('ghp_typed')
+      await p.getByTestId('git-repo-name').fill('my-notes')
+      await p.getByTestId('git-create-repo').click()
+      await expect(p.getByTestId('consent-dialog')).toBeVisible()
+      await expect(p.getByTestId('consent-dialog')).toContainText('GitHub')
+    },
+    close: closeAll,
+  })
+  // Declined: nothing ran, and the result line says why.
+  await openSync(page)
+  await page.getByTestId('sync-provider-git').check()
+  await page.getByTestId('git-remote-url').fill('file:///tmp/never-contacted.git')
+  await page.getByTestId('git-test').click()
+  await expect(page.getByTestId('consent-dialog')).toBeVisible()
+  await page.getByTestId('consent-dialog').getByRole('button', { name: 'Not now' }).click()
+  await expect(page.getByTestId('sync-settings')).toContainText('Testing the connection needs your permission first.')
+  await closeAll(page)
 })

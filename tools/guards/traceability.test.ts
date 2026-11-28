@@ -8,7 +8,13 @@ import { exists, read, ROOT } from './repo'
  * (`node scripts/traceability.mjs --check`).
  */
 const AUDIT = 'docs/reviews/compliance_audit.md'
-const repoTitles = (): [string, string[]][] => testFiles().map((f: string) => [f, titles(read(f), f)])
+// Parsing every test file is most of this file's time, so it happens once; each case copies the result and
+// changes only its copy, so no case sees another's edits.
+let parsed: readonly (readonly [string, readonly string[]])[] | undefined
+const repoTitles = (): [string, string[]][] => {
+  parsed ??= testFiles().map((f: string) => [f, titles(read(f), f)] as const)
+  return parsed.map(([f, ts]) => [f, [...ts]])
+}
 
 describe('traceability (audit Appendix D, C11)', () => {
   it('every finding has a test, every §6 id is in a title, and the committed matrix is what the titles give', () => {

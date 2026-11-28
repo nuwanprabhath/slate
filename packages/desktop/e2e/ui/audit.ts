@@ -281,7 +281,26 @@ export function auditUi(opts: AuditOptions = {}): UiViolation[] {
       const bg = rgba(s.backgroundColor)
       const blurred = /blur\(\s*([\d.]+)px/.exec(s.backdropFilter)
       const opaque = bg[3] >= 0.9 || (blurred !== null && parseFloat(blurred[1] ?? '0') >= 8 && bg[3] >= 0.55)
+      // A dialog over another dialog has that dialog's fields and labels right behind it, crisp and high in contrast:
+      // at 96% they read through (v0.8 UI review F1, the consent step over Settings in Glass). It must hide them.
+      const r = el.getBoundingClientRect()
+      const over = el.matches('[role="dialog"], [role="alertdialog"], :modal')
+        ? [...document.querySelectorAll(POPUP)].find((p) => {
+            if (p === el || el.contains(p) || !visible(p)) return false
+            const q = p.getBoundingClientRect()
+            const x = (Math.max(r.left, q.left) + Math.min(r.right, q.right)) / 2
+            const y = (Math.max(r.top, q.top) + Math.min(r.bottom, q.bottom)) / 2
+            if (Math.min(r.right, q.right) - Math.max(r.left, q.left) < 8 || Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top) < 8) return false
+            if (p.contains(el)) return true
+            const stack = document.elementsFromPoint(x, y)
+            const mine = stack.findIndex((e) => el.contains(e))
+            const theirs = stack.findIndex((e) => p.contains(e))
+            return mine !== -1 && theirs !== -1 && mine < theirs
+          })
+        : undefined
+      const hides = bg[3] >= 0.99 || (blurred !== null && parseFloat(blurred[1] ?? '0') >= 8 && bg[3] >= 0.55)
       if (floating && !opaque) add('see-through-popup', el, `background ${s.backgroundColor}, backdrop-filter ${s.backdropFilter}: what is behind shows through`)
+      else if (floating && over !== undefined && !hides) add('see-through-popup', el, `background ${s.backgroundColor} over ${nameOf(over)}: the dialog behind reads through; a dialog over a dialog is fully opaque`)
     }
 
     if (!inProse && text !== '' && el.closest(':disabled, [aria-disabled="true"]') === null) {
