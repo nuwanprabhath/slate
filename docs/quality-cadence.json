@@ -7,8 +7,8 @@
         "days": 14
       },
       "last": {
-        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
-        "at": "2026-11-25T12:00:00.000Z"
+        "commit": "46a4258a785d0716caf48be9f130570b755c47a0",
+        "at": "2026-11-28T03:19:01.709Z"
       }
     },
     "correct": {
@@ -17,8 +17,8 @@
         "days": 14
       },
       "last": {
-        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
-        "at": "2026-11-25T12:00:00.000Z"
+        "commit": "46a4258a785d0716caf48be9f130570b755c47a0",
+        "at": "2026-11-28T03:19:02.865Z"
       }
     },
     "architecture-drift": {
@@ -27,8 +27,8 @@
         "days": 30
       },
       "last": {
-        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
-        "at": "2026-11-25T12:00:00.000Z"
+        "commit": "46a4258a785d0716caf48be9f130570b755c47a0",
+        "at": "2026-11-28T03:19:03.554Z"
       }
     },
     "prune-tests": {
@@ -37,8 +37,8 @@
         "days": 45
       },
       "last": {
-        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
-        "at": "2026-11-25T12:00:00.000Z"
+        "commit": "46a4258a785d0716caf48be9f130570b755c47a0",
+        "at": "2026-11-28T03:19:03.820Z"
       }
     },
     "security-review": {
@@ -46,8 +46,8 @@
         "pathsFile": "tools/guards/security-paths.txt"
       },
       "last": {
-        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
-        "at": "2026-11-25T12:00:00.000Z"
+        "commit": "46a4258a785d0716caf48be9f130570b755c47a0",
+        "at": "2026-11-28T03:19:04.572Z"
       }
     },
     "blast-radius": {
@@ -64,8 +64,8 @@
         ]
       },
       "last": {
-        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
-        "at": "2026-11-25T12:00:00.000Z"
+        "commit": "46a4258a785d0716caf48be9f130570b755c47a0",
+        "at": "2026-11-28T03:19:05.062Z"
       }
     },
     "ui-review": {
@@ -75,8 +75,8 @@
         ]
       },
       "last": {
-        "commit": "e44ea5e9ab8ff1df50eadcc8d3f016c3b9ea9b7c",
-        "at": "2026-11-25T12:00:00.000Z"
+        "commit": "46a4258a785d0716caf48be9f130570b755c47a0",
+        "at": "2026-11-28T03:19:05.277Z"
       }
     },
     "nightly-triage": {
