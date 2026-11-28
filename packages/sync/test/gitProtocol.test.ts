@@ -56,8 +56,13 @@ describe('the git child', { timeout: 60_000 }, () => {
     const { path, pidFile } = slowGit()
     const controller = new AbortController()
     const started = nodeGitRunner(path)([pidFile], { timeoutMs: 30_000, signal: controller.signal })
-    while (!existsSync(pidFile)) await new Promise((r) => setTimeout(r, 10))
-    const pid = Number(readFileSync(pidFile, 'utf8').trim())
+    // The shell creates the file before it writes the pid: an empty read is 0, and process.kill(0, 0) signals this
+    // test's own process group, so alive(0) held both before and after the kill (macOS CI, 0.8.2).
+    let pid = 0
+    while (!(pid > 0)) {
+      await new Promise((r) => setTimeout(r, 10))
+      pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8').trim()) : 0
+    }
     expect(alive(pid)).toBe(true)
     controller.abort()
     const result = await started
